@@ -28,38 +28,34 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 )
 
-// why do we have this?
-const disablePolicies = true
-
 var (
 	resourceTypeRole = &v2.ResourceType{
-		Id: "role", // should this be role? its "roles in c1"
-		// Id:          "roles", // should this be role? its "roles in c1"
+		Id:          "role", // should this be role? its "roles in c1"
 		DisplayName: "IAM role",
 		// Annotations: v1AnnotationsForResourceType("roles"),
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
 		Annotations: v1AnnotationsForResourceType("role"),
 	}
-	// TODO(lauren) rename this resourceTypeIAMGroup (follow same pattern/naming as sso_user/iam_user) and add resource type for sso group
-	resourceTypeGroup = &v2.ResourceType{
+	resourceTypeIAMGroup = &v2.ResourceType{
 		Id:          "group",
 		DisplayName: "Group",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_GROUP},
 		Annotations: v1AnnotationsForResourceType("group"),
 	}
+	resourceTypeSSOGroup = &v2.ResourceType{
+		Id:          "sso_group",
+		DisplayName: "SSO Group",
+		Traits: []v2.ResourceType_Trait{
+			v2.ResourceType_TRAIT_GROUP,
+		},
+		Annotations: v1AnnotationsForResourceType("sso_group"),
+	}
 	resourceTypeAccount = &v2.ResourceType{
 		Id:          "account", // this is "application" in c1
 		DisplayName: "Account",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
 		Annotations: v1AnnotationsForResourceType("account"),
 	}
-	// TODO(lauren) make separate resource types for sso, iam
-	/*resourceTypeUser = &v2.ResourceType{
-		Id:          "user",
-		DisplayName: "User",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_USER,
-		},
-		Annotations: v1AnnotationsForResourceType("user"),
-	}*/
 	resourceTypeSSOUser = &v2.ResourceType{
 		Id:          "sso_user",
 		DisplayName: "SSO User",
@@ -75,11 +71,6 @@ var (
 			v2.ResourceType_TRAIT_USER,
 		},
 		Annotations: v1AnnotationsForResourceType("iam_user"),
-	}
-	resourceTypePolicy = &v2.ResourceType{
-		Id:          "policy",
-		DisplayName: "IAM Policy",
-		Annotations: v1AnnotationsForResourceType("policy"),
 	}
 )
 
@@ -103,12 +94,6 @@ type AWS struct {
 	_identityInstancesCacheMtx sync.Mutex
 	_identityInstancesCacheErr error
 	_identityInstancesCache    []*awsSsoAdminTypes.InstanceMetadata
-
-	_permissionSetsCacheMtx    sync.Mutex
-	_permissionSetsCache       []*awsSsoAdminTypes.PermissionSet
-	_permissionSetDetailsCache sync.Map
-
-	_groupMembersCache sync.Map
 }
 
 func (o *AWS) iamClient(ctx context.Context) (*iam.Client, error) {
@@ -203,27 +188,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	return o._callingConfig[region], o._callingConfigError[region]
 }
 
-func (c *AWS) ListResourceTypes(ctx context.Context, request *v2.ResourceTypesServiceListResourceTypesRequest) (*v2.ResourceTypesServiceListResourceTypesResponse, error) {
-	l := []*v2.ResourceType{
-		resourceTypeRole,
-		resourceTypeGroup,
-		resourceTypeAccount,
-		resourceTypeIAMUser,
-		resourceTypeSSOUser, // TODO(lauren) check if sso enabled before adding this?
-		// resourceTypeUser,
-	}
-
-	// TODO(lauren) we have this in c1? we add account twice.. bug?
-	/*if c.orgsEnabled {
-		l = append(l, resourceTypeAccount)
-	}*/
-	if !disablePolicies {
-		l = append(l, resourceTypePolicy)
-	}
-	return &v2.ResourceTypesServiceListResourceTypesResponse{List: l}, nil
-}
-
-func New(ctx context.Context, globalGlobalBindingExternalID, globalRegion, globalRoleARN, globalSecretAccessKey, globalAccessKeyID, externalId string, arn string) (*AWS, error) {
+func New(ctx context.Context, globalGlobalBindingExternalID string, globalRegion string, globalRoleARN string, globalSecretAccessKey string, globalAccessKeyID string, globalAwsSsoRegion string, globalAwsOrgsEnabled bool, globalAwsSsoEnabled bool, externalId string, arn string) (*AWS, error) {
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, nil))
 	if err != nil {
 		return nil, err
@@ -246,21 +211,17 @@ func New(ctx context.Context, globalGlobalBindingExternalID, globalRegion, globa
 		return nil, fmt.Errorf("aws connector: config load failure: %w", err)
 	}
 
-	/*if env["aws_sso_region"] == "" {
-		env["aws_sso_region"] = "us-east-1"
-	}*/
-	awsSSORegion := "us-east-1"
-
 	rv := &AWS{
-		orgsEnabled:             true,
-		ssoEnabled:              true,
-		globalRegion:            "us-east-1",
+		orgsEnabled:             globalAwsOrgsEnabled,
+		ssoEnabled:              globalAwsSsoEnabled,
+		globalRegion:            globalRegion,
 		roleARN:                 arn,
 		externalID:              externalId,
 		globalBindingExternalID: globalGlobalBindingExternalID,
 		globalRoleARN:           globalRoleARN,
 		globalAccessKeyID:       globalAccessKeyID,
 		globalSecretAccessKey:   globalSecretAccessKey,
+		ssoRegion:               globalAwsSsoRegion,
 		baseClient:              httpClient,
 		baseConfig:              baseConfig.Copy(),
 		_onceCallingConfig:      map[string]*sync.Once{},
@@ -268,14 +229,12 @@ func New(ctx context.Context, globalGlobalBindingExternalID, globalRegion, globa
 		_callingConfigError:     map[string]error{},
 	}
 
-	rv.ssoRegion = awsSSORegion
-
 	if len(rv.externalID) < 32 || len(rv.externalID) > 65 {
 		return nil, fmt.Errorf("aws-connector: aws_external_id must be between 32 and 64 bytes")
 	}
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
-		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both.")
+		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
 	}
 
 	err = IsValidRoleARN(rv.roleARN)
@@ -347,7 +306,6 @@ func (c *AWS) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadClo
 	return "", nil, nil
 }
 
-// TODO(lauren) add resource builder for ssoGroup, account, policy
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	rs := []connectorbuilder.ResourceSyncer{}
 	iamClient, err := c.iamClient(ctx)
@@ -366,7 +324,16 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if err != nil {
 		return rs
 	}
-	rs = append(rs, ssoUserBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix))
+	if c.ssoEnabled {
+		rs = append(rs, ssoUserBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix))
+		rs = append(rs, ssoGroupBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix))
+	}
+	if c.orgsEnabled {
+		orgClient, err := c.orgClient(ctx)
+		if err == nil {
+			rs = append(rs, accountBuilder(orgClient, c.roleARN, ssoAdminClient, ix, c.ssoRegion, identityStoreClient))
+		}
+	}
 	return rs
 }
 

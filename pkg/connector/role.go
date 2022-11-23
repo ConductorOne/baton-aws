@@ -25,6 +25,9 @@ func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
+	}
 
 	if bag.Current() == nil {
 		bag.Push(pagination.PageState{
@@ -71,9 +74,24 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 	return rv, nextPage, nil, nil
 }
 
-// TODO(lauren) implement this (follow c1 repo ListEntitlements for "resourceTypeRole" switch case)
-func (o *roleResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+	var annos annotations.Annotations
+	annos.Append(&v2.V1Identifier{
+		Id: MembershipEntitlementID(resource.Id),
+	})
+
+	return []*v2.Entitlement{
+		{
+			Id:          MembershipEntitlementID(resource.Id),
+			Resource:    resource,
+			DisplayName: fmt.Sprintf("%s Role", resource.DisplayName),
+			Description: fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName),
+			Annotations: annos,
+			GrantableTo: []*v2.ResourceType{resourceTypeIAMUser, resourceTypeSSOUser},
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
+			Slug:        "member",
+		},
+	}, "", nil, nil
 }
 
 func (o *roleResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -114,10 +132,11 @@ func roleTrait(ctx context.Context, role iamTypes.Role) (*v2.RoleTrait, error) {
 	ret := &v2.RoleTrait{}
 
 	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"aws_arn":  awsSdk.ToString(role.Arn),
-		"aws_path": awsSdk.ToString(role.Path),
-		"aws_tags": roleTagsToMap(role),
-		// TODO(lauren) add other stuff here.. look at what fields are on iamTypes.Role
+		"aws_arn":              awsSdk.ToString(role.Arn),
+		"aws_path":             awsSdk.ToString(role.Path),
+		"aws_tags":             roleTagsToMap(role),
+		"aws_role_name":        awsSdk.ToString(role.RoleName),
+		"aws_role_description": awsSdk.ToString(role.Description),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: iam.ListUsers struct creation failed:: %w", err)

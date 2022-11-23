@@ -25,10 +25,13 @@ func (o *iamGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType 
 func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
+	}
 
 	if bag.Current() == nil {
 		bag.Push(pagination.PageState{
-			ResourceTypeID: resourceTypeGroup.Id,
+			ResourceTypeID: resourceTypeIAMGroup.Id,
 		})
 	}
 
@@ -72,11 +75,11 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
 	annos.Append(&v2.V1Identifier{
-		Id: MembershipEntitlementID2(resource.Id),
+		Id: MembershipEntitlementID(resource.Id),
 	})
 	return []*v2.Entitlement{
 		{
-			Id:          MembershipEntitlementID2(resource.Id), // TODO(lauren) do something with parent resource id?
+			Id:          MembershipEntitlementID(resource.Id), // TODO(lauren) do something with parent resource id?
 			Resource:    resource,
 			DisplayName: fmt.Sprintf("%s Group Member", resource.DisplayName),
 			Description: fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName),
@@ -91,6 +94,9 @@ func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Re
 func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
+	}
 
 	input := &iam.GetGroupInput{
 		GroupName: awsSdk.String(resource.DisplayName),
@@ -105,7 +111,7 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	}
 
 	entitlement := &v2.Entitlement{
-		Id:       MembershipEntitlementID2(resource.Id),
+		Id:       MembershipEntitlementID(resource.Id),
 		Resource: resource,
 	}
 
@@ -116,7 +122,7 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 			return nil, "", nil, err
 		}
 		rv = append(rv, &v2.Grant{
-			Id:          GrantID2(entitlement, ur),
+			Id:          GrantID(entitlement, ur.Id),
 			Entitlement: entitlement,
 			Principal:   ur,
 		})
@@ -143,7 +149,7 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 func iamGroupBuilder(iamClient *iam.Client) *iamGroupResourceType {
 	return &iamGroupResourceType{
-		resourceType: resourceTypeGroup,
+		resourceType: resourceTypeIAMGroup,
 		iamClient:    iamClient,
 	}
 }
@@ -166,7 +172,7 @@ func iamGroupResource(ctx context.Context, group iamTypes.Group) (*v2.Resource, 
 	}
 
 	return &v2.Resource{
-		Id: fmtResourceId(resourceTypeGroup.Id, awsSdk.ToString(group.Arn)),
+		Id: fmtResourceId(resourceTypeIAMGroup.Id, awsSdk.ToString(group.Arn)),
 		// Id:          fmtResourceId(resourceTypeGroup.Id, awsSdk.ToString(group.GroupId)),
 		DisplayName: awsSdk.ToString(group.GroupName),
 		Annotations: annos,
@@ -177,11 +183,12 @@ func iamGroupResource(ctx context.Context, group iamTypes.Group) (*v2.Resource, 
 func iamGroupTrait(ctx context.Context, group iamTypes.Group) (*v2.GroupTrait, error) {
 	ret := &v2.GroupTrait{}
 
-	// TODO(lauren) add group id/ group name?
 	attributes, err := structpb.NewStruct(map[string]interface{}{
 		"aws_arn":        awsSdk.ToString(group.Arn),
 		"aws_path":       awsSdk.ToString(group.Path),
 		"aws_group_type": "iam",
+		"aws_group_name": group.GroupName,
+		"aws_group_id":   group.GroupId,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: iam.ListGroups struct creation failed:: %w", err)

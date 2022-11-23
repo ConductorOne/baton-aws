@@ -70,3 +70,14 @@ func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	}
 	return id.String()
 }
+
+func ssoGroupToARN(region string, identityStoreId string, groupId string) string {
+	id := arn.ARN{
+		Partition: "aws",
+		Service:   "identitystore",
+		Region:    region,
+		AccountID: "",
+		Resource:  identityStoreId + "/group/" + groupId,
+	}
+	return id.String()
+}

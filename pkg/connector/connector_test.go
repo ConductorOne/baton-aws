@@ -30,33 +30,33 @@ import (
 	}
 }*/
 
-func Test_connectorImpl_GetMetadata(t *testing.T) {
-	type args struct {
-		ctx context.Context
-		req *v2.ConnectorServiceGetMetadataRequest
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *v2.ConnectorServiceGetMetadataResponse
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &AWS{}
-			got, err := c.Metadata(tt.args.ctx)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("GetMetadata() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("GetMetadata() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+// func Test_connectorImpl_GetMetadata(t *testing.T) {
+// 	type args struct {
+// 		ctx context.Context
+// 		req *v2.ConnectorServiceGetMetadataRequest
+// 	}
+// 	tests := []struct {
+// 		name    string
+// 		args    args
+// 		want    *v2.ConnectorServiceGetMetadataResponse
+// 		wantErr bool
+// 	}{
+// 		// TODO: Add test cases.
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			c := &AWS{}
+// 			got, err := c.Metadata(tt.args.ctx)
+// 			if (err != nil) != tt.wantErr {
+// 				t.Errorf("GetMetadata() error = %v, wantErr %v", err, tt.wantErr)
+// 				return
+// 			}
+// 			if !reflect.DeepEqual(got, tt.want) {
+// 				t.Errorf("GetMetadata() got = %v, want %v", got, tt.want)
+// 			}
+// 		})
+// 	}
+// }
 
 /*
 func Test_connectorImpl_ListEntitlements(t *testing.T) {
@@ -115,34 +115,34 @@ func Test_connectorImpl_ListGrants(t *testing.T) {
 	}
 }*/
 
-func Test_connectorImpl_ListResourceTypes(t *testing.T) {
-	type args struct {
-		ctx context.Context
-		req *v2.ResourceTypesServiceListResourceTypesRequest
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *v2.ResourceTypesServiceListResourceTypesResponse
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// c := &connectorImpl{}
-			c := &AWS{}
-			got, err := c.ListResourceTypes(tt.args.ctx, tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("ListResourceTypes() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("ListResourceTypes() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
+// func Test_connectorImpl_ListResourceTypes(t *testing.T) {
+// 	type args struct {
+// 		ctx context.Context
+// 		req *v2.ResourceTypesServiceListResourceTypesRequest
+// 	}
+// 	tests := []struct {
+// 		name    string
+// 		args    args
+// 		want    *v2.ResourceTypesServiceListResourceTypesResponse
+// 		wantErr bool
+// 	}{
+// 		// TODO: Add test cases.
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			// c := &connectorImpl{}
+// 			c := &AWS{}
+// 			got, err := c.ListResourceTypes(tt.args.ctx, tt.args.req)
+// 			if (err != nil) != tt.wantErr {
+// 				t.Errorf("ListResourceTypes() error = %v, wantErr %v", err, tt.wantErr)
+// 				return
+// 			}
+// 			if !reflect.DeepEqual(got, tt.want) {
+// 				t.Errorf("ListResourceTypes() got = %v, want %v", got, tt.want)
+// 			}
+// 		})
+// 	}
+// }
 
 /*func Test_connectorImpl_ListResources(t *testing.T) {
 	type args struct {
