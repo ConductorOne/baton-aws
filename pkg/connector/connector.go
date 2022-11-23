@@ -30,9 +30,8 @@ import (
 
 var (
 	resourceTypeRole = &v2.ResourceType{
-		Id:          "role", // should this be role? its "roles in c1"
-		DisplayName: "IAM role",
-		// Annotations: v1AnnotationsForResourceType("roles"),
+		Id:          "role",
+		DisplayName: "IAM Role",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
 		Annotations: v1AnnotationsForResourceType("role"),
 	}
@@ -73,6 +72,19 @@ var (
 		Annotations: v1AnnotationsForResourceType("iam_user"),
 	}
 )
+
+type Config struct {
+	GlobalBindingExternalID string
+	GlobalRegion            string
+	GlobalRoleARN           string
+	GlobalSecretAccessKey   string
+	GlobalAccessKeyID       string
+	GlobalAwsSsoRegion      string
+	GlobalAwsOrgsEnabled    bool
+	GlobalAwsSsoEnabled     bool
+	ExternalID              string
+	RoleARN                 string
+}
 
 type AWS struct {
 	orgsEnabled             bool
@@ -188,7 +200,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	return o._callingConfig[region], o._callingConfigError[region]
 }
 
-func New(ctx context.Context, globalGlobalBindingExternalID string, globalRegion string, globalRoleARN string, globalSecretAccessKey string, globalAccessKeyID string, globalAwsSsoRegion string, globalAwsOrgsEnabled bool, globalAwsSsoEnabled bool, externalId string, arn string) (*AWS, error) {
+func New(ctx context.Context, config Config) (*AWS, error) {
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, nil))
 	if err != nil {
 		return nil, err
@@ -196,13 +208,13 @@ func New(ctx context.Context, globalGlobalBindingExternalID string, globalRegion
 
 	opts := []func(*awsConfig.LoadOptions) error{
 		awsConfig.WithHTTPClient(httpClient),
-		awsConfig.WithRegion(globalRegion),
+		awsConfig.WithRegion(config.GlobalRegion),
 		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
 	}
 	// either we have a access key directly into our binding account, or we use instance identity to swap into that role
-	if globalAccessKeyID != "" && globalSecretAccessKey != "" {
+	if config.GlobalAccessKeyID != "" && config.GlobalSecretAccessKey != "" {
 		opts = append(opts,
-			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(globalAccessKeyID, globalSecretAccessKey, "")),
+			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(config.GlobalAccessKeyID, config.GlobalSecretAccessKey, "")),
 		)
 	}
 
@@ -212,16 +224,16 @@ func New(ctx context.Context, globalGlobalBindingExternalID string, globalRegion
 	}
 
 	rv := &AWS{
-		orgsEnabled:             globalAwsOrgsEnabled,
-		ssoEnabled:              globalAwsSsoEnabled,
-		globalRegion:            globalRegion,
-		roleARN:                 arn,
-		externalID:              externalId,
-		globalBindingExternalID: globalGlobalBindingExternalID,
-		globalRoleARN:           globalRoleARN,
-		globalAccessKeyID:       globalAccessKeyID,
-		globalSecretAccessKey:   globalSecretAccessKey,
-		ssoRegion:               globalAwsSsoRegion,
+		orgsEnabled:             config.GlobalAwsOrgsEnabled,
+		ssoEnabled:              config.GlobalAwsSsoEnabled,
+		globalRegion:            config.GlobalRegion,
+		roleARN:                 config.RoleARN,
+		externalID:              config.ExternalID,
+		globalBindingExternalID: config.GlobalBindingExternalID,
+		globalRoleARN:           config.GlobalRoleARN,
+		globalAccessKeyID:       config.GlobalAccessKeyID,
+		globalSecretAccessKey:   config.GlobalSecretAccessKey,
+		ssoRegion:               config.GlobalAwsSsoRegion,
 		baseClient:              httpClient,
 		baseConfig:              baseConfig.Copy(),
 		_onceCallingConfig:      map[string]*sync.Once{},

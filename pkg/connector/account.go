@@ -112,11 +112,6 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 			AccountID:       resource.Id.Resource,
 			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
 		}
-		// Is setting this annotation required?
-		var annos annotations.Annotations
-		// annos.Append(&v2.V1Identifier{
-		// 	Id: MembershipEntitlementID2(b.String()),
-		// })
 		rv = append(rv,
 			&v2.Entitlement{
 				Id:          b.String(),
@@ -124,7 +119,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 				Description: awsSdk.ToString(ps.Description),
 				Resource:    resource,
 				GrantableTo: []*v2.ResourceType{resourceTypeAccount},
-				Annotations: annos,
+				Annotations: nil,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
 				Slug:        "member",
 			})
