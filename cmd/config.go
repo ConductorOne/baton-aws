@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/conductorone/baton-aws/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/spf13/cobra"
 )
@@ -24,22 +25,28 @@ type config struct {
 	GlobalAwsSsoRegion   string `mapstructure:"global-aws-sso-region"`
 	GlobalAwsSsoEnabled  bool   `mapstructure:"global-aws-sso-enabled"`
 	GlobalAwsOrgsEnabled bool   `mapstructure:"global-aws-orgs-enabled"`
+
+	UseAssumeRole bool `mapstructure:"use-assume-role"`
 }
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
 func validateConfig(ctx context.Context, cfg *config) error {
-	if cfg.ExternalID == "" {
-		return fmt.Errorf("external id is missing")
+	if cfg.GlobalAwsSsoRegion == "" {
+		cfg.GlobalAwsSsoRegion = "us-east-1"
 	}
 
-	if cfg.RoleARN == "" {
-		return fmt.Errorf("role arn is missing")
-	}
+	if cfg.UseAssumeRole {
+		if cfg.ExternalID == "" {
+			return fmt.Errorf("external id is missing")
+		} else if len(cfg.ExternalID) < 32 || len(cfg.ExternalID) > 65 {
+			return fmt.Errorf("aws_external_id must be between 32 and 64 bytes")
+		}
+		err := connector.IsValidRoleARN(cfg.RoleARN)
+		if err != nil {
+			return err
+		}
 
-	if cfg.GlobalAwsSsoEnabled && cfg.GlobalAwsOrgsEnabled && cfg.GlobalAwsSsoRegion == "" {
-		return fmt.Errorf("region is missing")
 	}
-
 	return nil
 }
 
@@ -55,4 +62,5 @@ func cmdFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("global-role-arn", "", "The role arn for the aws account")
 	cmd.PersistentFlags().String("global-secret-access-key", "", "The global-secret-access-key for the aws account")
 	cmd.PersistentFlags().String("global-access-key-id", "", "The global-access-key-id for the aws account")
+	cmd.PersistentFlags().Bool("use-assume-role", false, "Enable support for assume role")
 }

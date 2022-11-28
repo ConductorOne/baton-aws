@@ -15,6 +15,9 @@ var (
 )
 
 func IsValidRoleARN(input string) error {
+	if input == "" {
+		return fmt.Errorf("role arn is missing")
+	}
 	parsedArn, err := arn.Parse(input)
 	if err != nil {
 		return fmt.Errorf("aws-connector: invalid role ARN: %w", err)

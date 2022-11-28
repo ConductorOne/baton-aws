@@ -114,7 +114,6 @@ func roleResource(ctx context.Context, role iamTypes.Role) (*v2.Resource, error)
 
 	var annos annotations.Annotations
 	if role.RoleId != nil {
-		// should this be role id? or arn? or can it be multiple things?
 		annos.Append(&v2.V1Identifier{
 			Id: awsSdk.ToString(role.RoleId),
 		})

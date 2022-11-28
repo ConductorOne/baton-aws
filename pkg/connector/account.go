@@ -62,17 +62,9 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		return nil, "", nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
 	}
 
-	accountId, err := AccountIdFromARN(o.roleArn)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to validate ARN: %w", err)
-	}
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
 	for _, p := range resp.Accounts {
-		// Should we just remove this if statement?
-		if false && awsSdk.ToString(p.Id) == accountId {
-			// if this is the "root" account of an AWS Organiztion, don't emit it.
-			continue
-		}
+
 		ur, err := accountResource(ctx, p)
 		if err != nil {
 			return nil, "", nil, err
@@ -289,7 +281,6 @@ func accountResource(ctx context.Context, account types.Account) (*v2.Resource, 
 func accountTrait(ctx context.Context, account types.Account) (*v2.AppTrait, error) {
 	ret := &v2.AppTrait{}
 
-	// Should we set attributes for accounts?
 	attributes, err := structpb.NewStruct(map[string]interface{}{
 		"account_arn": awsSdk.ToString(account.Arn),
 		"account_id":  awsSdk.ToString(account.Id),

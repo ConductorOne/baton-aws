@@ -74,6 +74,7 @@ var (
 )
 
 type Config struct {
+	UseAssumeRole           bool
 	GlobalBindingExternalID string
 	GlobalRegion            string
 	GlobalRoleARN           string
@@ -87,6 +88,7 @@ type Config struct {
 }
 
 type AWS struct {
+	useAssumeRole           bool
 	orgsEnabled             bool
 	ssoEnabled              bool
 	globalRegion            string
@@ -154,6 +156,9 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	}
 	o._onceCallingConfig[region].Do(func() {
 		o._callingConfig[region], o._callingConfigError[region] = func() (awsSdk.Config, error) {
+			if !o.useAssumeRole {
+				return o.baseConfig, nil
+			}
 			l := ctxzap.Extract(ctx)
 			// ok, if we are an instance, we do the assumeRole twice, first time from our Instance role, INTO the binding account
 			// and from there, into the customer account.
@@ -163,6 +168,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 					aro.ExternalID = awsSdk.String(o.globalBindingExternalID)
 				}
 			}))
+
 			_, err := bindingCreds.Retrieve(ctx)
 			if err != nil {
 				l.Error("aws-connector: internal binding error",
@@ -224,6 +230,7 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 	}
 
 	rv := &AWS{
+		useAssumeRole:           config.UseAssumeRole,
 		orgsEnabled:             config.GlobalAwsOrgsEnabled,
 		ssoEnabled:              config.GlobalAwsSsoEnabled,
 		globalRegion:            config.GlobalRegion,
@@ -241,17 +248,8 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		_callingConfigError:     map[string]error{},
 	}
 
-	if len(rv.externalID) < 32 || len(rv.externalID) > 65 {
-		return nil, fmt.Errorf("aws-connector: aws_external_id must be between 32 and 64 bytes")
-	}
-
 	if rv.ssoEnabled && !rv.orgsEnabled {
 		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
-	}
-
-	err = IsValidRoleARN(rv.roleARN)
-	if err != nil {
-		return nil, err
 	}
 
 	return rv, nil
@@ -282,8 +280,6 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	m := map[string]interface{}{
 		"account_id": accountId,
 	}
-	/*profile := make(map[string]interface{})
-	profile["account_id"] = accountId*/
 
 	output, err := iamClient.ListAccountAliases(ctx, &iam.ListAccountAliasesInput{})
 
@@ -356,7 +352,6 @@ func (c *AWS) getIdentityInstance(ctx context.Context) (*awsSsoAdminTypes.Instan
 		return nil, c._identityInstancesCacheErr
 	}
 
-	// TODO(lauren) what if there are > 1?
 	if len(c._identityInstancesCache) == 1 {
 		return c._identityInstancesCache[0], nil
 	}

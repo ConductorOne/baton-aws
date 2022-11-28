@@ -11,7 +11,6 @@ import (
 
 const MembershipEntitlementIDTemplate = "membership:%s"
 const MembershipEntitlementIDTemplate2 = "%s:%s:member"
-const GrantIDTemplate = "grant:%s:%s"
 
 // format is grant:principal-type:principal-id:entitlement%s"
 const GrantIDTemplate2 = "grant:%s:%s:%s"

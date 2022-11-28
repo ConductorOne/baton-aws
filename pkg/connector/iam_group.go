@@ -165,15 +165,13 @@ func iamGroupResource(ctx context.Context, group iamTypes.Group) (*v2.Resource, 
 	annos.Append(ut)
 
 	if group.GroupId != nil {
-		// should this be group id? or arn? or can it be multiple things?
 		annos.Append(&v2.V1Identifier{
 			Id: awsSdk.ToString(group.GroupId),
 		})
 	}
 
 	return &v2.Resource{
-		Id: fmtResourceId(resourceTypeIAMGroup.Id, awsSdk.ToString(group.Arn)),
-		// Id:          fmtResourceId(resourceTypeGroup.Id, awsSdk.ToString(group.GroupId)),
+		Id:          fmtResourceId(resourceTypeIAMGroup.Id, awsSdk.ToString(group.Arn)),
 		DisplayName: awsSdk.ToString(group.GroupName),
 		Annotations: annos,
 	}, nil

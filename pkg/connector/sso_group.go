@@ -162,7 +162,6 @@ func (o *ssoGroupResourceType) ssoGroupResource(ctx context.Context, group awsId
 	if err != nil {
 		return nil, err
 	}
-	// are we sure this is the right region?
 	groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(group.GroupId))
 
 	var annos annotations.Annotations
