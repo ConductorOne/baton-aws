@@ -243,7 +243,8 @@ func (o *accountResourceType) getPermissionSet(ctx context.Context, permissionSe
 	return resp.PermissionSet, nil
 }
 
-func accountBuilder(orgClient *awsOrgs.Client, roleArn string, ssoAdminClient *awsSsoAdmin.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata, region string, identityClient *awsIdentityStore.Client) *accountResourceType {
+func accountBuilder(orgClient *awsOrgs.Client, roleArn string, ssoAdminClient *awsSsoAdmin.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata,
+	region string, identityClient *awsIdentityStore.Client) *accountResourceType {
 	return &accountResourceType{
 		resourceType:     resourceTypeAccount,
 		orgClient:        orgClient,

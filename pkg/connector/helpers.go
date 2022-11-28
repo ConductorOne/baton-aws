@@ -9,9 +9,9 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 )
 
-const MembershipEntitlementIDTemplate = "membership:%s"
-const MembershipEntitlementIDTemplate2 = "%s:%s:member"
+const MembershipEntitlementIDTemplate = "%s:%s:member"
 
+//nolint:godot
 // format is grant:principal-type:principal-id:entitlement%s"
 const GrantIDTemplate2 = "grant:%s:%s:%s"
 
@@ -32,7 +32,7 @@ func fmtResourceId(rTypeID string, id string) *v2.ResourceId {
 }
 
 func MembershipEntitlementID(resource *v2.ResourceId) string {
-	return fmt.Sprintf(MembershipEntitlementIDTemplate2, resource.ResourceType, resource.Resource)
+	return fmt.Sprintf(MembershipEntitlementIDTemplate, resource.ResourceType, resource.Resource)
 }
 
 func GrantID(entitlement *v2.Entitlement, principalId *v2.ResourceId) string {

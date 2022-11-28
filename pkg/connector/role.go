@@ -105,7 +105,7 @@ func iamRoleBuilder(iamClient *iam.Client) *roleResourceType {
 	}
 }
 
-// Create a new connector resource for an aws iam role
+// Create a new connector resource for an aws iam role.
 func roleResource(ctx context.Context, role iamTypes.Role) (*v2.Resource, error) {
 	rt, err := roleTrait(ctx, role)
 	if err != nil {
