@@ -11,8 +11,7 @@ import (
 
 const MembershipEntitlementIDTemplate = "%s:%s:member"
 
-//nolint:godot
-// format is grant:principal-type:principal-id:entitlement%s"
+// format is <grant:principal-type:principal-id:entitlement%s>."
 const GrantIDTemplate2 = "grant:%s:%s:%s"
 
 func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations {

@@ -45,7 +45,6 @@ func validateConfig(ctx context.Context, cfg *config) error {
 		if err != nil {
 			return err
 		}
-
 	}
 	return nil
 }
