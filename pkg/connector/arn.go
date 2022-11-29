@@ -15,6 +15,9 @@ var (
 )
 
 func IsValidRoleARN(input string) error {
+	if input == "" {
+		return fmt.Errorf("role arn is missing")
+	}
 	parsedArn, err := arn.Parse(input)
 	if err != nil {
 		return fmt.Errorf("aws-connector: invalid role ARN: %w", err)
@@ -67,6 +70,17 @@ func ssoUserToARN(region string, identityStoreId string, userId string) string {
 		Region:    region,
 		AccountID: "",
 		Resource:  identityStoreId + "/user/" + userId,
+	}
+	return id.String()
+}
+
+func ssoGroupToARN(region string, identityStoreId string, groupId string) string {
+	id := arn.ARN{
+		Partition: "aws",
+		Service:   "identitystore",
+		Region:    region,
+		AccountID: "",
+		Resource:  identityStoreId + "/group/" + groupId,
 	}
 	return id.String()
 }

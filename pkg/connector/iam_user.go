@@ -26,6 +26,9 @@ func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
+	}
 
 	if bag.Current() == nil {
 		bag.Push(pagination.PageState{
@@ -96,23 +99,14 @@ func iamUserResource(ctx context.Context, user iamTypes.User) (*v2.Resource, err
 	var annos annotations.Annotations
 	annos.Append(ut)
 
-	// TODO(lauren) what to do here? do we always need external link url?
-	/*if user.ProfileUrl != nil {
-		annos.Append(&v2.ExternalLink{
-			Url: awsSdk.ToString(user.ProfileUrl),
-		})
-	}*/
-
 	if user.UserId != nil {
-		// TODO(lauren) should this be user id? or arn? or can it be multiple things?
 		annos.Append(&v2.V1Identifier{
 			Id: awsSdk.ToString(user.UserId),
 		})
 	}
 
 	return &v2.Resource{
-		Id: fmtResourceId(resourceTypeIAMUser.Id, awsSdk.ToString(user.Arn)),
-		// Id:          fmtResourceId(resourceTypeUser.Id, awsSdk.ToString(user.UserId)),
+		Id:          fmtResourceId(resourceTypeIAMUser.Id, awsSdk.ToString(user.Arn)),
 		DisplayName: awsSdk.ToString(user.UserName),
 		Annotations: annos,
 	}, nil

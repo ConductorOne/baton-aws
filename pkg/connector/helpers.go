@@ -2,17 +2,17 @@ package connector
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 )
 
-const MembershipEntitlementIDTemplate = "membership:%s"
-const MembershipEntitlementIDTemplate2 = "%s:%s:member"
-const GrantIDTemplate = "grant:%s:%s"
+const MembershipEntitlementIDTemplate = "%s:%s:member"
 
-// format is grant:principal-type:principal-id:entitlement%s"
-const GrantIDTemplate2 = "grant:%s:%s:%s"
+// The format of grant IDs follows: 'grant:principal-type:principal-id:entitlement'.
+const GrantIDTemplate = "grant:%s:%s:%s"
 
 func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations {
 	annos := annotations.Annotations{}
@@ -31,21 +31,11 @@ func fmtResourceId(rTypeID string, id string) *v2.ResourceId {
 }
 
 func MembershipEntitlementID(resource *v2.ResourceId) string {
-	return fmt.Sprintf(MembershipEntitlementIDTemplate, resource.Resource)
+	return fmt.Sprintf(MembershipEntitlementIDTemplate, resource.ResourceType, resource.Resource)
 }
 
-// TODO(lauren) figure out proper format
-func MembershipEntitlementID2(resource *v2.ResourceId) string {
-	return fmt.Sprintf(MembershipEntitlementIDTemplate2, resource.ResourceType, resource.Resource)
-}
-
-func GrantID(entitlement *v2.Entitlement, userID string) string {
-	return fmt.Sprintf(GrantIDTemplate, entitlement.Id, userID)
-}
-
-// TODO(lauren) figure out proper format
-func GrantID2(entitlement *v2.Entitlement, principal *v2.Resource) string {
-	return fmt.Sprintf(GrantIDTemplate2, principal.Id.ResourceType, principal.Id.Resource, entitlement.Id)
+func GrantID(entitlement *v2.Entitlement, principalId *v2.ResourceId) string {
+	return fmt.Sprintf(GrantIDTemplate, principalId.ResourceType, principalId.Resource, entitlement.Id)
 }
 
 // Convert accepts a list of T and returns a list of R based on the input func.
@@ -55,4 +45,16 @@ func Convert[T any, R any](slice []T, f func(in T) R) []R {
 		ret = append(ret, f(t))
 	}
 	return ret
+}
+
+func ssoGroupIdFromARN(input string) (string, error) {
+	id, err := arn.Parse(input)
+	if err != nil {
+		return "", fmt.Errorf("ssoGroupIdFromARN: ARN Parse failed: %w", err)
+	}
+	_, after, found := strings.Cut(id.Resource, "/group/")
+	if !found {
+		return "", fmt.Errorf("ssoGroupIdFromARN: invalid resrouce '%s' in ARN", input)
+	}
+	return after, nil
 }

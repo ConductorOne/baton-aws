@@ -31,6 +31,9 @@ func (o *ssoUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
+	if err != nil {
+		return nil, "", nil, err
+	}
 
 	if bag.Current() == nil {
 		bag.Push(pagination.PageState{
@@ -53,7 +56,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		ur, err := o.ssoUserResource(ctx, user)
+		ur, err := SsoUserResource(ctx, user, o.region, o.identityInstance.IdentityStoreId)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -93,14 +96,15 @@ func ssoUserBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStoreC
 }
 
 // Create a new connector resource for an aws sso user.
-func (o *ssoUserResourceType) ssoUserResource(ctx context.Context, user awsIdentityStoreTypes.User) (*v2.Resource, error) {
+func SsoUserResource(ctx context.Context, user awsIdentityStoreTypes.User, region string, identityStoreId *string) (*v2.Resource, error) {
 	username := awsSdk.ToString(user.UserName)
 	displayName := awsSdk.ToString(user.DisplayName)
 	if displayName == "" {
 		displayName = username
 	}
+	userARN := ssoUserToARN(region, awsSdk.ToString(identityStoreId), awsSdk.ToString(user.UserId))
 
-	ut, err := ssoUserTrait(ctx, user)
+	ut, err := ssoUserTrait(ctx, user, userARN)
 	if err != nil {
 		return nil, err
 	}
@@ -113,25 +117,20 @@ func (o *ssoUserResourceType) ssoUserResource(ctx context.Context, user awsIdent
 		})
 	}
 	if user.UserId != nil {
-		// TODO(lauren) should this be user id? or arn? or can it be multiple things?
 		annos.Append(&v2.V1Identifier{
-			Id: awsSdk.ToString(user.UserId),
+			Id: userARN,
 		})
 	}
 
-	userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
-
 	return &v2.Resource{
-		// TODO(lauren) should this be user id? or arn?
-		Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
-		// Id:          fmtResourceId(resourceTypeUser.Id, awsSdk.ToString(user.UserId)),
+		Id:          fmtResourceId(resourceTypeSSOUser.Id, userARN),
 		DisplayName: displayName,
 		Annotations: annos,
 	}, nil
 }
 
 // Create and return a User trait for an aws sso user.
-func ssoUserTrait(ctx context.Context, user awsIdentityStoreTypes.User) (*v2.UserTrait, error) {
+func ssoUserTrait(ctx context.Context, user awsIdentityStoreTypes.User, userARN string) (*v2.UserTrait, error) {
 	ret := &v2.UserTrait{
 		Status: &v2.UserTrait_Status{
 			Status: v2.UserTrait_Status_STATUS_ENABLED,
@@ -153,16 +152,13 @@ func ssoUserTrait(ctx context.Context, user awsIdentityStoreTypes.User) (*v2.Use
 		attributes.Fields["nick_name"] = structpb.NewStringValue(awsSdk.ToString(user.NickName))
 	}
 
-	/*if user.ProfileUrl != nil {
-		attributes.Fields["profile_url]"] = structpb.NewStringValue(awsSdk.ToString(user.ProfileUrl))
-	}*/
-
 	if len(user.ExternalIds) >= 1 {
 		lv := &structpb.ListValue{}
 		for _, ext := range user.ExternalIds {
 			attr, _ := structpb.NewStruct(map[string]interface{}{
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
+				"arn":    userARN,
 			})
 			if attr != nil {
 				lv.Values = append(lv.Values, structpb.NewStructValue(attr))
@@ -181,13 +177,6 @@ func ssoUserTrait(ctx context.Context, user awsIdentityStoreTypes.User) (*v2.Use
 			},
 		}
 	}
-
-	// TODO(lauren) add these to profile?
-	/*displayName := awsSdk.ToString(user.DisplayName)
-	if displayName == "" {
-		displayName = username
-	}
-	userARN := ssoUserToARN(o.ssoRegion, awsSdk.ToString(identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))*/
 
 	ret.Profile = attributes
 	return ret, nil

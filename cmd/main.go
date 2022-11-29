@@ -41,7 +41,20 @@ func main() {
 func getConnector(ctx context.Context, cfg *config) (types.ConnectorServer, error) {
 	l := ctxzap.Extract(ctx)
 
-	cb, err := connector.New(ctx, cfg.GlobalBindingExternalID, cfg.GlobalRegion, cfg.GlobalRoleARN, cfg.GlobalSecretAccessKey, cfg.GlobalAccessKeyID, cfg.ExternalID, cfg.RoleARN)
+	config := connector.Config{
+		GlobalBindingExternalID: cfg.GlobalBindingExternalID,
+		GlobalRegion:            cfg.GlobalRegion,
+		GlobalRoleARN:           cfg.GlobalRoleARN,
+		GlobalSecretAccessKey:   cfg.GlobalSecretAccessKey,
+		GlobalAccessKeyID:       cfg.GlobalAccessKeyID,
+		GlobalAwsSsoRegion:      cfg.GlobalAwsSsoRegion,
+		GlobalAwsOrgsEnabled:    cfg.GlobalAwsOrgsEnabled,
+		GlobalAwsSsoEnabled:     cfg.GlobalAwsSsoEnabled,
+		ExternalID:              cfg.ExternalID,
+		RoleARN:                 cfg.RoleARN,
+	}
+
+	cb, err := connector.New(ctx, config)
 	if err != nil {
 		l.Error("error creating connector", zap.Error(err))
 		return nil, err
