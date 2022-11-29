@@ -11,8 +11,8 @@ import (
 
 const MembershipEntitlementIDTemplate = "%s:%s:member"
 
-// format is <grant:principal-type:principal-id:entitlement%s>."
-const GrantIDTemplate2 = "grant:%s:%s:%s"
+//nolint: godot // format is grant:principal-type:principal-id:entitlement"
+const GrantIDTemplate = "grant:%s:%s:%s"
 
 func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations {
 	annos := annotations.Annotations{}
@@ -35,7 +35,7 @@ func MembershipEntitlementID(resource *v2.ResourceId) string {
 }
 
 func GrantID(entitlement *v2.Entitlement, principalId *v2.ResourceId) string {
-	return fmt.Sprintf(GrantIDTemplate2, principalId.ResourceType, principalId.Resource, entitlement.Id)
+	return fmt.Sprintf(GrantIDTemplate, principalId.ResourceType, principalId.Resource, entitlement.Id)
 }
 
 // Convert accepts a list of T and returns a list of R based on the input func.

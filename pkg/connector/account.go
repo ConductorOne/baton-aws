@@ -64,7 +64,6 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
 	for _, p := range resp.Accounts {
-
 		ur, err := accountResource(ctx, p)
 		if err != nil {
 			return nil, "", nil, err
