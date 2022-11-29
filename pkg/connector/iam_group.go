@@ -185,8 +185,8 @@ func iamGroupTrait(ctx context.Context, group iamTypes.Group) (*v2.GroupTrait, e
 		"aws_arn":        awsSdk.ToString(group.Arn),
 		"aws_path":       awsSdk.ToString(group.Path),
 		"aws_group_type": "iam",
-		"aws_group_name": group.GroupName,
-		"aws_group_id":   group.GroupId,
+		"aws_group_name": awsSdk.ToString(group.GroupName),
+		"aws_group_id":   awsSdk.ToString(group.GroupId),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: iam.ListGroups struct creation failed:: %w", err)
