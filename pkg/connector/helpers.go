@@ -11,7 +11,7 @@ import (
 
 const MembershipEntitlementIDTemplate = "%s:%s:member"
 
-// nolint: godot
+//nolint: godot
 // format is grant:principal-type:principal-id:entitlement"
 const GrantIDTemplate = "grant:%s:%s:%s"
 
