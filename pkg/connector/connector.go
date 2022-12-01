@@ -290,7 +290,7 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		displayName += " (" + accountName + ")"
 	}
 	var annos annotations.Annotations
-	annos.Append(&v2.ExternalLink{
+	annos.Update(&v2.ExternalLink{
 		Url: accountId,
 	})
 

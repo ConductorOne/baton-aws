@@ -69,7 +69,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
 	for _, account := range resp.Accounts {
 		var annos annotations.Annotations
-		annos.Append(&v2.V1Identifier{
+		annos.Update(&v2.V1Identifier{
 			Id: awsSdk.ToString(account.Id),
 		})
 		profile := accountProfile(ctx, account)
@@ -114,7 +114,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
 		}
 		var annos annotations.Annotations
-		annos.Append(&v2.V1Identifier{
+		annos.Update(&v2.V1Identifier{
 			Id: MembershipEntitlementID(resource.Id),
 		})
 		member := sdk.NewAssignmentEntitlement(resource, accountMemeberEntitlement, resourceTypeAccount)

@@ -52,7 +52,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
 	for _, group := range resp.Groups {
 		var annos annotations.Annotations
-		annos.Append(&v2.V1Identifier{
+		annos.Update(&v2.V1Identifier{
 			Id: awsSdk.ToString(group.GroupId),
 		})
 
@@ -84,7 +84,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
-	annos.Append(&v2.V1Identifier{
+	annos.Update(&v2.V1Identifier{
 		Id: MembershipEntitlementID(resource.Id),
 	})
 	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeIAMUser)

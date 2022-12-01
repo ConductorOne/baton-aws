@@ -59,7 +59,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	for _, user := range resp.Users {
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		var annos annotations.Annotations
-		annos.Append(&v2.V1Identifier{
+		annos.Update(&v2.V1Identifier{
 			Id: awsSdk.ToString(user.UserId),
 		})
 		profile := ssoUserProfile(ctx, user)

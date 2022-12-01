@@ -16,7 +16,7 @@ const GrantIDTemplate = "grant:%s:%s:%s"
 
 func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations {
 	annos := annotations.Annotations{}
-	annos.Append(&v2.V1Identifier{
+	annos.Update(&v2.V1Identifier{
 		Id: resourceTypeID,
 	})
 

@@ -49,7 +49,7 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
 		var annos annotations.Annotations
-		annos.Append(&v2.V1Identifier{
+		annos.Update(&v2.V1Identifier{
 			Id: awsSdk.ToString(user.UserId),
 		})
 		profile := iamUserProfile(ctx, user)
