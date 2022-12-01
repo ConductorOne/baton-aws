@@ -108,6 +108,8 @@ github.com/conductorone/baton-sdk v0.0.12 h1:hvFzVHr5aeSV4tiNNvn+lqpk16I6HGu77p6
 github.com/conductorone/baton-sdk v0.0.12/go.mod h1:jPdcy08LmTIPzgZcSOo7mviSAG0NUbjavg/1LpCTeOI=
 github.com/conductorone/baton-sdk v0.0.14 h1:NLMKaRjjuC6KBJY5jLGCM/foZ9rgEVlxeNxZd8nYw38=
 github.com/conductorone/baton-sdk v0.0.14/go.mod h1:jPdcy08LmTIPzgZcSOo7mviSAG0NUbjavg/1LpCTeOI=
+github.com/conductorone/baton-sdk v0.0.16 h1:mC4876Ov0Eme7H8qCMeEnHKYUP5NY3eKlvVfyP3I3jk=
+github.com/conductorone/baton-sdk v0.0.16/go.mod h1:jPdcy08LmTIPzgZcSOo7mviSAG0NUbjavg/1LpCTeOI=
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=

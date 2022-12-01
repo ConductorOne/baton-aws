@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.16.15
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.15.13
 	github.com/aws/aws-sdk-go-v2/service/sts v1.17.4
-	github.com/conductorone/baton-sdk v0.0.14
+	github.com/conductorone/baton-sdk v0.0.16
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/spf13/cobra v1.6.1
 	go.uber.org/zap v1.23.0

@@ -19,7 +19,6 @@ func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations
 	annos.Update(&v2.V1Identifier{
 		Id: resourceTypeID,
 	})
-
 	return annos
 }
 

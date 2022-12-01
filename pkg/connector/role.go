@@ -51,15 +51,16 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
 	for _, role := range resp.Roles {
-		var annos annotations.Annotations
-		annos.Update(&v2.V1Identifier{
-			Id: awsSdk.ToString(role.RoleId),
-		})
 		profile := roleProfile(ctx, role)
 		roleResource, err := sdk.NewRoleResource(awsSdk.ToString(role.RoleName), resourceTypeRole, nil, awsSdk.ToString(role.Arn), profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
+		annos := annotations.Annotations(roleResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(role.RoleId),
+		})
+		roleResource.Annotations = annos
 		rv = append(rv, roleResource)
 	}
 

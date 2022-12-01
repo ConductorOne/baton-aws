@@ -68,16 +68,16 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
 	for _, account := range resp.Accounts {
-		var annos annotations.Annotations
-		annos.Update(&v2.V1Identifier{
-			Id: awsSdk.ToString(account.Id),
-		})
 		profile := accountProfile(ctx, account)
-
 		userResource, err := sdk.NewAppResource(awsSdk.ToString(account.Name), resourceTypeAccount, nil, awsSdk.ToString(account.Id), "", profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
+		annos := annotations.Annotations(userResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(account.Id),
+		})
+		userResource.Annotations = annos
 		rv = append(rv, userResource)
 	}
 

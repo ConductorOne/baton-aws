@@ -51,16 +51,16 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
 	for _, group := range resp.Groups {
-		var annos annotations.Annotations
-		annos.Update(&v2.V1Identifier{
-			Id: awsSdk.ToString(group.GroupId),
-		})
-
 		profile := iamGroupProfile(ctx, group)
 		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.GroupName), resourceTypeIAMGroup, nil, awsSdk.ToString(group.Arn), profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
+		annos := annotations.Annotations(groupResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(group.GroupId),
+		})
+		groupResource.Annotations = annos
 		rv = append(rv, groupResource)
 	}
 
