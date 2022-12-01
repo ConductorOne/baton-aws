@@ -51,15 +51,15 @@ func validateConfig(ctx context.Context, cfg *config) error {
 
 // cmdFlags sets the cmdFlags required for the connector.
 func cmdFlags(cmd *cobra.Command) {
-	cmd.PersistentFlags().String("external-id", "", "The external id for the aws account")
-	cmd.PersistentFlags().String("role-arn", "", "The role arn for the aws account")
-	cmd.PersistentFlags().String("global-aws-sso-region", "", "The region for the sso identities")
-	cmd.PersistentFlags().Bool("global-aws-sso-enabled", false, "Enable support for AWS IAM Identity Center")
-	cmd.PersistentFlags().Bool("global-aws-orgs-enabled", false, "Enable support for AWS Organizations")
-	cmd.PersistentFlags().String("global-binding-external-id", "", "The global external id for the aws account")
-	cmd.PersistentFlags().String("global-region", "", "The region for the aws account")
-	cmd.PersistentFlags().String("global-role-arn", "", "The role arn for the aws account")
-	cmd.PersistentFlags().String("global-secret-access-key", "", "The global-secret-access-key for the aws account")
-	cmd.PersistentFlags().String("global-access-key-id", "", "The global-access-key-id for the aws account")
-	cmd.PersistentFlags().Bool("use-assume-role", false, "Enable support for assume role")
+	cmd.PersistentFlags().String("external-id", "", "The external id for the aws account. ($BATON_EXTERNAL_ID)")
+	cmd.PersistentFlags().String("role-arn", "", "The role arn for the aws account. ($BATON_ROLE_ARN)")
+	cmd.PersistentFlags().String("global-aws-sso-region", "", "The region for the sso identities. ($BATON_GLOBAL_AWS_SSO_REGION)")
+	cmd.PersistentFlags().Bool("global-aws-sso-enabled", false, "Enable support for AWS IAM Identity Center. ($BATON_GLOBAL_AWS_SSO_ENABLED)")
+	cmd.PersistentFlags().Bool("global-aws-orgs-enabled", false, "Enable support for AWS Organizations. ($BATON_GLOBAL_AWS_ORGS_ENABLED)")
+	cmd.PersistentFlags().String("global-binding-external-id", "", "The global external id for the aws account. ($BATON_GLOBAL_BINDING_EXTERNAL_ID)")
+	cmd.PersistentFlags().String("global-region", "", "The region for the aws account. ($BATON_GLOBAL_REGION)")
+	cmd.PersistentFlags().String("global-role-arn", "", "The role arn for the aws account. ($BATON_GLOBAL_ROLE_ARN)")
+	cmd.PersistentFlags().String("global-secret-access-key", "", "The global-secret-access-key for the aws account. ($BATON_GLOBAL_SECRET_ACCESS_KEY)")
+	cmd.PersistentFlags().String("global-access-key-id", "", "The global-access-key-id for the aws account. ($BATON_GLOBAL_ACCESS_KEY_ID)")
+	cmd.PersistentFlags().Bool("use-assume-role", false, "Enable support for assume role. ($BATON_GLOBAL_USE_ASSUME_ROLE)")
 }
