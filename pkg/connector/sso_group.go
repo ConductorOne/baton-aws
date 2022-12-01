@@ -91,6 +91,7 @@ func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Reso
 	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeSSOUser)
 	member.Description = fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName)
 	member.Annotations = annos
+	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
 	return []*v2.Entitlement{member}, "", nil, nil
 }
 

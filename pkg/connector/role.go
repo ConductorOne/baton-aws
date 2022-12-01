@@ -90,6 +90,7 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 	member := sdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, resourceTypeIAMGroup, resourceTypeSSOUser)
 	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)
 	member.Annotations = annos
+	member.DisplayName = fmt.Sprintf("%s Role", resource.DisplayName)
 	return []*v2.Entitlement{member}, "", nil, nil
 }
 

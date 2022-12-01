@@ -121,6 +121,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		member.Description = awsSdk.ToString(ps.Description)
 		member.Annotations = annos
 		member.Id = b.String()
+		member.DisplayName = fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
 		return []*v2.Entitlement{member}, "", nil, nil
 	}
 	return rv, "", nil, nil

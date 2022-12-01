@@ -90,6 +90,7 @@ func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Re
 	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeIAMUser)
 	member.Description = fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName)
 	member.Annotations = annos
+	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
 	return []*v2.Entitlement{member}, "", nil, nil
 }
 
