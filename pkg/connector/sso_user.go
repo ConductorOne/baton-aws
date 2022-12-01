@@ -13,6 +13,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/conductorone/baton-sdk/pkg/sdk"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -56,11 +57,18 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		ur, err := SsoUserResource(ctx, user, o.region, o.identityInstance.IdentityStoreId)
+		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
+		profile := ssoUserProfile(ctx, user)
+		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeSSOUser, nil, userARN, getSsoUserEmail(user), profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, ur)
+		annos := annotations.Annotations(userResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(user.UserId),
+		})
+		userResource.Annotations = annos
+		rv = append(rv, userResource)
 	}
 
 	// TODO(lauren) update connector-sdk version and simplify this by just calling bag.NextToken
@@ -95,62 +103,20 @@ func ssoUserBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStoreC
 	}
 }
 
-// Create a new connector resource for an aws sso user.
-func SsoUserResource(ctx context.Context, user awsIdentityStoreTypes.User, region string, identityStoreId *string) (*v2.Resource, error) {
+func getSsoUserEmail(user awsIdentityStoreTypes.User) string {
+	email := ""
 	username := awsSdk.ToString(user.UserName)
-	displayName := awsSdk.ToString(user.DisplayName)
-	if displayName == "" {
-		displayName = username
+	if strings.Contains(username, "@") {
+		email = username
 	}
-	userARN := ssoUserToARN(region, awsSdk.ToString(identityStoreId), awsSdk.ToString(user.UserId))
-
-	ut, err := ssoUserTrait(ctx, user, userARN)
-	if err != nil {
-		return nil, err
-	}
-
-	var annos annotations.Annotations
-	annos.Append(ut)
-	if user.ProfileUrl != nil {
-		annos.Append(&v2.ExternalLink{
-			Url: awsSdk.ToString(user.ProfileUrl),
-		})
-	}
-	if user.UserId != nil {
-		annos.Append(&v2.V1Identifier{
-			Id: userARN,
-		})
-	}
-
-	return &v2.Resource{
-		Id:          fmtResourceId(resourceTypeSSOUser.Id, userARN),
-		DisplayName: displayName,
-		Annotations: annos,
-	}, nil
+	return email
 }
 
-// Create and return a User trait for an aws sso user.
-func ssoUserTrait(ctx context.Context, user awsIdentityStoreTypes.User, userARN string) (*v2.UserTrait, error) {
-	ret := &v2.UserTrait{
-		Status: &v2.UserTrait_Status{
-			Status: v2.UserTrait_Status_STATUS_ENABLED,
-		},
-	}
-
-	// TODO(pquerna): In v2 SDK: AWS Identity Store Users have multiple email-addresses
-	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"aws_user_type": "sso",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: identityStore.ListUsers struct creation failed:: %w", err)
-	}
-
-	if user.Title != nil {
-		attributes.Fields["title"] = structpb.NewStringValue(awsSdk.ToString(user.Title))
-	}
-	if user.NickName != nil {
-		attributes.Fields["nick_name"] = structpb.NewStringValue(awsSdk.ToString(user.NickName))
-	}
+func ssoUserProfile(ctx context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_user_type"] = "sso"
+	profile["aws_user_name"] = awsSdk.ToString(user.DisplayName)
+	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
 	if len(user.ExternalIds) >= 1 {
 		lv := &structpb.ListValue{}
@@ -158,26 +124,12 @@ func ssoUserTrait(ctx context.Context, user awsIdentityStoreTypes.User, userARN 
 			attr, _ := structpb.NewStruct(map[string]interface{}{
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
-				"arn":    userARN,
 			})
 			if attr != nil {
 				lv.Values = append(lv.Values, structpb.NewStructValue(attr))
 			}
 		}
-		attributes.Fields["external_ids"] = structpb.NewListValue(lv)
+		profile["external_ids"] = structpb.NewListValue(lv)
 	}
-
-	username := awsSdk.ToString(user.UserName)
-	if strings.Contains(username, "@") {
-		email := username
-		ret.Emails = []*v2.UserTrait_Email{
-			{
-				Address:   email,
-				IsPrimary: true,
-			},
-		}
-	}
-
-	ret.Profile = attributes
-	return ret, nil
+	return profile
 }

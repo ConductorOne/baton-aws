@@ -24,6 +24,8 @@ func (a *Annotations) Append(msgs ...proto.Message) {
 // Update updates the annotations slice.
 func (a *Annotations) Update(msg proto.Message) {
 	var newAnnotations []*anypb.Any
+
+	found := false
 	for _, v := range *a {
 		if v.MessageIs(msg) {
 			updatedAny, err := anypb.New(msg)
@@ -31,10 +33,21 @@ func (a *Annotations) Update(msg proto.Message) {
 				panic(fmt.Errorf("failed to anypb.New: %w", err))
 			}
 			newAnnotations = append(newAnnotations, updatedAny)
+			found = true
 		} else {
 			newAnnotations = append(newAnnotations, v)
 		}
 	}
+
+	// If we are trying to update a new message, just append it.
+	if !found {
+		v, err := anypb.New(msg)
+		if err != nil {
+			panic(fmt.Errorf("failed to anypb.New: %w", err))
+		}
+		newAnnotations = append(newAnnotations, v)
+	}
+
 	*a = newAnnotations
 }
 
@@ -64,6 +77,6 @@ func (a *Annotations) Pick(needle proto.Message) (bool, error) {
 
 // WithRateLimiting takes a pointer to a RateLimitDescription and appends it to the Annotations slice.
 func (a *Annotations) WithRateLimiting(rateLimit *v2.RateLimitDescription) *Annotations {
-	a.Append(rateLimit)
+	a.Update(rateLimit)
 	return a
 }

@@ -10,7 +10,11 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/conductorone/baton-sdk/pkg/sdk"
+)
+
+const (
+	groupMemberEntitlement = "member"
 )
 
 type iamGroupResourceType struct {
@@ -47,11 +51,17 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
 	for _, group := range resp.Groups {
-		ur, err := iamGroupResource(ctx, group)
+		profile := iamGroupProfile(ctx, group)
+		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.GroupName), resourceTypeIAMGroup, nil, awsSdk.ToString(group.Arn), profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, ur)
+		annos := annotations.Annotations(groupResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(group.GroupId),
+		})
+		groupResource.Annotations = annos
+		rv = append(rv, groupResource)
 	}
 
 	hasNextPage := resp.IsTruncated && resp.Marker != nil
@@ -74,21 +84,14 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
-	annos.Append(&v2.V1Identifier{
+	annos.Update(&v2.V1Identifier{
 		Id: MembershipEntitlementID(resource.Id),
 	})
-	return []*v2.Entitlement{
-		{
-			Id:          MembershipEntitlementID(resource.Id), // TODO(lauren) do something with parent resource id?
-			Resource:    resource,
-			DisplayName: fmt.Sprintf("%s Group Member", resource.DisplayName),
-			Description: fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName),
-			Annotations: annos,
-			GrantableTo: []*v2.ResourceType{resourceTypeIAMUser},
-			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
-			Slug:        "member",
-		},
-	}, "", nil, nil
+	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeIAMUser)
+	member.Description = fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName)
+	member.Annotations = annos
+	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
+	return []*v2.Entitlement{member}, "", nil, nil
 }
 
 func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -110,22 +113,13 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return nil, "", nil, fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err)
 	}
 
-	entitlement := &v2.Entitlement{
-		Id:       MembershipEntitlementID(resource.Id),
-		Resource: resource,
-	}
-
 	var rv []*v2.Grant
 	for _, user := range resp.Users {
-		ur, err := iamUserResource(ctx, user)
+		uID, err := sdk.NewResourceID(resourceTypeIAMUser, awsSdk.ToString(user.Arn))
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, &v2.Grant{
-			Id:          GrantID(entitlement, ur.Id),
-			Entitlement: entitlement,
-			Principal:   ur,
-		})
+		rv = append(rv, sdk.NewGrant(resource, groupMemberEntitlement, uID))
 	}
 
 	hasNextPage := resp.IsTruncated && resp.Marker != nil
@@ -154,44 +148,14 @@ func iamGroupBuilder(iamClient *iam.Client) *iamGroupResourceType {
 	}
 }
 
-// Create a new connector resource for an aws sso group.
-func iamGroupResource(ctx context.Context, group iamTypes.Group) (*v2.Resource, error) {
-	ut, err := iamGroupTrait(ctx, group)
-	if err != nil {
-		return nil, err
-	}
-
-	var annos annotations.Annotations
-	annos.Append(ut)
-
-	if group.GroupId != nil {
-		annos.Append(&v2.V1Identifier{
-			Id: awsSdk.ToString(group.GroupId),
-		})
-	}
-
-	return &v2.Resource{
-		Id:          fmtResourceId(resourceTypeIAMGroup.Id, awsSdk.ToString(group.Arn)),
-		DisplayName: awsSdk.ToString(group.GroupName),
-		Annotations: annos,
-	}, nil
-}
-
 // Create and return a Group trait for an aws sso group.
-func iamGroupTrait(ctx context.Context, group iamTypes.Group) (*v2.GroupTrait, error) {
-	ret := &v2.GroupTrait{}
+func iamGroupProfile(ctx context.Context, group iamTypes.Group) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_arn"] = awsSdk.ToString(group.Arn)
+	profile["aws_path"] = awsSdk.ToString(group.Path)
+	profile["aws_group_type"] = iamType
+	profile["aws_group_name"] = awsSdk.ToString(group.GroupName)
+	profile["aws_group_id"] = awsSdk.ToString(group.GroupId)
 
-	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"aws_arn":        awsSdk.ToString(group.Arn),
-		"aws_path":       awsSdk.ToString(group.Path),
-		"aws_group_type": "iam",
-		"aws_group_name": awsSdk.ToString(group.GroupName),
-		"aws_group_id":   awsSdk.ToString(group.GroupId),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: iam.ListGroups struct creation failed:: %w", err)
-	}
-
-	ret.Profile = attributes
-	return ret, nil
+	return profile
 }

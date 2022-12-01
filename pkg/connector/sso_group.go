@@ -12,6 +12,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/conductorone/baton-sdk/pkg/sdk"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -55,11 +56,18 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
 	for _, group := range resp.Groups {
-		ur, err := o.ssoGroupResource(ctx, group)
+		groupArn := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(group.GroupId))
+		profile := ssoGroupProfile(ctx, group)
+		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.DisplayName), resourceTypeSSOGroup, nil, groupArn, profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, ur)
+		annos := annotations.Annotations(groupResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(group.GroupId),
+		})
+		groupResource.Annotations = annos
+		rv = append(rv, groupResource)
 	}
 
 	// TODO(lauren) update connector-sdk version and simplify this by just calling bag.NextToken
@@ -78,21 +86,14 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
-	annos.Append(&v2.V1Identifier{
+	annos.Update(&v2.V1Identifier{
 		Id: MembershipEntitlementID(resource.Id),
 	})
-	return []*v2.Entitlement{
-		{
-			Id:          MembershipEntitlementID(resource.Id),
-			Resource:    resource,
-			DisplayName: fmt.Sprintf("%s Group Member", resource.DisplayName),
-			Description: fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName),
-			Annotations: annos,
-			GrantableTo: []*v2.ResourceType{resourceTypeSSOUser},
-			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
-			Slug:        "member",
-		},
-	}, "", nil, nil
+	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeSSOUser)
+	member.Description = fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName)
+	member.Annotations = annos
+	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
+	return []*v2.Entitlement{member}, "", nil, nil
 }
 
 func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -119,25 +120,18 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed: %w", err)
 	}
-	entitlement := &v2.Entitlement{
-		Id:       MembershipEntitlementID(resource.Id),
-		Resource: resource,
-	}
 
 	for _, user := range resp.GroupMemberships {
 		member, ok := user.MemberId.(*awsIdentityStoreTypes.MemberIdMemberUserId)
 		if !ok {
 			continue
 		}
-
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member.Value)
-		rv = append(rv, &v2.Grant{
-			Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
-			Entitlement: entitlement,
-			Principal: &v2.Resource{
-				Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
-			},
-		})
+		uID, err := sdk.NewResourceID(resourceTypeSSOUser, userARN)
+		if err != nil {
+			return nil, "", nil, err
+		}
+		rv = append(rv, sdk.NewGrant(resource, groupMemberEntitlement, uID))
 	}
 	nextPage, err := bag.Marshal()
 	if err != nil {
@@ -156,38 +150,11 @@ func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStore
 	}
 }
 
-// Create a new connector resource for an aws sso group.
-func (o *ssoGroupResourceType) ssoGroupResource(ctx context.Context, group awsIdentityStoreTypes.Group) (*v2.Resource, error) {
-	ut, err := ssoGroupTrait(ctx, group)
-	if err != nil {
-		return nil, err
-	}
-	groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(group.GroupId))
-
-	var annos annotations.Annotations
-	annos.Append(ut)
-	if group.GroupId != nil {
-		annos.Append(&v2.V1Identifier{
-			Id: groupARN,
-		})
-	}
-
-	return &v2.Resource{
-		Id:          fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
-		DisplayName: *group.DisplayName,
-		Annotations: annos,
-	}, nil
-}
-
-// Create and return a group trait for an aws sso group.
-func ssoGroupTrait(ctx context.Context, group awsIdentityStoreTypes.Group) (*v2.GroupTrait, error) {
-	ret := &v2.GroupTrait{}
-	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"aws_group_type": "sso",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: identityStore.ListGroups struct creation failed:: %w", err)
-	}
+func ssoGroupProfile(ctx context.Context, group awsIdentityStoreTypes.Group) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_group_type"] = "sso"
+	profile["aws_group_name"] = awsSdk.ToString(group.DisplayName)
+	profile["aws_group_id"] = awsSdk.ToString(group.GroupId)
 
 	if len(group.ExternalIds) >= 1 {
 		lv := &structpb.ListValue{}
@@ -200,9 +167,8 @@ func ssoGroupTrait(ctx context.Context, group awsIdentityStoreTypes.Group) (*v2.
 				lv.Values = append(lv.Values, structpb.NewStructValue(attr))
 			}
 		}
-		attributes.Fields["external_ids"] = structpb.NewListValue(lv)
+		profile["external_ids"] = structpb.NewListValue(lv)
 	}
 
-	ret.Profile = attributes
-	return ret, nil
+	return profile
 }

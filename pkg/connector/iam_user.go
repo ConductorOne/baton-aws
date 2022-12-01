@@ -11,7 +11,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/conductorone/baton-sdk/pkg/sdk"
 )
 
 type iamUserResourceType struct {
@@ -48,11 +48,17 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		ur, err := iamUserResource(ctx, user)
+		profile := iamUserProfile(ctx, user)
+		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeIAMUser, nil, awsSdk.ToString(user.Arn), getUserEmail(user), profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, ur)
+		annos := annotations.Annotations(userResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(user.UserId),
+		})
+		userResource.Annotations = annos
+		rv = append(rv, userResource)
 	}
 
 	hasNextPage := resp.IsTruncated && resp.Marker != nil
@@ -89,67 +95,30 @@ func iamUserBuilder(iamClient *iam.Client) *iamUserResourceType {
 	}
 }
 
-// Create a new connector resource for an aws sso user.
-func iamUserResource(ctx context.Context, user iamTypes.User) (*v2.Resource, error) {
-	ut, err := iamUserTrait(ctx, user)
-	if err != nil {
-		return nil, err
-	}
-
-	var annos annotations.Annotations
-	annos.Append(ut)
-
-	if user.UserId != nil {
-		annos.Append(&v2.V1Identifier{
-			Id: awsSdk.ToString(user.UserId),
-		})
-	}
-
-	return &v2.Resource{
-		Id:          fmtResourceId(resourceTypeIAMUser.Id, awsSdk.ToString(user.Arn)),
-		DisplayName: awsSdk.ToString(user.UserName),
-		Annotations: annos,
-	}, nil
-}
-
-// Create and return a User trait for an aws sso user.
-func iamUserTrait(ctx context.Context, user iamTypes.User) (*v2.UserTrait, error) {
-	ret := &v2.UserTrait{
-		Status: &v2.UserTrait_Status{
-			Status: v2.UserTrait_Status_STATUS_ENABLED,
-		},
-	}
-
-	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"aws_arn":       awsSdk.ToString(user.Arn),
-		"aws_path":      awsSdk.ToString(user.Path),
-		"aws_tags":      userTagsToMap(user),
-		"aws_user_type": "iam",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: iam.ListUsers struct creation failed:: %w", err)
-	}
-
-	email := ""
-	username := awsSdk.ToString(user.UserName)
-	if strings.Contains(username, "@") {
-		email = username
-		ret.Emails = []*v2.UserTrait_Email{
-			{
-				Address:   email,
-				IsPrimary: true,
-			},
-		}
-	}
-
-	ret.Profile = attributes
-	return ret, nil
-}
-
 func userTagsToMap(u iamTypes.User) map[string]interface{} {
 	rv := make(map[string]interface{})
 	for _, tag := range u.Tags {
 		rv[awsSdk.ToString(tag.Key)] = awsSdk.ToString(tag.Value)
 	}
 	return rv
+}
+
+func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_arn"] = awsSdk.ToString(user.Arn)
+	profile["aws_path"] = awsSdk.ToString(user.Path)
+	profile["aws_user_type"] = iamType
+	profile["aws_tags"] = userTagsToMap(user)
+	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
+
+	return profile
+}
+
+func getUserEmail(user iamTypes.User) string {
+	email := ""
+	username := awsSdk.ToString(user.UserName)
+	if strings.Contains(username, "@") {
+		email = username
+	}
+	return email
 }

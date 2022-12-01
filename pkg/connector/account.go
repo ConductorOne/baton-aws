@@ -17,7 +17,11 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/conductorone/baton-sdk/pkg/sdk"
+)
+
+const (
+	accountMemeberEntitlement = "member"
 )
 
 type accountResourceType struct {
@@ -63,12 +67,18 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
-	for _, p := range resp.Accounts {
-		ur, err := accountResource(ctx, p)
+	for _, account := range resp.Accounts {
+		profile := accountProfile(ctx, account)
+		userResource, err := sdk.NewAppResource(awsSdk.ToString(account.Name), resourceTypeAccount, nil, awsSdk.ToString(account.Id), "", profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, ur)
+		annos := annotations.Annotations(userResource.Annotations)
+		annos.Update(&v2.V1Identifier{
+			Id: awsSdk.ToString(account.Id),
+		})
+		userResource.Annotations = annos
+		rv = append(rv, userResource)
 	}
 
 	hasNextPage := resp.NextToken != nil
@@ -103,17 +113,16 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 			AccountID:       resource.Id.Resource,
 			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
 		}
-		rv = append(rv,
-			&v2.Entitlement{
-				Id:          b.String(),
-				DisplayName: fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name)),
-				Description: awsSdk.ToString(ps.Description),
-				Resource:    resource,
-				GrantableTo: []*v2.ResourceType{resourceTypeAccount},
-				Annotations: nil,
-				Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
-				Slug:        "member",
-			})
+		var annos annotations.Annotations
+		annos.Update(&v2.V1Identifier{
+			Id: MembershipEntitlementID(resource.Id),
+		})
+		member := sdk.NewAssignmentEntitlement(resource, accountMemeberEntitlement, resourceTypeAccount)
+		member.Description = awsSdk.ToString(ps.Description)
+		member.Annotations = annos
+		member.Id = b.String()
+		member.DisplayName = fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
+		return []*v2.Entitlement{member}, "", nil, nil
 	}
 	return rv, "", nil, nil
 }
@@ -208,14 +217,12 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 						})
 					}
 				}
-
 				assignmentsInput.NextToken = assignmentsResp.NextToken
 				if assignmentsResp.NextToken == nil {
 					break
 				}
 			} // end pagination loop for assignments
 		} // end range ange psBindingsResp.PermissionSets
-
 		psBindingInput.NextToken = psBindingsResp.NextToken
 		if psBindingsResp.NextToken == nil {
 			break
@@ -253,44 +260,6 @@ func accountBuilder(orgClient *awsOrgs.Client, roleArn string, ssoAdminClient *a
 		identityInstance: identityInstance,
 		region:           region,
 	}
-}
-
-// Create a new connector resource for an aws account.
-func accountResource(ctx context.Context, account types.Account) (*v2.Resource, error) {
-	ut, err := accountTrait(ctx, account)
-	if err != nil {
-		return nil, err
-	}
-
-	var annos annotations.Annotations
-	annos.Append(ut)
-
-	if account.Id != nil {
-		annos.Append(&v2.V1Identifier{
-			Id: awsSdk.ToString(account.Id),
-		})
-	}
-
-	return &v2.Resource{
-		Id:          fmtResourceId(resourceTypeAccount.Id, awsSdk.ToString(account.Id)),
-		DisplayName: awsSdk.ToString(account.Name),
-		Annotations: annos,
-	}, nil
-}
-
-func accountTrait(ctx context.Context, account types.Account) (*v2.AppTrait, error) {
-	ret := &v2.AppTrait{}
-
-	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"account_arn": awsSdk.ToString(account.Arn),
-		"account_id":  awsSdk.ToString(account.Id),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: iam.ListGroups struct creation failed:: %w", err)
-	}
-
-	ret.Profile = attributes
-	return ret, nil
 }
 
 type PermissionSetBinding struct {
@@ -374,4 +343,12 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoA
 	}
 
 	return o._permissionSetsCache, nil
+}
+
+func accountProfile(ctx context.Context, account types.Account) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_account_arn"] = awsSdk.ToString(account.Arn)
+	profile["aws_account_id"] = awsSdk.ToString(account.Id)
+
+	return profile
 }
