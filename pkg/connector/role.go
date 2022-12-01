@@ -10,7 +10,11 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/conductorone/baton-sdk/pkg/sdk"
+)
+
+const (
+	roleAssignmentEntitlement = "assignment"
 )
 
 type roleResourceType struct {
@@ -47,12 +51,16 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
 	for _, role := range resp.Roles {
-		rr, err := roleResource(ctx, role)
+		var annos annotations.Annotations
+		annos.Append(&v2.V1Identifier{
+			Id: awsSdk.ToString(role.RoleId),
+		})
+		profile := roleProfile(ctx, role)
+		roleResource, err := sdk.NewRoleResource(awsSdk.ToString(role.RoleName), resourceTypeRole, nil, awsSdk.ToString(role.Arn), profile)
 		if err != nil {
 			return nil, "", nil, err
 		}
-
-		rv = append(rv, rr)
+		rv = append(rv, roleResource)
 	}
 
 	hasNextPage := resp.IsTruncated && resp.Marker != nil
@@ -79,19 +87,10 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 	annos.Append(&v2.V1Identifier{
 		Id: MembershipEntitlementID(resource.Id),
 	})
-
-	return []*v2.Entitlement{
-		{
-			Id:          MembershipEntitlementID(resource.Id),
-			Resource:    resource,
-			DisplayName: fmt.Sprintf("%s Role", resource.DisplayName),
-			Description: fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName),
-			Annotations: annos,
-			GrantableTo: []*v2.ResourceType{resourceTypeIAMUser, resourceTypeSSOUser},
-			Purpose:     v2.Entitlement_PURPOSE_VALUE_PERMISSION,
-			Slug:        "member",
-		},
-	}, "", nil, nil
+	member := sdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, resourceTypeIAMGroup, resourceTypeSSOUser)
+	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)
+	member.Annotations = annos
+	return []*v2.Entitlement{member}, "", nil, nil
 }
 
 func (o *roleResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
@@ -105,50 +104,21 @@ func iamRoleBuilder(iamClient *iam.Client) *roleResourceType {
 	}
 }
 
-// Create a new connector resource for an aws iam role.
-func roleResource(ctx context.Context, role iamTypes.Role) (*v2.Resource, error) {
-	rt, err := roleTrait(ctx, role)
-	if err != nil {
-		return nil, err
-	}
-
-	var annos annotations.Annotations
-	if role.RoleId != nil {
-		annos.Append(&v2.V1Identifier{
-			Id: awsSdk.ToString(role.RoleId),
-		})
-	}
-	annos.Append(rt)
-
-	return &v2.Resource{
-		Id:          fmtResourceId(resourceTypeRole.Id, awsSdk.ToString(role.Arn)),
-		DisplayName: awsSdk.ToString(role.RoleName),
-		Annotations: annos,
-	}, nil
-}
-
-func roleTrait(ctx context.Context, role iamTypes.Role) (*v2.RoleTrait, error) {
-	ret := &v2.RoleTrait{}
-
-	attributes, err := structpb.NewStruct(map[string]interface{}{
-		"aws_arn":              awsSdk.ToString(role.Arn),
-		"aws_path":             awsSdk.ToString(role.Path),
-		"aws_tags":             roleTagsToMap(role),
-		"aws_role_name":        awsSdk.ToString(role.RoleName),
-		"aws_role_description": awsSdk.ToString(role.Description),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: iam.ListUsers struct creation failed:: %w", err)
-	}
-
-	ret.Profile = attributes
-	return ret, nil
-}
-
 func roleTagsToMap(r iamTypes.Role) map[string]interface{} {
 	rv := make(map[string]interface{})
 	for _, tag := range r.Tags {
 		rv[awsSdk.ToString(tag.Key)] = awsSdk.ToString(tag.Value)
 	}
 	return rv
+}
+
+func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_arn"] = awsSdk.ToString(role.Arn)
+	profile["aws_path"] = awsSdk.ToString(role.Path)
+	profile["aws_tags"] = roleTagsToMap(role)
+	profile["aws_role_name"] = awsSdk.ToString(role.RoleName)
+	profile["aws_role_description"] = awsSdk.ToString(role.Description)
+
+	return profile
 }
