@@ -152,7 +152,7 @@ func iamGroupProfile(ctx context.Context, group iamTypes.Group) map[string]inter
 	profile := make(map[string]interface{})
 	profile["aws_arn"] = awsSdk.ToString(group.Arn)
 	profile["aws_path"] = awsSdk.ToString(group.Path)
-	profile["aws_group_type"] = "iam"
+	profile["aws_group_type"] = iamType
 	profile["aws_group_name"] = awsSdk.ToString(group.GroupName)
 	profile["aws_group_id"] = awsSdk.ToString(group.GroupId)
 

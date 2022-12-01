@@ -9,6 +9,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 )
 
+const (
+	iamType = "iam"
+)
+
 var (
 	// per AWS docs for rolename: https://docs.aws.amazon.com/IAM/latest/APIReference/API_GetRole.html
 	roleNameRE = regexp.MustCompile(`^role/([\W+=,.@-]{1,64})$`)
@@ -25,7 +29,7 @@ func IsValidRoleARN(input string) error {
 	if parsedArn.Partition != "aws" {
 		return fmt.Errorf("aws-connector: invalid role ARN: only aws partition supported")
 	}
-	if parsedArn.Service != "iam" {
+	if parsedArn.Service != iamType {
 		return fmt.Errorf("aws-connector: invalid role ARN: invalid service: must be 'iam'")
 	}
 	if parsedArn.Region != "" {

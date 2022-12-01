@@ -107,7 +107,7 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 	profile := make(map[string]interface{})
 	profile["aws_arn"] = awsSdk.ToString(user.Arn)
 	profile["aws_path"] = awsSdk.ToString(user.Path)
-	profile["aws_user_type"] = "iam"
+	profile["aws_user_type"] = iamType
 	profile["aws_tags"] = userTagsToMap(user)
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
