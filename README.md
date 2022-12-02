@@ -4,7 +4,7 @@
 
 `baton-aws` is a connector for AWS built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates with the AWS API to sync data about which groups and users have access to accounts, groups, and roles within an AWS org.
 
-Check out [Baton](https://github.com/conductorone/baton) to learn more about Baton.
+Check out [Baton](https://github.com/conductorone/baton) to learn more the project in general.
 
 # Getting Started
 
