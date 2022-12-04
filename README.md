@@ -11,7 +11,7 @@ Check out [Baton](https://github.com/conductorone/baton) to learn more the proje
 ## brew
 
 ```
-brew install conductor/baton/baton conductor/baton/baton-aws
+brew install conductorone/baton/baton conductorone/baton/baton-aws
 baton-aws
 baton resources
 ```
@@ -44,6 +44,7 @@ baton resources
 - SSO Users
 
 By default, `baton-aws` use the aws credentials from your aws config. You can explicitly define the region, access key, and secret key by setting the following flags: `global-secret-access-key`, `--global-access-key-id`, `--global-region`.
+
 # Contributing, Support and Issues
 
 We started Baton because we were tired of taking screenshots and manually building spreadsheets. We welcome contributions, and ideas, no matter how small -- our goal is to make identity and permissions sprawl less painful for everyone. If you have questions, problems, or ideas: Please open a Github Issue!
@@ -51,6 +52,7 @@ We started Baton because we were tired of taking screenshots and manually buildi
 See [CONTRIBUTING.md](https://github.com/ConductorOne/baton/blob/main/CONTRIBUTING.md) for more details.
 
 # `baton-aws` Command Line Usage
+
 ```
 baton-aws
 
@@ -74,7 +76,7 @@ Flags:
       --global-binding-external-id string   The global external id for the aws account. ($BATON_GLOBAL_BINDING_EXTERNAL_ID)
       --global-role-arn string              The role arn for the aws account. ($BATON_GLOBAL_ROLE_ARN)
       --global-aws-sso-region string        The region for the sso identities. ($BATON_GLOBAL_AWS_SSO_REGION)
-      --global-aws-sso-enabled bool         Enable support for AWS IAM Identity Center. ($BATON_GLOBAL_AWS_SSO_ENABLED) 
+      --global-aws-sso-enabled bool         Enable support for AWS IAM Identity Center. ($BATON_GLOBAL_AWS_SSO_ENABLED)
       --global-aws-orgs-enabled bool        Enable support for AWS Organizations. ($BATON_GLOBAL_AWS_ORGS_ENABLED)
   -h, --help                                help for baton-aws
       --log-format string                   The output format for logs: json, console ($C1_LOG_FORMAT) (default "json")
