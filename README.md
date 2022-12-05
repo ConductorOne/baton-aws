@@ -41,7 +41,7 @@ baton resources
 - Users
 - Roles
 
-Set the `--global-aws-sso-enabled`, and `--global-aws-orgs-enabled` flags to pull information about the following AWS IAM Identity Center resources:
+Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull information about the following AWS IAM Identity Center resources:
 - SSO Groups
 - SSO Users
 
