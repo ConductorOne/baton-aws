@@ -57,17 +57,15 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
+		annos := &v2.V1Identifier{
+			Id: awsSdk.ToString(user.UserId),
+		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		profile := ssoUserProfile(ctx, user)
-		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeSSOUser, nil, userARN, getSsoUserEmail(user), profile)
+		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeSSOUser, nil, userARN, getSsoUserEmail(user), profile, annos)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		annos := annotations.Annotations(userResource.Annotations)
-		annos.Update(&v2.V1Identifier{
-			Id: awsSdk.ToString(user.UserId),
-		})
-		userResource.Annotations = annos
 		rv = append(rv, userResource)
 	}
 
