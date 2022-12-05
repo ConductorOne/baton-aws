@@ -126,18 +126,10 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 }
 
 func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
-	if err != nil {
-		return nil, "", nil, err
-	}
 	rv := make([]*v2.Grant, 0, 32)
 	psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
 		AccountId:   awsSdk.String(resource.Id.Resource),
 		InstanceArn: o.identityInstance.InstanceArn,
-	}
-	if bag.PageToken() != "" {
-		psBindingInput.NextToken = awsSdk.String(bag.PageToken())
 	}
 
 	for {
