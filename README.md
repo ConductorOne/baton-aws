@@ -28,13 +28,14 @@ docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c
 ```
 go install github.com/conductorone/baton/cmd/baton@main
 go install github.com/conductorone/baton-aws/cmd/baton-aws@main
+
 BATON_GLOBAL_SECRET_ACCESS_KEY=awsSecretAccessKey BATON_GLOBAL_ACCESS_KEY_ID=awsAccessKey
 baton resources
 ```
 
 # Data Model
 
-`baton-aws` will pull down information about the following aws resources:
+`baton-aws` will pull down information about the following AWS resources:
 
 - Accounts
 - Groups
@@ -45,7 +46,8 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
-By default, `baton-aws` uses the aws credentials from your aws config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
+By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
+
 # Contributing, Support and Issues
 
 We started Baton because we were tired of taking screenshots and manually building spreadsheets. We welcome contributions, and ideas, no matter how small -- our goal is to make identity and permissions sprawl less painful for everyone. If you have questions, problems, or ideas: Please open a Github Issue!
