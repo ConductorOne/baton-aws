@@ -9,10 +9,13 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 )
 
-const MembershipEntitlementIDTemplate = "%s:%s:member"
-
-// The format of grant IDs follows: 'grant:principal-type:principal-id:entitlement'.
-const GrantIDTemplate = "grant:%s:%s:%s"
+const (
+	MembershipEntitlementIDTemplate   = "%s:%s:member"
+	V1MembershipEntitlementIDTemplate = "membership:%s"
+	// The format of grant IDs follows: 'grant:principal-type:principal-id:entitlement'.
+	GrantIDTemplate   = "grant:%s:%s:%s"
+	V1GrantIDTemplate = "grant:%s:%s"
+)
 
 func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations {
 	annos := annotations.Annotations{}
@@ -33,8 +36,16 @@ func MembershipEntitlementID(resource *v2.ResourceId) string {
 	return fmt.Sprintf(MembershipEntitlementIDTemplate, resource.ResourceType, resource.Resource)
 }
 
+func V1MembershipEntitlementID(resource *v2.ResourceId) string {
+	return fmt.Sprintf(V1MembershipEntitlementIDTemplate, resource.Resource)
+}
+
 func GrantID(entitlement *v2.Entitlement, principalId *v2.ResourceId) string {
 	return fmt.Sprintf(GrantIDTemplate, principalId.ResourceType, principalId.Resource, entitlement.Id)
+}
+
+func V1GrantID(entitlementID string, userID string) string {
+	return fmt.Sprintf(V1GrantIDTemplate, entitlementID, userID)
 }
 
 // Convert accepts a list of T and returns a list of R based on the input func.

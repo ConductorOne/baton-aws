@@ -52,7 +52,7 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
 	for _, role := range resp.Roles {
 		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(role.RoleId),
+			Id: awsSdk.ToString(role.Arn),
 		}
 		profile := roleProfile(ctx, role)
 		roleResource, err := sdk.NewRoleResource(awsSdk.ToString(role.RoleName), resourceTypeRole, nil, awsSdk.ToString(role.Arn), profile, annos)
@@ -84,7 +84,7 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
 	annos.Update(&v2.V1Identifier{
-		Id: MembershipEntitlementID(resource.Id),
+		Id: V1MembershipEntitlementID(resource.Id),
 	})
 	member := sdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, resourceTypeIAMGroup, resourceTypeSSOUser)
 	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)

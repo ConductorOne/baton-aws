@@ -56,10 +56,10 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
 	for _, group := range resp.Groups {
-		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(group.GroupId),
-		}
 		groupArn := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(group.GroupId))
+		annos := &v2.V1Identifier{
+			Id: groupArn,
+		}
 		profile := ssoGroupProfile(ctx, group)
 		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.DisplayName), resourceTypeSSOGroup, nil, groupArn, profile, annos)
 		if err != nil {
@@ -85,7 +85,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
 	annos.Update(&v2.V1Identifier{
-		Id: MembershipEntitlementID(resource.Id),
+		Id: V1MembershipEntitlementID(resource.Id),
 	})
 	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeSSOUser)
 	member.Description = fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName)
@@ -129,7 +129,14 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, sdk.NewGrant(resource, groupMemberEntitlement, uID))
+		grant := sdk.NewGrant(resource, groupMemberEntitlement, uID)
+		v1Identifier := &v2.V1Identifier{
+			Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
+		}
+		annos := annotations.Annotations(grant.Annotations)
+		annos.Update(v1Identifier)
+		grant.Annotations = annos
+		rv = append(rv, grant)
 	}
 	nextPage, err := bag.Marshal()
 	if err != nil {
