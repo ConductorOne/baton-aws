@@ -52,7 +52,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
 	for _, group := range resp.Groups {
 		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(group.GroupId),
+			Id: awsSdk.ToString(group.Arn),
 		}
 		profile := iamGroupProfile(ctx, group)
 		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.GroupName), resourceTypeIAMGroup, nil, awsSdk.ToString(group.Arn), profile, annos)
@@ -83,7 +83,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	var annos annotations.Annotations
 	annos.Update(&v2.V1Identifier{
-		Id: MembershipEntitlementID(resource.Id),
+		Id: V1MembershipEntitlementID(resource.Id),
 	})
 	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeIAMUser)
 	member.Description = fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName)
@@ -117,7 +117,14 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		if err != nil {
 			return nil, "", nil, err
 		}
-		rv = append(rv, sdk.NewGrant(resource, groupMemberEntitlement, uID))
+		grant := sdk.NewGrant(resource, groupMemberEntitlement, uID)
+		v1Identifier := &v2.V1Identifier{
+			Id: V1GrantID(V1MembershipEntitlementID(resource.Id), awsSdk.ToString(user.Arn)),
+		}
+		annos := annotations.Annotations(grant.Annotations)
+		annos.Update(v1Identifier)
+		grant.Annotations = annos
+		rv = append(rv, grant)
 	}
 
 	hasNextPage := resp.IsTruncated && resp.Marker != nil

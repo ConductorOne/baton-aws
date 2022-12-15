@@ -49,7 +49,7 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
 		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(user.UserId),
+			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
 		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeIAMUser, nil, awsSdk.ToString(user.Arn), getUserEmail(user), profile, annos)

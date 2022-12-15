@@ -113,7 +113,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		}
 		var annos annotations.Annotations
 		annos.Update(&v2.V1Identifier{
-			Id: MembershipEntitlementID(resource.Id),
+			Id: b.String(),
 		})
 		member := sdk.NewAssignmentEntitlement(resource, accountMemeberEntitlement, resourceTypeAccount)
 		member.Description = awsSdk.ToString(ps.Description)
@@ -148,7 +148,10 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 				AccountID:       resource.Id.Resource,
 				PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
 			}
-
+			var annos annotations.Annotations
+			annos.Update(&v2.V1Identifier{
+				Id: bindingName.String(),
+			})
 			entitlement := &v2.Entitlement{
 				Id:          bindingName.String(),
 				DisplayName: fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name)),
@@ -156,6 +159,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 				Resource:    resource,
 				Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
 				GrantableTo: []*v2.ResourceType{resourceTypeSSOGroup, resourceTypeSSOUser},
+				Annotations: annos,
 			}
 
 			assignmentsInput := &awsSsoAdmin.ListAccountAssignmentsInput{
@@ -174,12 +178,17 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 					switch assignment.PrincipalType {
 					case awsSsoAdminTypes.PrincipalTypeGroup:
 						groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+						var groupAnnos annotations.Annotations
+						groupAnnos.Update(&v2.V1Identifier{
+							Id: V1GrantID(entitlement.Id, groupARN),
+						})
 						rv = append(rv, &v2.Grant{
 							Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
 							Entitlement: entitlement,
 							Principal: &v2.Resource{
 								Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
 							},
+							Annotations: groupAnnos,
 						})
 
 						members, err := o.getGroupMembers(ctx, awsSdk.ToString(assignment.PrincipalId))
@@ -188,22 +197,32 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 						}
 						for _, member := range members {
 							userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member)
+							var userAnnos annotations.Annotations
+							userAnnos.Update(&v2.V1Identifier{
+								Id: V1GrantID(entitlement.Id, userARN),
+							})
 							rv = append(rv, &v2.Grant{
 								Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
 								Entitlement: entitlement,
 								Principal: &v2.Resource{
 									Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
 								},
+								Annotations: userAnnos,
 							})
 						}
 					case awsSsoAdminTypes.PrincipalTypeUser:
 						userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+						var userAnnos annotations.Annotations
+						userAnnos.Update(&v2.V1Identifier{
+							Id: V1GrantID(entitlement.Id, userARN),
+						})
 						rv = append(rv, &v2.Grant{
 							Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
 							Entitlement: entitlement,
 							Principal: &v2.Resource{
 								Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
 							},
+							Annotations: userAnnos,
 						})
 					}
 				}
