@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	accountMemeberEntitlement = "member"
+	accountMemberEntitlement = "member"
 )
 
 type accountResourceType struct {
@@ -115,7 +115,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		annos.Update(&v2.V1Identifier{
 			Id: b.String(),
 		})
-		member := sdk.NewAssignmentEntitlement(resource, accountMemeberEntitlement, resourceTypeAccount)
+		member := sdk.NewAssignmentEntitlement(resource, accountMemberEntitlement, resourceTypeAccount)
 		member.Description = awsSdk.ToString(ps.Description)
 		member.Annotations = annos
 		member.Id = b.String()
@@ -132,8 +132,9 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		InstanceArn: o.identityInstance.InstanceArn,
 	}
 
+	psBindingPaginator := awsSsoAdmin.NewListPermissionSetsProvisionedToAccountPaginator(o.ssoAdminClient, psBindingInput)
 	for {
-		psBindingsResp, err := o.ssoAdminClient.ListPermissionSetsProvisionedToAccount(ctx, psBindingInput)
+		psBindingsResp, err := psBindingPaginator.NextPage(ctx)
 		if err != nil {
 			return nil, "", nil, fmt.Errorf("aws-connector: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err)
 		}
@@ -168,8 +169,9 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 				PermissionSetArn: ps.PermissionSetArn,
 			}
 
+			assignmentsPaginator := awsSsoAdmin.NewListAccountAssignmentsPaginator(o.ssoAdminClient, assignmentsInput)
 			for {
-				assignmentsResp, err := o.ssoAdminClient.ListAccountAssignments(ctx, assignmentsInput)
+				assignmentsResp, err := assignmentsPaginator.NextPage(ctx)
 				if err != nil {
 					return nil, "", nil, fmt.Errorf("aws-connector: ssoadmin.ListAccountAssignments failed: %w", err)
 				}
@@ -227,13 +229,13 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 					}
 				}
 				assignmentsInput.NextToken = assignmentsResp.NextToken
-				if assignmentsResp.NextToken == nil {
+				if !assignmentsPaginator.HasMorePages() {
 					break
 				}
 			} // end pagination loop for assignments
 		} // end range ange psBindingsResp.PermissionSets
-		psBindingInput.NextToken = psBindingsResp.NextToken
-		if psBindingsResp.NextToken == nil {
+
+		if !psBindingPaginator.HasMorePages() {
 			break
 		}
 	} // end pagination loop for permission set to account binding
@@ -300,8 +302,9 @@ func (o *accountResourceType) getGroupMembers(ctx context.Context, groupId strin
 		GroupId:         awsSdk.String(groupId),
 	}
 	userIds := make([]string, 0, 16)
+	paginator := awsIdentityStore.NewListGroupMembershipsPaginator(o.identityClient, input)
 	for {
-		resp, err := o.identityClient.ListGroupMemberships(ctx, input)
+		resp, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -312,10 +315,9 @@ func (o *accountResourceType) getGroupMembers(ctx context.Context, groupId strin
 			}
 			userIds = append(userIds, member.Value)
 		}
-		if resp.NextToken == nil {
+		if !paginator.HasMorePages() {
 			break
 		}
-		input.NextToken = resp.NextToken
 	}
 	o._groupMembersCache.Store(groupId, userIds)
 	return userIds, nil
@@ -332,16 +334,16 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoA
 	input := &awsSsoAdmin.ListPermissionSetsInput{
 		InstanceArn: o.identityInstance.InstanceArn,
 	}
+	paginator := awsSsoAdmin.NewListPermissionSetsPaginator(o.ssoAdminClient, input)
 	for {
-		resp, err := o.ssoAdminClient.ListPermissionSets(ctx, input)
+		resp, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, err
 		}
 		permissionSetIDs = append(permissionSetIDs, resp.PermissionSets...)
-		if resp.NextToken == nil {
+		if !paginator.HasMorePages() {
 			break
 		}
-		input.NextToken = resp.NextToken
 	}
 	for _, psId := range permissionSetIDs {
 		ps, err := o.getPermissionSet(ctx, psId)
