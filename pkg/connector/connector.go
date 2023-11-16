@@ -361,11 +361,9 @@ func (c *AWS) getIdentityInstance(ctx context.Context) (*awsSsoAdminTypes.Instan
 		return nil, err
 	}
 
-	nextToken := awsSdk.String("")
+	paginator := awsSsoAdmin.NewListInstancesPaginator(ssoClient, &awsSsoAdmin.ListInstancesInput{})
 	for {
-		resp, err := ssoClient.ListInstances(ctx, &awsSsoAdmin.ListInstancesInput{
-			NextToken: nextToken,
-		})
+		resp, err := paginator.NextPage(ctx)
 		if err != nil {
 			c._identityInstancesCacheErr = err
 			return nil, err
@@ -375,8 +373,7 @@ func (c *AWS) getIdentityInstance(ctx context.Context) (*awsSsoAdminTypes.Instan
 				func(i awsSsoAdminTypes.InstanceMetadata) *awsSsoAdminTypes.InstanceMetadata { return &i },
 			)...,
 		)
-		nextToken = resp.NextToken
-		if nextToken == nil {
+		if !paginator.HasMorePages() {
 			break
 		}
 	}
