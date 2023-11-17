@@ -12,8 +12,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the status of the permission set provisioning requests for a specified IAM
-// Identity Center instance.
+// Lists the status of the permission set provisioning requests for a specified
+// IAM Identity Center instance.
 func (c *Client) ListPermissionSetProvisioningStatus(ctx context.Context, params *ListPermissionSetProvisioningStatusInput, optFns ...func(*Options)) (*ListPermissionSetProvisioningStatusOutput, error) {
 	if params == nil {
 		params = &ListPermissionSetProvisioningStatusInput{}
@@ -33,7 +33,8 @@ type ListPermissionSetProvisioningStatusInput struct {
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// AWS Service Namespaces in the AWS General Reference.
+	// Amazon Web Services Service Namespaces in the Amazon Web Services General
+	// Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -67,12 +68,22 @@ type ListPermissionSetProvisioningStatusOutput struct {
 }
 
 func (c *Client) addOperationListPermissionSetProvisioningStatusMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListPermissionSetProvisioningStatus{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListPermissionSetProvisioningStatus{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListPermissionSetProvisioningStatus"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -93,16 +104,13 @@ func (c *Client) addOperationListPermissionSetProvisioningStatusMiddlewares(stac
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -111,10 +119,16 @@ func (c *Client) addOperationListPermissionSetProvisioningStatusMiddlewares(stac
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpListPermissionSetProvisioningStatusValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListPermissionSetProvisioningStatus(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -124,6 +138,9 @@ func (c *Client) addOperationListPermissionSetProvisioningStatusMiddlewares(stac
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -137,8 +154,8 @@ type ListPermissionSetProvisioningStatusAPIClient interface {
 
 var _ ListPermissionSetProvisioningStatusAPIClient = (*Client)(nil)
 
-// ListPermissionSetProvisioningStatusPaginatorOptions is the paginator options for
-// ListPermissionSetProvisioningStatus
+// ListPermissionSetProvisioningStatusPaginatorOptions is the paginator options
+// for ListPermissionSetProvisioningStatus
 type ListPermissionSetProvisioningStatusPaginatorOptions struct {
 	// The maximum number of results to display for the assignment.
 	Limit int32
@@ -226,7 +243,6 @@ func newServiceMetadataMiddleware_opListPermissionSetProvisioningStatus(region s
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "sso",
 		OperationName: "ListPermissionSetProvisioningStatus",
 	}
 }

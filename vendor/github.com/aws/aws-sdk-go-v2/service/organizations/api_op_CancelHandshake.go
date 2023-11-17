@@ -4,6 +4,7 @@ package organizations
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
@@ -11,8 +12,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Cancels a handshake. Canceling a handshake sets the handshake state to CANCELED.
-// This operation can be called only from the account that originated the
+// Cancels a handshake. Canceling a handshake sets the handshake state to CANCELED
+// . This operation can be called only from the account that originated the
 // handshake. The recipient of the handshake can't cancel it, but can use
 // DeclineHandshake instead. After a handshake is canceled, the recipient can no
 // longer respond to that handshake. After you cancel a handshake, it continues to
@@ -35,10 +36,10 @@ func (c *Client) CancelHandshake(ctx context.Context, params *CancelHandshakeInp
 
 type CancelHandshakeInput struct {
 
-	// The unique identifier (ID) of the handshake that you want to cancel. You can get
-	// the ID from the ListHandshakesForOrganization operation. The regex pattern
-	// (http://wikipedia.org/wiki/regex) for handshake ID string requires "h-" followed
-	// by from 8 to 32 lowercase letters or digits.
+	// The unique identifier (ID) of the handshake that you want to cancel. You can
+	// get the ID from the ListHandshakesForOrganization operation. The regex pattern (http://wikipedia.org/wiki/regex)
+	// for handshake ID string requires "h-" followed by from 8 to 32 lowercase letters
+	// or digits.
 	//
 	// This member is required.
 	HandshakeId *string
@@ -58,12 +59,22 @@ type CancelHandshakeOutput struct {
 }
 
 func (c *Client) addOperationCancelHandshakeMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpCancelHandshake{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpCancelHandshake{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "CancelHandshake"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -84,16 +95,13 @@ func (c *Client) addOperationCancelHandshakeMiddlewares(stack *middleware.Stack,
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -102,10 +110,16 @@ func (c *Client) addOperationCancelHandshakeMiddlewares(stack *middleware.Stack,
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpCancelHandshakeValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCancelHandshake(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -117,6 +131,9 @@ func (c *Client) addOperationCancelHandshakeMiddlewares(stack *middleware.Stack,
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -124,7 +141,6 @@ func newServiceMetadataMiddleware_opCancelHandshake(region string) *awsmiddlewar
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "organizations",
 		OperationName: "CancelHandshake",
 	}
 }

@@ -4,6 +4,7 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -13,9 +14,8 @@ import (
 )
 
 // Retrieves a credential report for the Amazon Web Services account. For more
-// information about the credential report, see Getting credential reports
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/credential-reports.html) in
-// the IAM User Guide.
+// information about the credential report, see Getting credential reports (https://docs.aws.amazon.com/IAM/latest/UserGuide/credential-reports.html)
+// in the IAM User Guide.
 func (c *Client) GetCredentialReport(ctx context.Context, params *GetCredentialReportInput, optFns ...func(*Options)) (*GetCredentialReportOutput, error) {
 	if params == nil {
 		params = &GetCredentialReportInput{}
@@ -42,7 +42,7 @@ type GetCredentialReportOutput struct {
 	Content []byte
 
 	// The date and time when the credential report was created, in ISO 8601 date-time
-	// format (http://www.iso.org/iso/iso8601).
+	// format (http://www.iso.org/iso/iso8601) .
 	GeneratedTime *time.Time
 
 	// The format (MIME type) of the credential report.
@@ -55,12 +55,22 @@ type GetCredentialReportOutput struct {
 }
 
 func (c *Client) addOperationGetCredentialReportMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetCredentialReport{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetCredentialReport{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GetCredentialReport"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -81,16 +91,13 @@ func (c *Client) addOperationGetCredentialReportMiddlewares(stack *middleware.St
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -99,7 +106,13 @@ func (c *Client) addOperationGetCredentialReportMiddlewares(stack *middleware.St
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetCredentialReport(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -111,6 +124,9 @@ func (c *Client) addOperationGetCredentialReportMiddlewares(stack *middleware.St
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -118,7 +134,6 @@ func newServiceMetadataMiddleware_opGetCredentialReport(region string) *awsmiddl
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "GetCredentialReport",
 	}
 }

@@ -4,6 +4,7 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -12,9 +13,8 @@ import (
 )
 
 // Retrieves information about the specified server certificate stored in IAM. For
-// more information about working with server certificates, see Working with server
-// certificates
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html)
+// more information about working with server certificates, see Working with
+// server certificates (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html)
 // in the IAM User Guide. This topic includes a list of Amazon Web Services
 // services that can use the server certificates that you manage with IAM.
 func (c *Client) GetServerCertificate(ctx context.Context, params *GetServerCertificateInput, optFns ...func(*Options)) (*GetServerCertificateOutput, error) {
@@ -35,8 +35,8 @@ func (c *Client) GetServerCertificate(ctx context.Context, params *GetServerCert
 type GetServerCertificateInput struct {
 
 	// The name of the server certificate you want to retrieve information about. This
-	// parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)) a
-	// string of characters consisting of upper and lowercase alphanumeric characters
+	// parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex) )
+	// a string of characters consisting of upper and lowercase alphanumeric characters
 	// with no spaces. You can also include any of the following characters: _+=,.@-
 	//
 	// This member is required.
@@ -60,12 +60,22 @@ type GetServerCertificateOutput struct {
 }
 
 func (c *Client) addOperationGetServerCertificateMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetServerCertificate{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetServerCertificate{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GetServerCertificate"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -86,16 +96,13 @@ func (c *Client) addOperationGetServerCertificateMiddlewares(stack *middleware.S
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -104,10 +111,16 @@ func (c *Client) addOperationGetServerCertificateMiddlewares(stack *middleware.S
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpGetServerCertificateValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetServerCertificate(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -119,6 +132,9 @@ func (c *Client) addOperationGetServerCertificateMiddlewares(stack *middleware.S
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -126,7 +142,6 @@ func newServiceMetadataMiddleware_opGetServerCertificate(region string) *awsmidd
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "GetServerCertificate",
 	}
 }

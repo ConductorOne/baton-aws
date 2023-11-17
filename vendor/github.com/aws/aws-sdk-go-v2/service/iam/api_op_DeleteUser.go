@@ -4,6 +4,7 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -13,33 +14,18 @@ import (
 // Deletes the specified IAM user. Unlike the Amazon Web Services Management
 // Console, when you delete a user programmatically, you must delete the items
 // attached to the user manually, or the deletion fails. For more information, see
-// Deleting an IAM user
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_manage.html#id_users_deleting_cli).
-// Before attempting to delete a user, remove the following items:
-//
-// * Password
-// (DeleteLoginProfile)
-//
-// * Access keys (DeleteAccessKey)
-//
-// * Signing certificate
-// (DeleteSigningCertificate)
-//
-// * SSH public key (DeleteSSHPublicKey)
-//
-// * Git
-// credentials (DeleteServiceSpecificCredential)
-//
-// * Multi-factor authentication
-// (MFA) device (DeactivateMFADevice, DeleteVirtualMFADevice)
-//
-// * Inline policies
-// (DeleteUserPolicy)
-//
-// * Attached managed policies (DetachUserPolicy)
-//
-// * Group
-// memberships (RemoveUserFromGroup)
+// Deleting an IAM user (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_manage.html#id_users_deleting_cli)
+// . Before attempting to delete a user, remove the following items:
+//   - Password ( DeleteLoginProfile )
+//   - Access keys ( DeleteAccessKey )
+//   - Signing certificate ( DeleteSigningCertificate )
+//   - SSH public key ( DeleteSSHPublicKey )
+//   - Git credentials ( DeleteServiceSpecificCredential )
+//   - Multi-factor authentication (MFA) device ( DeactivateMFADevice ,
+//     DeleteVirtualMFADevice )
+//   - Inline policies ( DeleteUserPolicy )
+//   - Attached managed policies ( DetachUserPolicy )
+//   - Group memberships ( RemoveUserFromGroup )
 func (c *Client) DeleteUser(ctx context.Context, params *DeleteUserInput, optFns ...func(*Options)) (*DeleteUserOutput, error) {
 	if params == nil {
 		params = &DeleteUserInput{}
@@ -57,10 +43,10 @@ func (c *Client) DeleteUser(ctx context.Context, params *DeleteUserInput, optFns
 
 type DeleteUserInput struct {
 
-	// The name of the user to delete. This parameter allows (through its regex pattern
-	// (http://wikipedia.org/wiki/regex)) a string of characters consisting of upper
-	// and lowercase alphanumeric characters with no spaces. You can also include any
-	// of the following characters: _+=,.@-
+	// The name of the user to delete. This parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)
+	// ) a string of characters consisting of upper and lowercase alphanumeric
+	// characters with no spaces. You can also include any of the following characters:
+	// _+=,.@-
 	//
 	// This member is required.
 	UserName *string
@@ -76,12 +62,22 @@ type DeleteUserOutput struct {
 }
 
 func (c *Client) addOperationDeleteUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteUser{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "DeleteUser"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -102,16 +98,13 @@ func (c *Client) addOperationDeleteUserMiddlewares(stack *middleware.Stack, opti
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -120,10 +113,16 @@ func (c *Client) addOperationDeleteUserMiddlewares(stack *middleware.Stack, opti
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpDeleteUserValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeleteUser(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -135,6 +134,9 @@ func (c *Client) addOperationDeleteUserMiddlewares(stack *middleware.Stack, opti
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -142,7 +144,6 @@ func newServiceMetadataMiddleware_opDeleteUser(region string) *awsmiddleware.Reg
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "DeleteUser",
 	}
 }

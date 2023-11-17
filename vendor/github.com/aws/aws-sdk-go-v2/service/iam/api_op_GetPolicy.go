@@ -17,17 +17,16 @@ import (
 	"time"
 )
 
-// Retrieves information about the specified managed policy, including the policy's
-// default version and the total number of IAM users, groups, and roles to which
-// the policy is attached. To retrieve the list of the specific users, groups, and
-// roles that the policy is attached to, use ListEntitiesForPolicy. This operation
-// returns metadata about the policy. To retrieve the actual policy document for a
-// specific version of the policy, use GetPolicyVersion. This operation retrieves
-// information about managed policies. To retrieve information about an inline
-// policy that is embedded with an IAM user, group, or role, use GetUserPolicy,
-// GetGroupPolicy, or GetRolePolicy. For more information about policies, see
-// Managed policies and inline policies
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
+// Retrieves information about the specified managed policy, including the
+// policy's default version and the total number of IAM users, groups, and roles to
+// which the policy is attached. To retrieve the list of the specific users,
+// groups, and roles that the policy is attached to, use ListEntitiesForPolicy .
+// This operation returns metadata about the policy. To retrieve the actual policy
+// document for a specific version of the policy, use GetPolicyVersion . This
+// operation retrieves information about managed policies. To retrieve information
+// about an inline policy that is embedded with an IAM user, group, or role, use
+// GetUserPolicy , GetGroupPolicy , or GetRolePolicy . For more information about
+// policies, see Managed policies and inline policies (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
 // in the IAM User Guide.
 func (c *Client) GetPolicy(ctx context.Context, params *GetPolicyInput, optFns ...func(*Options)) (*GetPolicyOutput, error) {
 	if params == nil {
@@ -47,9 +46,8 @@ func (c *Client) GetPolicy(ctx context.Context, params *GetPolicyInput, optFns .
 type GetPolicyInput struct {
 
 	// The Amazon Resource Name (ARN) of the managed policy that you want information
-	// about. For more information about ARNs, see Amazon Resource Names (ARNs)
-	// (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in
-	// the Amazon Web Services General Reference.
+	// about. For more information about ARNs, see Amazon Resource Names (ARNs) (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html)
+	// in the Amazon Web Services General Reference.
 	//
 	// This member is required.
 	PolicyArn *string
@@ -70,12 +68,22 @@ type GetPolicyOutput struct {
 }
 
 func (c *Client) addOperationGetPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetPolicy{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetPolicy{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GetPolicy"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -96,16 +104,13 @@ func (c *Client) addOperationGetPolicyMiddlewares(stack *middleware.Stack, optio
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -114,10 +119,16 @@ func (c *Client) addOperationGetPolicyMiddlewares(stack *middleware.Stack, optio
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpGetPolicyValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetPolicy(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -127,6 +138,9 @@ func (c *Client) addOperationGetPolicyMiddlewares(stack *middleware.Stack, optio
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -152,9 +166,9 @@ type PolicyExistsWaiterOptions struct {
 	// MinDelay must resolve to a value lesser than or equal to the MaxDelay.
 	MinDelay time.Duration
 
-	// MaxDelay is the maximum amount of time to delay between retries. If unset or set
-	// to zero, PolicyExistsWaiter will use default max delay of 120 seconds. Note that
-	// MaxDelay must resolve to value greater than or equal to the MinDelay.
+	// MaxDelay is the maximum amount of time to delay between retries. If unset or
+	// set to zero, PolicyExistsWaiter will use default max delay of 120 seconds. Note
+	// that MaxDelay must resolve to value greater than or equal to the MinDelay.
 	MaxDelay time.Duration
 
 	// LogWaitAttempts is used to enable logging for waiter retry attempts
@@ -301,7 +315,6 @@ func newServiceMetadataMiddleware_opGetPolicy(region string) *awsmiddleware.Regi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "GetPolicy",
 	}
 }

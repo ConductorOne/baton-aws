@@ -4,6 +4,7 @@ package organizations
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
@@ -36,9 +37,9 @@ func (c *Client) DeclineHandshake(ctx context.Context, params *DeclineHandshakeI
 type DeclineHandshakeInput struct {
 
 	// The unique identifier (ID) of the handshake that you want to decline. You can
-	// get the ID from the ListHandshakesForAccount operation. The regex pattern
-	// (http://wikipedia.org/wiki/regex) for handshake ID string requires "h-" followed
-	// by from 8 to 32 lowercase letters or digits.
+	// get the ID from the ListHandshakesForAccount operation. The regex pattern (http://wikipedia.org/wiki/regex)
+	// for handshake ID string requires "h-" followed by from 8 to 32 lowercase letters
+	// or digits.
 	//
 	// This member is required.
 	HandshakeId *string
@@ -49,7 +50,7 @@ type DeclineHandshakeInput struct {
 type DeclineHandshakeOutput struct {
 
 	// A structure that contains details about the declined handshake. The state is
-	// updated to show the value DECLINED.
+	// updated to show the value DECLINED .
 	Handshake *types.Handshake
 
 	// Metadata pertaining to the operation's result.
@@ -59,12 +60,22 @@ type DeclineHandshakeOutput struct {
 }
 
 func (c *Client) addOperationDeclineHandshakeMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpDeclineHandshake{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpDeclineHandshake{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "DeclineHandshake"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -85,16 +96,13 @@ func (c *Client) addOperationDeclineHandshakeMiddlewares(stack *middleware.Stack
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -103,10 +111,16 @@ func (c *Client) addOperationDeclineHandshakeMiddlewares(stack *middleware.Stack
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpDeclineHandshakeValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeclineHandshake(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -118,6 +132,9 @@ func (c *Client) addOperationDeclineHandshakeMiddlewares(stack *middleware.Stack
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -125,7 +142,6 @@ func newServiceMetadataMiddleware_opDeclineHandshake(region string) *awsmiddlewa
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "organizations",
 		OperationName: "DeclineHandshake",
 	}
 }

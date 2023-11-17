@@ -4,6 +4,7 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -12,11 +13,9 @@ import (
 
 // Removes the specified tags from the specified OpenID Connect (OIDC)-compatible
 // identity provider in IAM. For more information about OIDC providers, see About
-// web identity federation
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html).
-// For more information about tagging, see Tagging IAM resources
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html) in the IAM User
-// Guide.
+// web identity federation (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_providers_oidc.html)
+// . For more information about tagging, see Tagging IAM resources (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html)
+// in the IAM User Guide.
 func (c *Client) UntagOpenIDConnectProvider(ctx context.Context, params *UntagOpenIDConnectProviderInput, optFns ...func(*Options)) (*UntagOpenIDConnectProviderOutput, error) {
 	if params == nil {
 		params = &UntagOpenIDConnectProviderInput{}
@@ -35,8 +34,8 @@ func (c *Client) UntagOpenIDConnectProvider(ctx context.Context, params *UntagOp
 type UntagOpenIDConnectProviderInput struct {
 
 	// The ARN of the OIDC provider in IAM from which you want to remove tags. This
-	// parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)) a
-	// string of characters consisting of upper and lowercase alphanumeric characters
+	// parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex) )
+	// a string of characters consisting of upper and lowercase alphanumeric characters
 	// with no spaces. You can also include any of the following characters: _+=,.@-
 	//
 	// This member is required.
@@ -59,12 +58,22 @@ type UntagOpenIDConnectProviderOutput struct {
 }
 
 func (c *Client) addOperationUntagOpenIDConnectProviderMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpUntagOpenIDConnectProvider{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUntagOpenIDConnectProvider{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "UntagOpenIDConnectProvider"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -85,16 +94,13 @@ func (c *Client) addOperationUntagOpenIDConnectProviderMiddlewares(stack *middle
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -103,10 +109,16 @@ func (c *Client) addOperationUntagOpenIDConnectProviderMiddlewares(stack *middle
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpUntagOpenIDConnectProviderValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opUntagOpenIDConnectProvider(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -118,6 +130,9 @@ func (c *Client) addOperationUntagOpenIDConnectProviderMiddlewares(stack *middle
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -125,7 +140,6 @@ func newServiceMetadataMiddleware_opUntagOpenIDConnectProvider(region string) *a
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "UntagOpenIDConnectProvider",
 	}
 }
