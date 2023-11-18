@@ -32,7 +32,7 @@ func (c *Client) ListGroupsForUser(ctx context.Context, params *ListGroupsForUse
 type ListGroupsForUserInput struct {
 
 	// The name of the user to list groups for. This parameter allows (through its
-	// regex pattern (http://wikipedia.org/wiki/regex) ) a string of characters
+	// regex pattern (http://wikipedia.org/wiki/regex)) a string of characters
 	// consisting of upper and lowercase alphanumeric characters with no spaces. You
 	// can also include any of the following characters: _+=,.@-
 	//
@@ -47,10 +47,10 @@ type ListGroupsForUserInput struct {
 
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	MaxItems *int32
 
@@ -69,11 +69,11 @@ type ListGroupsForUserOutput struct {
 	// were truncated, you can make a subsequent pagination request using the Marker
 	// request parameter to retrieve more items. Note that IAM might return fewer than
 	// the MaxItems number of results even when there are more results available. We
-	// recommend that you check IsTruncated after every call to ensure that you
-	// receive all your results.
+	// recommend that you check IsTruncated after every call to ensure that you receive
+	// all your results.
 	IsTruncated bool
 
-	// When IsTruncated is true , this element is present and contains the value to use
+	// When IsTruncated is true, this element is present and contains the value to use
 	// for the Marker parameter in a subsequent pagination request.
 	Marker *string
 
@@ -84,22 +84,12 @@ type ListGroupsForUserOutput struct {
 }
 
 func (c *Client) addOperationListGroupsForUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpListGroupsForUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListGroupsForUser{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListGroupsForUser"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -120,13 +110,16 @@ func (c *Client) addOperationListGroupsForUserMiddlewares(stack *middleware.Stac
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -135,16 +128,10 @@ func (c *Client) addOperationListGroupsForUserMiddlewares(stack *middleware.Stac
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListGroupsForUserValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListGroupsForUser(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -154,9 +141,6 @@ func (c *Client) addOperationListGroupsForUserMiddlewares(stack *middleware.Stac
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -174,10 +158,10 @@ var _ ListGroupsForUserAPIClient = (*Client)(nil)
 type ListGroupsForUserPaginatorOptions struct {
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	Limit int32
 
@@ -262,6 +246,7 @@ func newServiceMetadataMiddleware_opListGroupsForUser(region string) *awsmiddlew
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "ListGroupsForUser",
 	}
 }

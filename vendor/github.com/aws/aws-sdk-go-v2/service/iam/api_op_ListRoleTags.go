@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -34,7 +33,7 @@ func (c *Client) ListRoleTags(ctx context.Context, params *ListRoleTagsInput, op
 type ListRoleTagsInput struct {
 
 	// The name of the IAM role for which you want to see the list of tags. This
-	// parameter accepts (through its regex pattern (http://wikipedia.org/wiki/regex) )
+	// parameter accepts (through its regex pattern (http://wikipedia.org/wiki/regex))
 	// a string of characters that consist of upper and lowercase alphanumeric
 	// characters with no spaces. You can also include any of the following characters:
 	// _+=,.@-
@@ -50,10 +49,10 @@ type ListRoleTagsInput struct {
 
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	MaxItems *int32
 
@@ -62,8 +61,8 @@ type ListRoleTagsInput struct {
 
 type ListRoleTagsOutput struct {
 
-	// The list of tags that are currently attached to the role. Each tag consists of
-	// a key name and an associated value. If no tags are attached to the specified
+	// The list of tags that are currently attached to the role. Each tag consists of a
+	// key name and an associated value. If no tags are attached to the specified
 	// resource, the response contains an empty list.
 	//
 	// This member is required.
@@ -73,11 +72,11 @@ type ListRoleTagsOutput struct {
 	// were truncated, you can make a subsequent pagination request using the Marker
 	// request parameter to retrieve more items. Note that IAM might return fewer than
 	// the MaxItems number of results even when there are more results available. We
-	// recommend that you check IsTruncated after every call to ensure that you
-	// receive all your results.
+	// recommend that you check IsTruncated after every call to ensure that you receive
+	// all your results.
 	IsTruncated bool
 
-	// When IsTruncated is true , this element is present and contains the value to use
+	// When IsTruncated is true, this element is present and contains the value to use
 	// for the Marker parameter in a subsequent pagination request.
 	Marker *string
 
@@ -88,22 +87,12 @@ type ListRoleTagsOutput struct {
 }
 
 func (c *Client) addOperationListRoleTagsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpListRoleTags{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListRoleTags{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListRoleTags"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -124,13 +113,16 @@ func (c *Client) addOperationListRoleTagsMiddlewares(stack *middleware.Stack, op
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -139,16 +131,10 @@ func (c *Client) addOperationListRoleTagsMiddlewares(stack *middleware.Stack, op
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListRoleTagsValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListRoleTags(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -160,111 +146,14 @@ func (c *Client) addOperationListRoleTagsMiddlewares(stack *middleware.Stack, op
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
-}
-
-// ListRoleTagsAPIClient is a client that implements the ListRoleTags operation.
-type ListRoleTagsAPIClient interface {
-	ListRoleTags(context.Context, *ListRoleTagsInput, ...func(*Options)) (*ListRoleTagsOutput, error)
-}
-
-var _ ListRoleTagsAPIClient = (*Client)(nil)
-
-// ListRoleTagsPaginatorOptions is the paginator options for ListRoleTags
-type ListRoleTagsPaginatorOptions struct {
-	// Use this only when paginating results to indicate the maximum number of items
-	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
-	// parameter, the number of items defaults to 100. Note that IAM might return fewer
-	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
-	// include in the subsequent call that tells the service where to continue from.
-	Limit int32
-
-	// Set to true if pagination should stop if the service returns a pagination token
-	// that matches the most recent token provided to the service.
-	StopOnDuplicateToken bool
-}
-
-// ListRoleTagsPaginator is a paginator for ListRoleTags
-type ListRoleTagsPaginator struct {
-	options   ListRoleTagsPaginatorOptions
-	client    ListRoleTagsAPIClient
-	params    *ListRoleTagsInput
-	nextToken *string
-	firstPage bool
-}
-
-// NewListRoleTagsPaginator returns a new ListRoleTagsPaginator
-func NewListRoleTagsPaginator(client ListRoleTagsAPIClient, params *ListRoleTagsInput, optFns ...func(*ListRoleTagsPaginatorOptions)) *ListRoleTagsPaginator {
-	if params == nil {
-		params = &ListRoleTagsInput{}
-	}
-
-	options := ListRoleTagsPaginatorOptions{}
-	if params.MaxItems != nil {
-		options.Limit = *params.MaxItems
-	}
-
-	for _, fn := range optFns {
-		fn(&options)
-	}
-
-	return &ListRoleTagsPaginator{
-		options:   options,
-		client:    client,
-		params:    params,
-		firstPage: true,
-		nextToken: params.Marker,
-	}
-}
-
-// HasMorePages returns a boolean indicating whether more pages are available
-func (p *ListRoleTagsPaginator) HasMorePages() bool {
-	return p.firstPage || (p.nextToken != nil && len(*p.nextToken) != 0)
-}
-
-// NextPage retrieves the next ListRoleTags page.
-func (p *ListRoleTagsPaginator) NextPage(ctx context.Context, optFns ...func(*Options)) (*ListRoleTagsOutput, error) {
-	if !p.HasMorePages() {
-		return nil, fmt.Errorf("no more pages available")
-	}
-
-	params := *p.params
-	params.Marker = p.nextToken
-
-	var limit *int32
-	if p.options.Limit > 0 {
-		limit = &p.options.Limit
-	}
-	params.MaxItems = limit
-
-	result, err := p.client.ListRoleTags(ctx, &params, optFns...)
-	if err != nil {
-		return nil, err
-	}
-	p.firstPage = false
-
-	prevToken := p.nextToken
-	p.nextToken = result.Marker
-
-	if p.options.StopOnDuplicateToken &&
-		prevToken != nil &&
-		p.nextToken != nil &&
-		*prevToken == *p.nextToken {
-		p.nextToken = nil
-	}
-
-	return result, nil
 }
 
 func newServiceMetadataMiddleware_opListRoleTags(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "ListRoleTags",
 	}
 }

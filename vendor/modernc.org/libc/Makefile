@@ -2,14 +2,13 @@
 # Use of this source code is governed by a BSD-style
 # license that can be found in the LICENSE file.
 
-.PHONY:	all bench build_all_targets clean cover cpu editor internalError later mem nuke todo edit work devbench \
+.PHONY:	all bench build_all_targets clean cover cpu editor internalError later mem nuke todo edit devbench \
 	darwin_amd64 \
 	darwin_arm64 \
 	linux_386 \
 	linux_amd64 \
 	linux_arm \
 	linux_arm64 \
-	strace \
 
 
 grep=--include=*.go --include=*.l --include=*.y --include=*.yy --include=*.qbe --include=*.ssa
@@ -165,15 +164,13 @@ cpu: clean
 
 edit:
 	@touch log
-	@if [ -f "Session.vim" ]; then novim -S & else novim -p Makefile libc.go & fi
+	@if [ -f "Session.vim" ]; then gvim -S & else gvim -p Makefile *.go & fi
 
 editor:
 	# go generate 2>&1 | tee log
 	gofmt -l -s -w *.go
 	go test -short 2>&1 | tee -a log
 	go install -v ./...
-	go build -o /dev/null generate.go
-	go build -o /dev/null strace.go
 
 later:
 	@grep -n $(grep) LATER * || true
@@ -192,15 +189,3 @@ todo:
 	@grep -nr $(grep) BUG * | grep -v $(ngrep) || true
 	@grep -nr $(grep) [^[:alpha:]]println * | grep -v $(ngrep) || true
 	@grep -nir $(grep) 'work.*progress' || true
-
-work:
-	rm -f go.work*
-	go work init
-	go work use .
-	go work use ../ccgo/v4
-	go work use ../ccgo/v3
-	go work use ../cc/v4
-
-strace:
-	go run strace.go
-	go build -v ./...

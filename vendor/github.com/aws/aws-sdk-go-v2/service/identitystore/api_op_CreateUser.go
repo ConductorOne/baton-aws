@@ -4,7 +4,6 @@ package identitystore
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
@@ -12,7 +11,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Creates a user within the specified identity store.
+// Creates a new user within the specified identity store.
 func (c *Client) CreateUser(ctx context.Context, params *CreateUserInput, optFns ...func(*Options)) (*CreateUserOutput, error) {
 	if params == nil {
 		params = &CreateUserInput{}
@@ -38,17 +37,17 @@ type CreateUserInput struct {
 	// A list of Address objects containing addresses associated with the user.
 	Addresses []types.Address
 
-	// A string containing the name of the user. This value is typically formatted for
+	// A string containing the user's name. This value is typically formatted for
 	// display when the user is referenced. For example, "John Doe."
 	DisplayName *string
 
 	// A list of Email objects containing email addresses associated with the user.
 	Emails []types.Email
 
-	// A string containing the geographical region or location of the user.
+	// A string containing the user's geographical region or location.
 	Locale *string
 
-	// An object containing the name of the user.
+	// An object containing the user's name.
 	Name *types.Name
 
 	// A string containing an alternate name for the user.
@@ -61,25 +60,24 @@ type CreateUserInput struct {
 	// English" or "en-us."
 	PreferredLanguage *string
 
-	// A string containing a URL that might be associated with the user.
+	// A string containing a URL that may be associated with the user.
 	ProfileUrl *string
 
-	// A string containing the time zone of the user.
+	// A string containing the user's time zone.
 	Timezone *string
 
-	// A string containing the title of the user. Possible values are left
-	// unspecified. The value can vary based on your specific use case.
+	// A string containing the user's title. Possible values are left unspecified given
+	// that they depend on each customer's specific needs.
 	Title *string
 
 	// A unique string used to identify the user. The length limit is 128 characters.
 	// This value can consist of letters, accented characters, symbols, numbers, and
 	// punctuation. This value is specified at the time the user is created and stored
-	// as an attribute of the user object in the identity store. Administrator and
-	// AWSAdministrators are reserved names and can't be used for users or groups.
+	// as an attribute of the user object in the identity store.
 	UserName *string
 
-	// A string indicating the type of user. Possible values are left unspecified. The
-	// value can vary based on your specific use case.
+	// A string indicating the user's type. Possible values depend on each customer's
+	// specific needs, so they are left unspecified.
 	UserType *string
 
 	noSmithyDocumentSerde
@@ -104,22 +102,12 @@ type CreateUserOutput struct {
 }
 
 func (c *Client) addOperationCreateUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpCreateUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpCreateUser{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "CreateUser"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -140,13 +128,16 @@ func (c *Client) addOperationCreateUserMiddlewares(stack *middleware.Stack, opti
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -155,16 +146,10 @@ func (c *Client) addOperationCreateUserMiddlewares(stack *middleware.Stack, opti
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpCreateUserValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCreateUser(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -176,9 +161,6 @@ func (c *Client) addOperationCreateUserMiddlewares(stack *middleware.Stack, opti
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -186,6 +168,7 @@ func newServiceMetadataMiddleware_opCreateUser(region string) *awsmiddleware.Reg
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "identitystore",
 		OperationName: "CreateUser",
 	}
 }

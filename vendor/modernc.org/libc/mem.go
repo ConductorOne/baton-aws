@@ -21,9 +21,6 @@ var (
 
 // void *malloc(size_t size);
 func Xmalloc(t *TLS, n types.Size_t) uintptr {
-	if __ccgo_strace {
-		trc("t=%v n=%v, (%v:)", t, n, origin(2))
-	}
 	if n == 0 {
 		return 0
 	}
@@ -43,9 +40,6 @@ func Xmalloc(t *TLS, n types.Size_t) uintptr {
 
 // void *calloc(size_t nmemb, size_t size);
 func Xcalloc(t *TLS, n, size types.Size_t) uintptr {
-	if __ccgo_strace {
-		trc("t=%v size=%v, (%v:)", t, size, origin(2))
-	}
 	rq := int(n * size)
 	if rq == 0 {
 		return 0
@@ -66,9 +60,6 @@ func Xcalloc(t *TLS, n, size types.Size_t) uintptr {
 
 // void *realloc(void *ptr, size_t size);
 func Xrealloc(t *TLS, ptr uintptr, size types.Size_t) uintptr {
-	if __ccgo_strace {
-		trc("t=%v ptr=%v size=%v, (%v:)", t, ptr, size, origin(2))
-	}
 	allocMu.Lock()
 
 	defer allocMu.Unlock()
@@ -84,9 +75,6 @@ func Xrealloc(t *TLS, ptr uintptr, size types.Size_t) uintptr {
 
 // void free(void *ptr);
 func Xfree(t *TLS, p uintptr) {
-	if __ccgo_strace {
-		trc("t=%v p=%v, (%v:)", t, p, origin(2))
-	}
 	if p == 0 {
 		return
 	}
@@ -96,22 +84,6 @@ func Xfree(t *TLS, p uintptr) {
 	defer allocMu.Unlock()
 
 	allocator.UintptrFree(p)
-}
-
-func Xmalloc_usable_size(tls *TLS, p uintptr) (r types.Size_t) {
-	if __ccgo_strace {
-		trc("tls=%v p=%v, (%v:)", tls, p, origin(2))
-		defer func() { trc("-> %v", r) }()
-	}
-	if p == 0 {
-		return 0
-	}
-
-	allocMu.Lock()
-
-	defer allocMu.Unlock()
-
-	return types.Size_t(memory.UintptrUsableSize(p))
 }
 
 func UsableSize(p uintptr) types.Size_t {

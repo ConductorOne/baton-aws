@@ -12,8 +12,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the status of the Amazon Web Services account assignment creation
-// requests for a specified IAM Identity Center instance.
+// Lists the status of the AWS account assignment creation requests for a specified
+// IAM Identity Center instance.
 func (c *Client) ListAccountAssignmentCreationStatus(ctx context.Context, params *ListAccountAssignmentCreationStatusInput, optFns ...func(*Options)) (*ListAccountAssignmentCreationStatusOutput, error) {
 	if params == nil {
 		params = &ListAccountAssignmentCreationStatusInput{}
@@ -33,8 +33,7 @@ type ListAccountAssignmentCreationStatusInput struct {
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// Amazon Web Services Service Namespaces in the Amazon Web Services General
-	// Reference.
+	// AWS Service Namespaces in the AWS General Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -68,22 +67,12 @@ type ListAccountAssignmentCreationStatusOutput struct {
 }
 
 func (c *Client) addOperationListAccountAssignmentCreationStatusMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListAccountAssignmentCreationStatus{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListAccountAssignmentCreationStatus{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListAccountAssignmentCreationStatus"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -104,13 +93,16 @@ func (c *Client) addOperationListAccountAssignmentCreationStatusMiddlewares(stac
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -119,16 +111,10 @@ func (c *Client) addOperationListAccountAssignmentCreationStatusMiddlewares(stac
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListAccountAssignmentCreationStatusValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListAccountAssignmentCreationStatus(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -138,9 +124,6 @@ func (c *Client) addOperationListAccountAssignmentCreationStatusMiddlewares(stac
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -154,8 +137,8 @@ type ListAccountAssignmentCreationStatusAPIClient interface {
 
 var _ ListAccountAssignmentCreationStatusAPIClient = (*Client)(nil)
 
-// ListAccountAssignmentCreationStatusPaginatorOptions is the paginator options
-// for ListAccountAssignmentCreationStatus
+// ListAccountAssignmentCreationStatusPaginatorOptions is the paginator options for
+// ListAccountAssignmentCreationStatus
 type ListAccountAssignmentCreationStatusPaginatorOptions struct {
 	// The maximum number of results to display for the assignment.
 	Limit int32
@@ -243,6 +226,7 @@ func newServiceMetadataMiddleware_opListAccountAssignmentCreationStatus(region s
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "sso",
 		OperationName: "ListAccountAssignmentCreationStatus",
 	}
 }

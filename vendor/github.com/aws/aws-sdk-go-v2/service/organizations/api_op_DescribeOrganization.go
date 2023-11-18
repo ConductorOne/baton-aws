@@ -4,7 +4,6 @@ package organizations
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
@@ -12,10 +11,10 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Retrieves information about the organization that the user's account belongs
-// to. This operation can be called from any account in the organization. Even if a
+// Retrieves information about the organization that the user's account belongs to.
+// This operation can be called from any account in the organization. Even if a
 // policy type is shown as available in the organization, you can disable it
-// separately at the root level with DisablePolicyType . Use ListRoots to see the
+// separately at the root level with DisablePolicyType. Use ListRoots to see the
 // status of policy types for a specified root.
 func (c *Client) DescribeOrganization(ctx context.Context, params *DescribeOrganizationInput, optFns ...func(*Options)) (*DescribeOrganizationOutput, error) {
 	if params == nil {
@@ -52,22 +51,12 @@ type DescribeOrganizationOutput struct {
 }
 
 func (c *Client) addOperationDescribeOrganizationMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpDescribeOrganization{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpDescribeOrganization{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "DescribeOrganization"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -88,13 +77,16 @@ func (c *Client) addOperationDescribeOrganizationMiddlewares(stack *middleware.S
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -103,13 +95,7 @@ func (c *Client) addOperationDescribeOrganizationMiddlewares(stack *middleware.S
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDescribeOrganization(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -121,9 +107,6 @@ func (c *Client) addOperationDescribeOrganizationMiddlewares(stack *middleware.S
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -131,6 +114,7 @@ func newServiceMetadataMiddleware_opDescribeOrganization(region string) *awsmidd
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "organizations",
 		OperationName: "DescribeOrganization",
 	}
 }

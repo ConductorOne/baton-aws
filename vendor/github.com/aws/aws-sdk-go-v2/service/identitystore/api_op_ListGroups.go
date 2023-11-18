@@ -13,11 +13,8 @@ import (
 )
 
 // Lists all groups in the identity store. Returns a paginated list of complete
-// Group objects. Filtering for a Group by the DisplayName attribute is
-// deprecated. Instead, use the GetGroupId API action. If you have administrator
-// access to a member account, you can use this API from the member account. Read
-// about member accounts (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html)
-// in the Organizations User Guide.
+// Group objects. Filtering for a Group by the DisplayName attribute is deprecated.
+// Instead, use the GetGroupId API action.
 func (c *Client) ListGroups(ctx context.Context, params *ListGroupsInput, optFns ...func(*Options)) (*ListGroupsOutput, error) {
 	if params == nil {
 		params = &ListGroupsInput{}
@@ -35,7 +32,7 @@ func (c *Client) ListGroups(ctx context.Context, params *ListGroupsInput, optFns
 
 type ListGroupsInput struct {
 
-	// The globally unique identifier for the identity store, such as d-1234567890 . In
+	// The globally unique identifier for the identity store, such as d-1234567890. In
 	// this example, d- is a fixed prefix, and 1234567890 is a randomly generated
 	// string that contains numbers and lower case letters. This value is generated at
 	// the time that a new identity store is created.
@@ -50,9 +47,9 @@ type ListGroupsInput struct {
 	// GetGroupId API instead.
 	Filters []types.Filter
 
-	// The maximum number of results to be returned per request. This parameter is
-	// used in the ListUsers and ListGroups requests to specify how many results to
-	// return in one page. The length limit is 50 characters.
+	// The maximum number of results to be returned per request. This parameter is used
+	// in the ListUsers and ListGroups requests to specify how many results to return
+	// in one page. The length limit is 50 characters.
 	MaxResults *int32
 
 	// The pagination token used for the ListUsers and ListGroups API operations. This
@@ -84,22 +81,12 @@ type ListGroupsOutput struct {
 }
 
 func (c *Client) addOperationListGroupsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListGroups{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListGroups{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListGroups"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -120,13 +107,16 @@ func (c *Client) addOperationListGroupsMiddlewares(stack *middleware.Stack, opti
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -135,16 +125,10 @@ func (c *Client) addOperationListGroupsMiddlewares(stack *middleware.Stack, opti
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListGroupsValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListGroups(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -154,9 +138,6 @@ func (c *Client) addOperationListGroupsMiddlewares(stack *middleware.Stack, opti
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -171,9 +152,9 @@ var _ ListGroupsAPIClient = (*Client)(nil)
 
 // ListGroupsPaginatorOptions is the paginator options for ListGroups
 type ListGroupsPaginatorOptions struct {
-	// The maximum number of results to be returned per request. This parameter is
-	// used in the ListUsers and ListGroups requests to specify how many results to
-	// return in one page. The length limit is 50 characters.
+	// The maximum number of results to be returned per request. This parameter is used
+	// in the ListUsers and ListGroups requests to specify how many results to return
+	// in one page. The length limit is 50 characters.
 	Limit int32
 
 	// Set to true if pagination should stop if the service returns a pagination token
@@ -257,6 +238,7 @@ func newServiceMetadataMiddleware_opListGroups(region string) *awsmiddleware.Reg
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "identitystore",
 		OperationName: "ListGroups",
 	}
 }

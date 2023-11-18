@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -12,8 +11,9 @@ import (
 )
 
 // Removes the specified tags from the role. For more information about tagging,
-// see Tagging IAM resources (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html)
-// in the IAM User Guide.
+// see Tagging IAM resources
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html) in the IAM User
+// Guide.
 func (c *Client) UntagRole(ctx context.Context, params *UntagRoleInput, optFns ...func(*Options)) (*UntagRoleOutput, error) {
 	if params == nil {
 		params = &UntagRoleInput{}
@@ -32,7 +32,7 @@ func (c *Client) UntagRole(ctx context.Context, params *UntagRoleInput, optFns .
 type UntagRoleInput struct {
 
 	// The name of the IAM role from which you want to remove tags. This parameter
-	// accepts (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string
+	// accepts (through its regex pattern (http://wikipedia.org/wiki/regex)) a string
 	// of characters that consist of upper and lowercase alphanumeric characters with
 	// no spaces. You can also include any of the following characters: _+=,.@-
 	//
@@ -56,22 +56,12 @@ type UntagRoleOutput struct {
 }
 
 func (c *Client) addOperationUntagRoleMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpUntagRole{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUntagRole{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "UntagRole"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -92,13 +82,16 @@ func (c *Client) addOperationUntagRoleMiddlewares(stack *middleware.Stack, optio
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -107,16 +100,10 @@ func (c *Client) addOperationUntagRoleMiddlewares(stack *middleware.Stack, optio
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpUntagRoleValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opUntagRole(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -128,9 +115,6 @@ func (c *Client) addOperationUntagRoleMiddlewares(stack *middleware.Stack, optio
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -138,6 +122,7 @@ func newServiceMetadataMiddleware_opUntagRole(region string) *awsmiddleware.Regi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "UntagRole",
 	}
 }

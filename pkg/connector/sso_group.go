@@ -3,6 +3,9 @@ package connector
 import (
 	"context"
 	"fmt"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -12,7 +15,6 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -61,7 +63,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 			Id: groupArn,
 		}
 		profile := ssoGroupProfile(ctx, group)
-		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.DisplayName), resourceTypeSSOGroup, nil, groupArn, profile, annos)
+		groupResource, err := resourceSdk.NewGroupResource(awsSdk.ToString(group.DisplayName), resourceTypeSSOGroup, groupArn, []resourceSdk.GroupTraitOption{resourceSdk.WithGroupProfile(profile)}, resourceSdk.WithAnnotation(annos))
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -87,7 +89,7 @@ func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Reso
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
 	})
-	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeSSOUser)
+	member := entitlementSdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, entitlementSdk.WithGrantableTo(resourceTypeSSOUser))
 	member.Description = fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
@@ -125,17 +127,13 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 			continue
 		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member.Value)
-		uID, err := sdk.NewResourceID(resourceTypeSSOUser, userARN)
+		uID, err := resourceSdk.NewResourceID(resourceTypeSSOUser, userARN)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		grant := sdk.NewGrant(resource, groupMemberEntitlement, uID)
-		v1Identifier := &v2.V1Identifier{
+		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID, grantSdk.WithAnnotation(&v2.V1Identifier{
 			Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
-		}
-		annos := annotations.Annotations(grant.Annotations)
-		annos.Update(v1Identifier)
-		grant.Annotations = annos
+		}))
 		rv = append(rv, grant)
 	}
 	nextPage, err := bag.Marshal()

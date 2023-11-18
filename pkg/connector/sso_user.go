@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -13,7 +14,6 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -62,7 +62,13 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: userARN,
 		}
 		profile := ssoUserProfile(ctx, user)
-		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeSSOUser, nil, userARN, getSsoUserEmail(user), profile, annos)
+		userResource, err := resourceSdk.NewUserResource(
+			awsSdk.ToString(user.UserName),
+			resourceTypeSSOUser,
+			userARN,
+			[]resourceSdk.UserTraitOption{resourceSdk.WithEmail(getSsoUserEmail(user), true), resourceSdk.WithUserProfile(profile)},
+			resourceSdk.WithAnnotation(annos),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}

@@ -16,8 +16,8 @@ import (
 // attached to. You can use the optional EntityFilter parameter to limit the
 // results to a particular type of entity (users, groups, or roles). For example,
 // to list only the roles that are attached to the specified policy, set
-// EntityFilter to Role . You can paginate the results using the MaxItems and
-// Marker parameters.
+// EntityFilter to Role. You can paginate the results using the MaxItems and Marker
+// parameters.
 func (c *Client) ListEntitiesForPolicy(ctx context.Context, params *ListEntitiesForPolicyInput, optFns ...func(*Options)) (*ListEntitiesForPolicyOutput, error) {
 	if params == nil {
 		params = &ListEntitiesForPolicyInput{}
@@ -36,14 +36,15 @@ func (c *Client) ListEntitiesForPolicy(ctx context.Context, params *ListEntities
 type ListEntitiesForPolicyInput struct {
 
 	// The Amazon Resource Name (ARN) of the IAM policy for which you want the
-	// versions. For more information about ARNs, see Amazon Resource Names (ARNs) (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html)
-	// in the Amazon Web Services General Reference.
+	// versions. For more information about ARNs, see Amazon Resource Names (ARNs)
+	// (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in
+	// the Amazon Web Services General Reference.
 	//
 	// This member is required.
 	PolicyArn *string
 
 	// The entity type to use for filtering the results. For example, when EntityFilter
-	// is Role , only the roles that are attached to the specified policy are returned.
+	// is Role, only the roles that are attached to the specified policy are returned.
 	// This parameter is optional. If it is not included, all attached entities (users,
 	// groups, and roles) are returned. The argument for this parameter must be one of
 	// the valid values listed below.
@@ -57,26 +58,26 @@ type ListEntitiesForPolicyInput struct {
 
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	MaxItems *int32
 
 	// The path prefix for filtering the results. This parameter is optional. If it is
 	// not included, it defaults to a slash (/), listing all entities. This parameter
-	// allows (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string
-	// of characters consisting of either a forward slash (/) by itself or a string
-	// that must begin and end with forward slashes. In addition, it can contain any
-	// ASCII character from the ! ( \u0021 ) through the DEL character ( \u007F ),
-	// including most punctuation characters, digits, and upper and lowercased letters.
+	// allows (through its regex pattern (http://wikipedia.org/wiki/regex)) a string of
+	// characters consisting of either a forward slash (/) by itself or a string that
+	// must begin and end with forward slashes. In addition, it can contain any ASCII
+	// character from the ! (\u0021) through the DEL character (\u007F), including most
+	// punctuation characters, digits, and upper and lowercased letters.
 	PathPrefix *string
 
 	// The policy usage method to use for filtering the results. To list only
-	// permissions policies, set PolicyUsageFilter to PermissionsPolicy . To list only
+	// permissions policies, set PolicyUsageFilter to PermissionsPolicy. To list only
 	// the policies used to set permissions boundaries, set the value to
-	// PermissionsBoundary . This parameter is optional. If it is not included, all
+	// PermissionsBoundary. This parameter is optional. If it is not included, all
 	// policies are returned.
 	PolicyUsageFilter types.PolicyUsageType
 
@@ -90,11 +91,11 @@ type ListEntitiesForPolicyOutput struct {
 	// were truncated, you can make a subsequent pagination request using the Marker
 	// request parameter to retrieve more items. Note that IAM might return fewer than
 	// the MaxItems number of results even when there are more results available. We
-	// recommend that you check IsTruncated after every call to ensure that you
-	// receive all your results.
+	// recommend that you check IsTruncated after every call to ensure that you receive
+	// all your results.
 	IsTruncated bool
 
-	// When IsTruncated is true , this element is present and contains the value to use
+	// When IsTruncated is true, this element is present and contains the value to use
 	// for the Marker parameter in a subsequent pagination request.
 	Marker *string
 
@@ -114,22 +115,12 @@ type ListEntitiesForPolicyOutput struct {
 }
 
 func (c *Client) addOperationListEntitiesForPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpListEntitiesForPolicy{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListEntitiesForPolicy{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListEntitiesForPolicy"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -150,13 +141,16 @@ func (c *Client) addOperationListEntitiesForPolicyMiddlewares(stack *middleware.
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -165,16 +159,10 @@ func (c *Client) addOperationListEntitiesForPolicyMiddlewares(stack *middleware.
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListEntitiesForPolicyValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListEntitiesForPolicy(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -184,9 +172,6 @@ func (c *Client) addOperationListEntitiesForPolicyMiddlewares(stack *middleware.
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -205,10 +190,10 @@ var _ ListEntitiesForPolicyAPIClient = (*Client)(nil)
 type ListEntitiesForPolicyPaginatorOptions struct {
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	Limit int32
 
@@ -293,6 +278,7 @@ func newServiceMetadataMiddleware_opListEntitiesForPolicy(region string) *awsmid
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "ListEntitiesForPolicy",
 	}
 }

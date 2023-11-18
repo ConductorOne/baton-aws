@@ -4,7 +4,6 @@ package organizations
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
@@ -17,10 +16,11 @@ import (
 // policies according to your business requirements. The number of levels deep that
 // you can nest OUs is dependent upon the policy types enabled for that root. For
 // service control policies, the limit is five. For more information about OUs, see
-// Managing organizational units (OUs) (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_ous.html)
+// Managing Organizational Units
+// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_ous.html)
 // in the Organizations User Guide. If the request includes tags, then the
-// requester must have the organizations:TagResource permission. This operation
-// can be called only from the organization's management account.
+// requester must have the organizations:TagResource permission. This operation can
+// be called only from the organization's management account.
 func (c *Client) CreateOrganizationalUnit(ctx context.Context, params *CreateOrganizationalUnitInput, optFns ...func(*Options)) (*CreateOrganizationalUnitOutput, error) {
 	if params == nil {
 		params = &CreateOrganizationalUnitInput{}
@@ -46,21 +46,25 @@ type CreateOrganizationalUnitInput struct {
 	// The unique identifier (ID) of the parent root or OU that you want to create the
 	// new OU in. The regex pattern (http://wikipedia.org/wiki/regex) for a parent ID
 	// string requires one of the following:
-	//   - Root - A string that begins with "r-" followed by from 4 to 32 lowercase
-	//   letters or digits.
-	//   - Organizational unit (OU) - A string that begins with "ou-" followed by from
-	//   4 to 32 lowercase letters or digits (the ID of the root that the OU is in). This
-	//   string is followed by a second "-" dash and from 8 to 32 additional lowercase
-	//   letters or digits.
+	//
+	// * Root - A string that begins with "r-"
+	// followed by from 4 to 32 lowercase letters or digits.
+	//
+	// * Organizational unit
+	// (OU) - A string that begins with "ou-" followed by from 4 to 32 lowercase
+	// letters or digits (the ID of the root that the OU is in). This string is
+	// followed by a second "-" dash and from 8 to 32 additional lowercase letters or
+	// digits.
 	//
 	// This member is required.
 	ParentId *string
 
 	// A list of tags that you want to attach to the newly created OU. For each tag in
 	// the list, you must specify both a tag key and a value. You can set the value to
-	// an empty string, but you can't set it to null . For more information about
-	// tagging, see Tagging Organizations resources (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_tagging.html)
-	// in the Organizations User Guide. If any one of the tags is not valid or if you
+	// an empty string, but you can't set it to null. For more information about
+	// tagging, see Tagging Organizations resources
+	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_tagging.html)
+	// in the Organizations User Guide. If any one of the tags is invalid or if you
 	// exceed the allowed number of tags for an OU, then the entire request fails and
 	// the OU is not created.
 	Tags []types.Tag
@@ -80,22 +84,12 @@ type CreateOrganizationalUnitOutput struct {
 }
 
 func (c *Client) addOperationCreateOrganizationalUnitMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpCreateOrganizationalUnit{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpCreateOrganizationalUnit{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "CreateOrganizationalUnit"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -116,13 +110,16 @@ func (c *Client) addOperationCreateOrganizationalUnitMiddlewares(stack *middlewa
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -131,16 +128,10 @@ func (c *Client) addOperationCreateOrganizationalUnitMiddlewares(stack *middlewa
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpCreateOrganizationalUnitValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCreateOrganizationalUnit(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -152,9 +143,6 @@ func (c *Client) addOperationCreateOrganizationalUnitMiddlewares(stack *middlewa
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -162,6 +150,7 @@ func newServiceMetadataMiddleware_opCreateOrganizationalUnit(region string) *aws
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "organizations",
 		OperationName: "CreateOrganizationalUnit",
 	}
 }

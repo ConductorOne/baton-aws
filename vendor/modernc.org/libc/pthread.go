@@ -34,9 +34,7 @@ var (
 
 // Thread local storage.
 type TLS struct {
-	errnop      uintptr
-	allocaStack [][]uintptr
-	allocas     []uintptr
+	errnop uintptr
 	pthreadData
 	stack stackHeader
 
@@ -61,39 +59,6 @@ func newTLS(detached bool) *TLS {
 	t.errnop = t.Alloc(int(unsafe.Sizeof(int32(0))))
 	*(*int32)(unsafe.Pointer(t.errnop)) = 0
 	return t
-}
-
-func (t *TLS) alloca(n size_t) (r uintptr) {
-	r = Xmalloc(t, n)
-	t.allocas = append(t.allocas, r)
-	return r
-}
-
-func (t *TLS) FreeAlloca() func() {
-	t.allocaStack = append(t.allocaStack, t.allocas)
-	t.allocas = nil
-	return func() {
-		for _, v := range t.allocas {
-			Xfree(t, v)
-		}
-		n := len(t.allocaStack)
-		t.allocas = t.allocaStack[n-1]
-		t.allocaStack = t.allocaStack[:n-1]
-	}
-}
-
-func Xalloca(tls *TLS, size size_t) uintptr {
-	if __ccgo_strace {
-		trc("tls=%v size=%v, (%v:)", tls, size, origin(2))
-	}
-	return tls.alloca(size)
-}
-
-func X__builtin_alloca(tls *TLS, size size_t) uintptr {
-	if __ccgo_strace {
-		trc("tls=%v size=%v, (%v:)", tls, size, origin(2))
-	}
-	return Xalloca(tls, size)
 }
 
 // Pthread specific part of a TLS.
@@ -132,17 +97,11 @@ func (d *pthreadData) close(t *TLS) {
 
 // int pthread_attr_destroy(pthread_attr_t *attr);
 func Xpthread_attr_destroy(t *TLS, pAttr uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pAttr=%v, (%v:)", t, pAttr, origin(2))
-	}
 	return 0
 }
 
 // int pthread_attr_setscope(pthread_attr_t *attr, int contentionscope);
 func Xpthread_attr_setscope(t *TLS, pAttr uintptr, contentionScope int32) int32 {
-	if __ccgo_strace {
-		trc("t=%v pAttr=%v contentionScope=%v, (%v:)", t, pAttr, contentionScope, origin(2))
-	}
 	switch contentionScope {
 	case pthread.PTHREAD_SCOPE_SYSTEM:
 		return 0
@@ -153,9 +112,6 @@ func Xpthread_attr_setscope(t *TLS, pAttr uintptr, contentionScope int32) int32 
 
 // int pthread_attr_setstacksize(pthread_attr_t *attr, size_t stacksize);
 func Xpthread_attr_setstacksize(t *TLS, attr uintptr, stackSize types.Size_t) int32 {
-	if __ccgo_strace {
-		trc("t=%v attr=%v stackSize=%v, (%v:)", t, attr, stackSize, origin(2))
-	}
 	panic(todo(""))
 }
 
@@ -205,9 +161,6 @@ func (c *cond) signal(all bool) int32 {
 //
 // int pthread_cond_init(pthread_cond_t *restrict cond, const pthread_condattr_t *restrict attr);
 func Xpthread_cond_init(t *TLS, pCond, pAttr uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pAttr=%v, (%v:)", t, pAttr, origin(2))
-	}
 	if pCond == 0 {
 		return errno.EINVAL
 	}
@@ -226,9 +179,6 @@ func Xpthread_cond_init(t *TLS, pCond, pAttr uintptr) int32 {
 
 // int pthread_cond_destroy(pthread_cond_t *cond);
 func Xpthread_cond_destroy(t *TLS, pCond uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pCond=%v, (%v:)", t, pCond, origin(2))
-	}
 	if pCond == 0 {
 		return errno.EINVAL
 	}
@@ -256,17 +206,11 @@ func Xpthread_cond_destroy(t *TLS, pCond uintptr) int32 {
 
 // int pthread_cond_signal(pthread_cond_t *cond);
 func Xpthread_cond_signal(t *TLS, pCond uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pCond=%v, (%v:)", t, pCond, origin(2))
-	}
 	return condSignal(pCond, false)
 }
 
 // int pthread_cond_broadcast(pthread_cond_t *cond);
 func Xpthread_cond_broadcast(t *TLS, pCond uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pCond=%v, (%v:)", t, pCond, origin(2))
-	}
 	return condSignal(pCond, true)
 }
 
@@ -284,9 +228,6 @@ func condSignal(pCond uintptr, all bool) int32 {
 
 // int pthread_cond_wait(pthread_cond_t *restrict cond, pthread_mutex_t *restrict mutex);
 func Xpthread_cond_wait(t *TLS, pCond, pMutex uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pMutex=%v, (%v:)", t, pMutex, origin(2))
-	}
 	if pCond == 0 {
 		return errno.EINVAL
 	}
@@ -316,9 +257,6 @@ func Xpthread_cond_wait(t *TLS, pCond, pMutex uintptr) int32 {
 
 // int pthread_cond_timedwait(pthread_cond_t *restrict cond, pthread_mutex_t *restrict mutex, const struct timespec *restrict abstime);
 func Xpthread_cond_timedwait(t *TLS, pCond, pMutex, pAbsTime uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pAbsTime=%v, (%v:)", t, pAbsTime, origin(2))
-	}
 	if pCond == 0 {
 		return errno.EINVAL
 	}
@@ -490,9 +428,6 @@ func (m *mutex) unlock() int32 {
 
 // int pthread_mutex_destroy(pthread_mutex_t *mutex);
 func Xpthread_mutex_destroy(t *TLS, pMutex uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pMutex=%v, (%v:)", t, pMutex, origin(2))
-	}
 	mutexesMu.Lock()
 
 	defer mutexesMu.Unlock()
@@ -503,9 +438,6 @@ func Xpthread_mutex_destroy(t *TLS, pMutex uintptr) int32 {
 
 // int pthread_mutex_lock(pthread_mutex_t *mutex);
 func Xpthread_mutex_lock(t *TLS, pMutex uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pMutex=%v, (%v:)", t, pMutex, origin(2))
-	}
 	mutexesMu.Lock()
 	mu := mutexes[pMutex]
 	if mu == nil { // static initialized mutexes are valid
@@ -518,9 +450,6 @@ func Xpthread_mutex_lock(t *TLS, pMutex uintptr) int32 {
 
 // int pthread_mutex_trylock(pthread_mutex_t *mutex);
 func Xpthread_mutex_trylock(t *TLS, pMutex uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pMutex=%v, (%v:)", t, pMutex, origin(2))
-	}
 	mutexesMu.Lock()
 	mu := mutexes[pMutex]
 	if mu == nil { // static initialized mutexes are valid
@@ -533,9 +462,6 @@ func Xpthread_mutex_trylock(t *TLS, pMutex uintptr) int32 {
 
 // int pthread_mutex_unlock(pthread_mutex_t *mutex);
 func Xpthread_mutex_unlock(t *TLS, pMutex uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pMutex=%v, (%v:)", t, pMutex, origin(2))
-	}
 	mutexesMu.Lock()
 
 	defer mutexesMu.Unlock()
@@ -560,9 +486,6 @@ func Xpthread_key_create(t *TLS, pKey, destructor uintptr) int32 {
 
 // int pthread_key_delete(pthread_key_t key);
 func Xpthread_key_delete(t *TLS, key pthread.Pthread_key_t) int32 {
-	if __ccgo_strace {
-		trc("t=%v key=%v, (%v:)", t, key, origin(2))
-	}
 	if _, ok := t.kv[key]; ok {
 		delete(t.kv, key)
 		return 0
@@ -574,17 +497,11 @@ func Xpthread_key_delete(t *TLS, key pthread.Pthread_key_t) int32 {
 
 // void *pthread_getspecific(pthread_key_t key);
 func Xpthread_getspecific(t *TLS, key pthread.Pthread_key_t) uintptr {
-	if __ccgo_strace {
-		trc("t=%v key=%v, (%v:)", t, key, origin(2))
-	}
 	return t.kv[key]
 }
 
 // int pthread_setspecific(pthread_key_t key, const void *value);
 func Xpthread_setspecific(t *TLS, key pthread.Pthread_key_t, value uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v key=%v value=%v, (%v:)", t, key, value, origin(2))
-	}
 	if t.kv == nil {
 		t.kv = map[pthread.Pthread_key_t]uintptr{}
 	}
@@ -594,9 +511,6 @@ func Xpthread_setspecific(t *TLS, key pthread.Pthread_key_t, value uintptr) int3
 
 // int pthread_create(pthread_t *thread, const pthread_attr_t *attr, void *(*start_routine) (void *), void *arg);
 func Xpthread_create(t *TLS, pThread, pAttr, startRoutine, arg uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v arg=%v, (%v:)", t, arg, origin(2))
-	}
 	fn := (*struct {
 		f func(*TLS, uintptr) uintptr
 	})(unsafe.Pointer(&struct{ uintptr }{startRoutine})).f
@@ -613,9 +527,6 @@ func Xpthread_create(t *TLS, pThread, pAttr, startRoutine, arg uintptr) int32 {
 
 // int pthread_detach(pthread_t thread);
 func Xpthread_detach(t *TLS, thread pthread.Pthread_t) int32 {
-	if __ccgo_strace {
-		trc("t=%v thread=%v, (%v:)", t, thread, origin(2))
-	}
 	threadsMu.Lock()
 	threads[int32(thread)].detached = true
 	threadsMu.Unlock()
@@ -624,17 +535,11 @@ func Xpthread_detach(t *TLS, thread pthread.Pthread_t) int32 {
 
 // int pthread_equal(pthread_t t1, pthread_t t2);
 func Xpthread_equal(t *TLS, t1, t2 pthread.Pthread_t) int32 {
-	if __ccgo_strace {
-		trc("t=%v t2=%v, (%v:)", t, t2, origin(2))
-	}
 	return Bool32(t1 == t2)
 }
 
 // void pthread_exit(void *value_ptr);
 func Xpthread_exit(t *TLS, value uintptr) {
-	if __ccgo_strace {
-		trc("t=%v value=%v, (%v:)", t, value, origin(2))
-	}
 	t.retVal = value
 
 	// At thread exit, if a key value has a non-NULL destructor pointer, and the
@@ -671,9 +576,6 @@ func Xpthread_exit(t *TLS, value uintptr) {
 
 // int pthread_join(pthread_t thread, void **value_ptr);
 func Xpthread_join(t *TLS, thread pthread.Pthread_t, pValue uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v thread=%v pValue=%v, (%v:)", t, thread, pValue, origin(2))
-	}
 	threadsMu.Lock()
 	tls := threads[int32(thread)]
 	delete(threads, int32(thread))
@@ -687,8 +589,5 @@ func Xpthread_join(t *TLS, thread pthread.Pthread_t, pValue uintptr) int32 {
 
 // pthread_t pthread_self(void);
 func Xpthread_self(t *TLS) pthread.Pthread_t {
-	if __ccgo_strace {
-		trc("t=%v, (%v:)", t, origin(2))
-	}
 	return pthread.Pthread_t(t.ID)
 }

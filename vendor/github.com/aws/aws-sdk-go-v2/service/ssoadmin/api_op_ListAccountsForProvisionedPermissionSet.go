@@ -12,8 +12,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists all the Amazon Web Services accounts where the specified permission set
-// is provisioned.
+// Lists all the AWS accounts where the specified permission set is provisioned.
 func (c *Client) ListAccountsForProvisionedPermissionSet(ctx context.Context, params *ListAccountsForProvisionedPermissionSetInput, optFns ...func(*Options)) (*ListAccountsForProvisionedPermissionSetOutput, error) {
 	if params == nil {
 		params = &ListAccountsForProvisionedPermissionSetInput{}
@@ -33,26 +32,25 @@ type ListAccountsForProvisionedPermissionSetInput struct {
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// Amazon Web Services Service Namespaces in the Amazon Web Services General
-	// Reference.
+	// AWS Service Namespaces in the AWS General Reference.
 	//
 	// This member is required.
 	InstanceArn *string
 
-	// The ARN of the PermissionSet from which the associated Amazon Web Services
-	// accounts will be listed.
+	// The ARN of the PermissionSet from which the associated AWS accounts will be
+	// listed.
 	//
 	// This member is required.
 	PermissionSetArn *string
 
-	// The maximum number of results to display for the PermissionSet .
+	// The maximum number of results to display for the PermissionSet.
 	MaxResults *int32
 
 	// The pagination token for the list API. Initially the value is null. Use the
 	// output of previous API calls to make subsequent calls.
 	NextToken *string
 
-	// The permission set provisioning status for an Amazon Web Services account.
+	// The permission set provisioning status for an AWS account.
 	ProvisioningStatus types.ProvisioningStatus
 
 	noSmithyDocumentSerde
@@ -60,7 +58,7 @@ type ListAccountsForProvisionedPermissionSetInput struct {
 
 type ListAccountsForProvisionedPermissionSetOutput struct {
 
-	// The list of Amazon Web Services AccountIds .
+	// The list of AWS AccountIds.
 	AccountIds []string
 
 	// The pagination token for the list API. Initially the value is null. Use the
@@ -74,22 +72,12 @@ type ListAccountsForProvisionedPermissionSetOutput struct {
 }
 
 func (c *Client) addOperationListAccountsForProvisionedPermissionSetMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListAccountsForProvisionedPermissionSet{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListAccountsForProvisionedPermissionSet{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListAccountsForProvisionedPermissionSet"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -110,13 +98,16 @@ func (c *Client) addOperationListAccountsForProvisionedPermissionSetMiddlewares(
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -125,16 +116,10 @@ func (c *Client) addOperationListAccountsForProvisionedPermissionSetMiddlewares(
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListAccountsForProvisionedPermissionSetValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListAccountsForProvisionedPermissionSet(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -146,24 +131,21 @@ func (c *Client) addOperationListAccountsForProvisionedPermissionSetMiddlewares(
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
-// ListAccountsForProvisionedPermissionSetAPIClient is a client that implements
-// the ListAccountsForProvisionedPermissionSet operation.
+// ListAccountsForProvisionedPermissionSetAPIClient is a client that implements the
+// ListAccountsForProvisionedPermissionSet operation.
 type ListAccountsForProvisionedPermissionSetAPIClient interface {
 	ListAccountsForProvisionedPermissionSet(context.Context, *ListAccountsForProvisionedPermissionSetInput, ...func(*Options)) (*ListAccountsForProvisionedPermissionSetOutput, error)
 }
 
 var _ ListAccountsForProvisionedPermissionSetAPIClient = (*Client)(nil)
 
-// ListAccountsForProvisionedPermissionSetPaginatorOptions is the paginator
-// options for ListAccountsForProvisionedPermissionSet
+// ListAccountsForProvisionedPermissionSetPaginatorOptions is the paginator options
+// for ListAccountsForProvisionedPermissionSet
 type ListAccountsForProvisionedPermissionSetPaginatorOptions struct {
-	// The maximum number of results to display for the PermissionSet .
+	// The maximum number of results to display for the PermissionSet.
 	Limit int32
 
 	// Set to true if pagination should stop if the service returns a pagination token
@@ -249,6 +231,7 @@ func newServiceMetadataMiddleware_opListAccountsForProvisionedPermissionSet(regi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "sso",
 		OperationName: "ListAccountsForProvisionedPermissionSet",
 	}
 }

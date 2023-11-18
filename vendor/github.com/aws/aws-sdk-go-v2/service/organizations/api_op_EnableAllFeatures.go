@@ -4,7 +4,6 @@ package organizations
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
@@ -16,8 +15,9 @@ import (
 // policies that can restrict the services and actions that can be called in each
 // account. Until you enable all features, you have access only to consolidated
 // billing, and you can't use any of the advanced account administration features
-// that Organizations supports. For more information, see Enabling all features in
-// your organization (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_support-all-features.html)
+// that Organizations supports. For more information, see Enabling All Features in
+// Your Organization
+// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_org_support-all-features.html)
 // in the Organizations User Guide. This operation is required only for
 // organizations that were created explicitly with only the consolidated billing
 // features enabled. Calling this operation sends a handshake to every invited
@@ -25,10 +25,10 @@ import (
 // additional features enabled only after all administrators in the invited
 // accounts approve the change by accepting the handshake. After you enable all
 // features, you can separately enable or disable individual policy types in a root
-// using EnablePolicyType and DisablePolicyType . To see the status of policy types
-// in a root, use ListRoots . After all invited member accounts accept the
+// using EnablePolicyType and DisablePolicyType. To see the status of policy types
+// in a root, use ListRoots. After all invited member accounts accept the
 // handshake, you finalize the feature set change by accepting the handshake that
-// contains "Action": "ENABLE_ALL_FEATURES" . This completes the change. After you
+// contains "Action": "ENABLE_ALL_FEATURES". This completes the change. After you
 // enable all features in your organization, the management account in the
 // organization can apply policies on all member accounts. These policies can
 // restrict what users and even administrators in those accounts can do. The
@@ -67,22 +67,12 @@ type EnableAllFeaturesOutput struct {
 }
 
 func (c *Client) addOperationEnableAllFeaturesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpEnableAllFeatures{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpEnableAllFeatures{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "EnableAllFeatures"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -103,13 +93,16 @@ func (c *Client) addOperationEnableAllFeaturesMiddlewares(stack *middleware.Stac
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -118,13 +111,7 @@ func (c *Client) addOperationEnableAllFeaturesMiddlewares(stack *middleware.Stac
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opEnableAllFeatures(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -136,9 +123,6 @@ func (c *Client) addOperationEnableAllFeaturesMiddlewares(stack *middleware.Stac
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -146,6 +130,7 @@ func newServiceMetadataMiddleware_opEnableAllFeatures(region string) *awsmiddlew
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "organizations",
 		OperationName: "EnableAllFeatures",
 	}
 }

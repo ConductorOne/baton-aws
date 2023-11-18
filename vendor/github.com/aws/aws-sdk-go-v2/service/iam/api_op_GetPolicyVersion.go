@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -14,18 +13,20 @@ import (
 
 // Retrieves information about the specified version of the specified managed
 // policy, including the policy document. Policies returned by this operation are
-// URL-encoded compliant with RFC 3986 (https://tools.ietf.org/html/rfc3986) . You
+// URL-encoded compliant with RFC 3986 (https://tools.ietf.org/html/rfc3986). You
 // can use a URL decoding method to convert the policy back to plain JSON text. For
 // example, if you use Java, you can use the decode method of the
 // java.net.URLDecoder utility class in the Java SDK. Other languages and SDKs
 // provide similar functionality. To list the available versions for a policy, use
-// ListPolicyVersions . This operation retrieves information about managed
-// policies. To retrieve information about an inline policy that is embedded in a
-// user, group, or role, use GetUserPolicy , GetGroupPolicy , or GetRolePolicy .
-// For more information about the types of policies, see Managed policies and
-// inline policies (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
+// ListPolicyVersions. This operation retrieves information about managed policies.
+// To retrieve information about an inline policy that is embedded in a user,
+// group, or role, use GetUserPolicy, GetGroupPolicy, or GetRolePolicy. For more
+// information about the types of policies, see Managed policies and inline
+// policies
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
 // in the IAM User Guide. For more information about managed policy versions, see
-// Versioning for managed policies (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-versions.html)
+// Versioning for managed policies
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-versions.html)
 // in the IAM User Guide.
 func (c *Client) GetPolicyVersion(ctx context.Context, params *GetPolicyVersionInput, optFns ...func(*Options)) (*GetPolicyVersionOutput, error) {
 	if params == nil {
@@ -45,14 +46,15 @@ func (c *Client) GetPolicyVersion(ctx context.Context, params *GetPolicyVersionI
 type GetPolicyVersionInput struct {
 
 	// The Amazon Resource Name (ARN) of the managed policy that you want information
-	// about. For more information about ARNs, see Amazon Resource Names (ARNs) (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html)
-	// in the Amazon Web Services General Reference.
+	// about. For more information about ARNs, see Amazon Resource Names (ARNs)
+	// (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in
+	// the Amazon Web Services General Reference.
 	//
 	// This member is required.
 	PolicyArn *string
 
 	// Identifies the policy version to retrieve. This parameter allows (through its
-	// regex pattern (http://wikipedia.org/wiki/regex) ) a string of characters that
+	// regex pattern (http://wikipedia.org/wiki/regex)) a string of characters that
 	// consists of the lowercase letter 'v' followed by one or two digits, and
 	// optionally followed by a period '.' and a string of letters and digits.
 	//
@@ -75,22 +77,12 @@ type GetPolicyVersionOutput struct {
 }
 
 func (c *Client) addOperationGetPolicyVersionMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetPolicyVersion{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetPolicyVersion{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "GetPolicyVersion"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -111,13 +103,16 @@ func (c *Client) addOperationGetPolicyVersionMiddlewares(stack *middleware.Stack
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -126,16 +121,10 @@ func (c *Client) addOperationGetPolicyVersionMiddlewares(stack *middleware.Stack
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpGetPolicyVersionValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetPolicyVersion(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -147,9 +136,6 @@ func (c *Client) addOperationGetPolicyVersionMiddlewares(stack *middleware.Stack
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -157,6 +143,7 @@ func newServiceMetadataMiddleware_opGetPolicyVersion(region string) *awsmiddlewa
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "GetPolicyVersion",
 	}
 }

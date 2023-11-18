@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -12,8 +11,9 @@ import (
 )
 
 // Removes the specified tags from the IAM instance profile. For more information
-// about tagging, see Tagging IAM resources (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html)
-// in the IAM User Guide.
+// about tagging, see Tagging IAM resources
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_tags.html) in the IAM User
+// Guide.
 func (c *Client) UntagInstanceProfile(ctx context.Context, params *UntagInstanceProfileInput, optFns ...func(*Options)) (*UntagInstanceProfileOutput, error) {
 	if params == nil {
 		params = &UntagInstanceProfileInput{}
@@ -32,8 +32,8 @@ func (c *Client) UntagInstanceProfile(ctx context.Context, params *UntagInstance
 type UntagInstanceProfileInput struct {
 
 	// The name of the IAM instance profile from which you want to remove tags. This
-	// parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex) )
-	// a string of characters consisting of upper and lowercase alphanumeric characters
+	// parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)) a
+	// string of characters consisting of upper and lowercase alphanumeric characters
 	// with no spaces. You can also include any of the following characters: _+=,.@-
 	//
 	// This member is required.
@@ -56,22 +56,12 @@ type UntagInstanceProfileOutput struct {
 }
 
 func (c *Client) addOperationUntagInstanceProfileMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpUntagInstanceProfile{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpUntagInstanceProfile{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "UntagInstanceProfile"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -92,13 +82,16 @@ func (c *Client) addOperationUntagInstanceProfileMiddlewares(stack *middleware.S
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -107,16 +100,10 @@ func (c *Client) addOperationUntagInstanceProfileMiddlewares(stack *middleware.S
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpUntagInstanceProfileValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opUntagInstanceProfile(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -128,9 +115,6 @@ func (c *Client) addOperationUntagInstanceProfileMiddlewares(stack *middleware.S
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -138,6 +122,7 @@ func newServiceMetadataMiddleware_opUntagInstanceProfile(region string) *awsmidd
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "UntagInstanceProfile",
 	}
 }

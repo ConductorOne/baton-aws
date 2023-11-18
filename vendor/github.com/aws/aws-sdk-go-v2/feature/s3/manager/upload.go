@@ -501,7 +501,7 @@ func (u *uploader) singlePart(r io.ReadSeeker, cleanup func()) (*UploadOutput, e
 	return &UploadOutput{
 		Location: locationRecorder.location,
 
-		BucketKeyEnabled:     aws.ToBool(out.BucketKeyEnabled),
+		BucketKeyEnabled:     out.BucketKeyEnabled,
 		ChecksumCRC32:        out.ChecksumCRC32,
 		ChecksumCRC32C:       out.ChecksumCRC32C,
 		ChecksumSHA1:         out.ChecksumSHA1,
@@ -568,11 +568,9 @@ type chunk struct {
 // since S3 required this list to be sent in sorted order.
 type completedParts []types.CompletedPart
 
-func (a completedParts) Len() int      { return len(a) }
-func (a completedParts) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a completedParts) Less(i, j int) bool {
-	return aws.ToInt32(a[i].PartNumber) < aws.ToInt32(a[j].PartNumber)
-}
+func (a completedParts) Len() int           { return len(a) }
+func (a completedParts) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a completedParts) Less(i, j int) bool { return a[i].PartNumber < a[j].PartNumber }
 
 // upload will perform a multipart upload using the firstBuf buffer containing
 // the first chunk of data.
@@ -641,7 +639,7 @@ func (u *multiuploader) upload(firstBuf io.ReadSeeker, cleanup func()) (*UploadO
 		UploadID:       u.uploadID,
 		CompletedParts: u.parts,
 
-		BucketKeyEnabled:     aws.ToBool(completeOut.BucketKeyEnabled),
+		BucketKeyEnabled:     completeOut.BucketKeyEnabled,
 		ChecksumCRC32:        completeOut.ChecksumCRC32,
 		ChecksumCRC32C:       completeOut.ChecksumCRC32C,
 		ChecksumSHA1:         completeOut.ChecksumSHA1,
@@ -724,7 +722,7 @@ func (u *multiuploader) send(c chunk) error {
 		// PutObject as they are never valid for individual parts of a
 		// multipart upload.
 
-		PartNumber: aws.Int32(c.num),
+		PartNumber: c.num,
 		UploadId:   &u.uploadID,
 	}
 	// TODO should do copy then clear?
@@ -736,7 +734,7 @@ func (u *multiuploader) send(c chunk) error {
 
 	var completed types.CompletedPart
 	awsutil.Copy(&completed, resp)
-	completed.PartNumber = aws.Int32(c.num)
+	completed.PartNumber = c.num
 
 	u.m.Lock()
 	u.parts = append(u.parts, completed)

@@ -12,8 +12,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists all the permission sets that are provisioned to a specified Amazon Web
-// Services account.
+// Lists all the permission sets that are provisioned to a specified AWS account.
 func (c *Client) ListPermissionSetsProvisionedToAccount(ctx context.Context, params *ListPermissionSetsProvisionedToAccountInput, optFns ...func(*Options)) (*ListPermissionSetsProvisionedToAccountOutput, error) {
 	if params == nil {
 		params = &ListPermissionSetsProvisionedToAccountInput{}
@@ -31,16 +30,14 @@ func (c *Client) ListPermissionSetsProvisionedToAccount(ctx context.Context, par
 
 type ListPermissionSetsProvisionedToAccountInput struct {
 
-	// The identifier of the Amazon Web Services account from which to list the
-	// assignments.
+	// The identifier of the AWS account from which to list the assignments.
 	//
 	// This member is required.
 	AccountId *string
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// Amazon Web Services Service Namespaces in the Amazon Web Services General
-	// Reference.
+	// AWS Service Namespaces in the AWS General Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -64,7 +61,7 @@ type ListPermissionSetsProvisionedToAccountOutput struct {
 	// output of previous API calls to make subsequent calls.
 	NextToken *string
 
-	// Defines the level of access that an Amazon Web Services account has.
+	// Defines the level of access that an AWS account has.
 	PermissionSets []string
 
 	// Metadata pertaining to the operation's result.
@@ -74,22 +71,12 @@ type ListPermissionSetsProvisionedToAccountOutput struct {
 }
 
 func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListPermissionSetsProvisionedToAccount{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListPermissionSetsProvisionedToAccount{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListPermissionSetsProvisionedToAccount"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -110,13 +97,16 @@ func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(s
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -125,16 +115,10 @@ func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(s
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListPermissionSetsProvisionedToAccountValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListPermissionSetsProvisionedToAccount(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -144,9 +128,6 @@ func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(s
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -249,6 +230,7 @@ func newServiceMetadataMiddleware_opListPermissionSetsProvisionedToAccount(regio
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "sso",
 		OperationName: "ListPermissionSetsProvisionedToAccount",
 	}
 }

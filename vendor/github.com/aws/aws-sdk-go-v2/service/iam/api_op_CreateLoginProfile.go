@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -18,8 +17,9 @@ import (
 // the IAM console to create a password for any IAM user. Use ChangePassword to
 // update your own existing password in the My Security Credentials page in the
 // Amazon Web Services Management Console. For more information about managing
-// passwords, see Managing passwords (https://docs.aws.amazon.com/IAM/latest/UserGuide/Using_ManagingLogins.html)
-// in the IAM User Guide.
+// passwords, see Managing passwords
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/Using_ManagingLogins.html) in
+// the IAM User Guide.
 func (c *Client) CreateLoginProfile(ctx context.Context, params *CreateLoginProfileInput, optFns ...func(*Options)) (*CreateLoginProfileOutput, error) {
 	if params == nil {
 		params = &CreateLoginProfileInput{}
@@ -37,24 +37,24 @@ func (c *Client) CreateLoginProfile(ctx context.Context, params *CreateLoginProf
 
 type CreateLoginProfileInput struct {
 
-	// The new password for the user. The regex pattern (http://wikipedia.org/wiki/regex)
-	// that is used to validate this parameter is a string of characters. That string
-	// can include almost any printable ASCII character from the space ( \u0020 )
-	// through the end of the ASCII character range ( \u00FF ). You can also include
-	// the tab ( \u0009 ), line feed ( \u000A ), and carriage return ( \u000D )
-	// characters. Any of these characters are valid in a password. However, many
-	// tools, such as the Amazon Web Services Management Console, might restrict the
-	// ability to type certain characters because they have special meaning within that
-	// tool.
+	// The new password for the user. The regex pattern
+	// (http://wikipedia.org/wiki/regex) that is used to validate this parameter is a
+	// string of characters. That string can include almost any printable ASCII
+	// character from the space (\u0020) through the end of the ASCII character range
+	// (\u00FF). You can also include the tab (\u0009), line feed (\u000A), and
+	// carriage return (\u000D) characters. Any of these characters are valid in a
+	// password. However, many tools, such as the Amazon Web Services Management
+	// Console, might restrict the ability to type certain characters because they have
+	// special meaning within that tool.
 	//
 	// This member is required.
 	Password *string
 
 	// The name of the IAM user to create a password for. The user must already exist.
-	// This parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)
-	// ) a string of characters consisting of upper and lowercase alphanumeric
-	// characters with no spaces. You can also include any of the following characters:
-	// _+=,.@-
+	// This parameter allows (through its regex pattern
+	// (http://wikipedia.org/wiki/regex)) a string of characters consisting of upper
+	// and lowercase alphanumeric characters with no spaces. You can also include any
+	// of the following characters: _+=,.@-
 	//
 	// This member is required.
 	UserName *string
@@ -80,22 +80,12 @@ type CreateLoginProfileOutput struct {
 }
 
 func (c *Client) addOperationCreateLoginProfileMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpCreateLoginProfile{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpCreateLoginProfile{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "CreateLoginProfile"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -116,13 +106,16 @@ func (c *Client) addOperationCreateLoginProfileMiddlewares(stack *middleware.Sta
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -131,16 +124,10 @@ func (c *Client) addOperationCreateLoginProfileMiddlewares(stack *middleware.Sta
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpCreateLoginProfileValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opCreateLoginProfile(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -152,9 +139,6 @@ func (c *Client) addOperationCreateLoginProfileMiddlewares(stack *middleware.Sta
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -162,6 +146,7 @@ func newServiceMetadataMiddleware_opCreateLoginProfile(region string) *awsmiddle
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "CreateLoginProfile",
 	}
 }

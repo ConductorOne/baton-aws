@@ -12,8 +12,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the assignee of the specified Amazon Web Services account with the
-// specified permission set.
+// Lists the assignee of the specified AWS account with the specified permission
+// set.
 func (c *Client) ListAccountAssignments(ctx context.Context, params *ListAccountAssignmentsInput, optFns ...func(*Options)) (*ListAccountAssignmentsOutput, error) {
 	if params == nil {
 		params = &ListAccountAssignmentsInput{}
@@ -31,16 +31,14 @@ func (c *Client) ListAccountAssignments(ctx context.Context, params *ListAccount
 
 type ListAccountAssignmentsInput struct {
 
-	// The identifier of the Amazon Web Services account from which to list the
-	// assignments.
+	// The identifier of the AWS account from which to list the assignments.
 	//
 	// This member is required.
 	AccountId *string
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// Amazon Web Services Service Namespaces in the Amazon Web Services General
-	// Reference.
+	// AWS Service Namespaces in the AWS General Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -62,8 +60,7 @@ type ListAccountAssignmentsInput struct {
 
 type ListAccountAssignmentsOutput struct {
 
-	// The list of assignments that match the input Amazon Web Services account and
-	// permission set.
+	// The list of assignments that match the input AWS account and permission set.
 	AccountAssignments []types.AccountAssignment
 
 	// The pagination token for the list API. Initially the value is null. Use the
@@ -77,22 +74,12 @@ type ListAccountAssignmentsOutput struct {
 }
 
 func (c *Client) addOperationListAccountAssignmentsMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListAccountAssignments{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListAccountAssignments{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListAccountAssignments"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -113,13 +100,16 @@ func (c *Client) addOperationListAccountAssignmentsMiddlewares(stack *middleware
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -128,16 +118,10 @@ func (c *Client) addOperationListAccountAssignmentsMiddlewares(stack *middleware
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListAccountAssignmentsValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListAccountAssignments(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -147,9 +131,6 @@ func (c *Client) addOperationListAccountAssignmentsMiddlewares(stack *middleware
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -250,6 +231,7 @@ func newServiceMetadataMiddleware_opListAccountAssignments(region string) *awsmi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "sso",
 		OperationName: "ListAccountAssignments",
 	}
 }

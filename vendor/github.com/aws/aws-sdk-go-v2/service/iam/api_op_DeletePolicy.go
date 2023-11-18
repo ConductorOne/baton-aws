@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -15,18 +14,25 @@ import (
 // you must first detach the policy from all users, groups, and roles that it is
 // attached to. In addition, you must delete all the policy's versions. The
 // following steps describe the process for deleting a managed policy:
-//   - Detach the policy from all users, groups, and roles that the policy is
-//     attached to, using DetachUserPolicy , DetachGroupPolicy , or DetachRolePolicy
-//     . To list all the users, groups, and roles that a policy is attached to, use
-//     ListEntitiesForPolicy .
-//   - Delete all versions of the policy using DeletePolicyVersion . To list the
-//     policy's versions, use ListPolicyVersions . You cannot use DeletePolicyVersion
-//     to delete the version that is marked as the default version. You delete the
-//     policy's default version in the next step of the process.
-//   - Delete the policy (this automatically deletes the policy's default version)
-//     using this operation.
 //
-// For information about managed policies, see Managed policies and inline policies (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
+// * Detach
+// the policy from all users, groups, and roles that the policy is attached to,
+// using DetachUserPolicy, DetachGroupPolicy, or DetachRolePolicy. To list all the
+// users, groups, and roles that a policy is attached to, use
+// ListEntitiesForPolicy.
+//
+// * Delete all versions of the policy using
+// DeletePolicyVersion. To list the policy's versions, use ListPolicyVersions. You
+// cannot use DeletePolicyVersion to delete the version that is marked as the
+// default version. You delete the policy's default version in the next step of the
+// process.
+//
+// * Delete the policy (this automatically deletes the policy's default
+// version) using this operation.
+//
+// For information about managed policies, see
+// Managed policies and inline policies
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
 // in the IAM User Guide.
 func (c *Client) DeletePolicy(ctx context.Context, params *DeletePolicyInput, optFns ...func(*Options)) (*DeletePolicyOutput, error) {
 	if params == nil {
@@ -46,8 +52,9 @@ func (c *Client) DeletePolicy(ctx context.Context, params *DeletePolicyInput, op
 type DeletePolicyInput struct {
 
 	// The Amazon Resource Name (ARN) of the IAM policy you want to delete. For more
-	// information about ARNs, see Amazon Resource Names (ARNs) (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html)
-	// in the Amazon Web Services General Reference.
+	// information about ARNs, see Amazon Resource Names (ARNs)
+	// (https://docs.aws.amazon.com/general/latest/gr/aws-arns-and-namespaces.html) in
+	// the Amazon Web Services General Reference.
 	//
 	// This member is required.
 	PolicyArn *string
@@ -63,22 +70,12 @@ type DeletePolicyOutput struct {
 }
 
 func (c *Client) addOperationDeletePolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeletePolicy{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeletePolicy{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "DeletePolicy"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -99,13 +96,16 @@ func (c *Client) addOperationDeletePolicyMiddlewares(stack *middleware.Stack, op
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -114,16 +114,10 @@ func (c *Client) addOperationDeletePolicyMiddlewares(stack *middleware.Stack, op
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpDeletePolicyValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeletePolicy(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -135,9 +129,6 @@ func (c *Client) addOperationDeletePolicyMiddlewares(stack *middleware.Stack, op
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -145,6 +136,7 @@ func newServiceMetadataMiddleware_opDeletePolicy(region string) *awsmiddleware.R
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "DeletePolicy",
 	}
 }

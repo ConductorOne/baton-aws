@@ -3,6 +3,8 @@ package connector
 import (
 	"context"
 	"fmt"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -10,7 +12,6 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
 )
 
 const (
@@ -55,7 +56,7 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 			Id: awsSdk.ToString(role.Arn),
 		}
 		profile := roleProfile(ctx, role)
-		roleResource, err := sdk.NewRoleResource(awsSdk.ToString(role.RoleName), resourceTypeRole, nil, awsSdk.ToString(role.Arn), profile, annos)
+		roleResource, err := resourceSdk.NewRoleResource(awsSdk.ToString(role.RoleName), resourceTypeRole, awsSdk.ToString(role.Arn), []resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)}, resourceSdk.WithAnnotation(annos))
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -86,7 +87,7 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
 	})
-	member := sdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, resourceTypeIAMGroup, resourceTypeSSOUser)
+	member := entitlementSdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, entitlementSdk.WithGrantableTo(resourceTypeIAMGroup, resourceTypeSSOUser))
 	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Role", resource.DisplayName)

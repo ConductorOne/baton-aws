@@ -4,7 +4,6 @@ package iam
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -13,8 +12,9 @@ import (
 
 // Deletes the specified inline policy that is embedded in the specified IAM user.
 // A user can also have managed policies attached to it. To detach a managed policy
-// from a user, use DetachUserPolicy . For more information about policies, refer
-// to Managed policies and inline policies (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
+// from a user, use DetachUserPolicy. For more information about policies, refer to
+// Managed policies and inline policies
+// (https://docs.aws.amazon.com/IAM/latest/UserGuide/policies-managed-vs-inline.html)
 // in the IAM User Guide.
 func (c *Client) DeleteUserPolicy(ctx context.Context, params *DeleteUserPolicyInput, optFns ...func(*Options)) (*DeleteUserPolicyOutput, error) {
 	if params == nil {
@@ -34,7 +34,7 @@ func (c *Client) DeleteUserPolicy(ctx context.Context, params *DeleteUserPolicyI
 type DeleteUserPolicyInput struct {
 
 	// The name identifying the policy document to delete. This parameter allows
-	// (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string of
+	// (through its regex pattern (http://wikipedia.org/wiki/regex)) a string of
 	// characters consisting of upper and lowercase alphanumeric characters with no
 	// spaces. You can also include any of the following characters: _+=,.@-
 	//
@@ -42,10 +42,10 @@ type DeleteUserPolicyInput struct {
 	PolicyName *string
 
 	// The name (friendly name, not ARN) identifying the user that the policy is
-	// embedded in. This parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)
-	// ) a string of characters consisting of upper and lowercase alphanumeric
-	// characters with no spaces. You can also include any of the following characters:
-	// _+=,.@-
+	// embedded in. This parameter allows (through its regex pattern
+	// (http://wikipedia.org/wiki/regex)) a string of characters consisting of upper
+	// and lowercase alphanumeric characters with no spaces. You can also include any
+	// of the following characters: _+=,.@-
 	//
 	// This member is required.
 	UserName *string
@@ -61,22 +61,12 @@ type DeleteUserPolicyOutput struct {
 }
 
 func (c *Client) addOperationDeleteUserPolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpDeleteUserPolicy{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpDeleteUserPolicy{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "DeleteUserPolicy"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -97,13 +87,16 @@ func (c *Client) addOperationDeleteUserPolicyMiddlewares(stack *middleware.Stack
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -112,16 +105,10 @@ func (c *Client) addOperationDeleteUserPolicyMiddlewares(stack *middleware.Stack
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpDeleteUserPolicyValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeleteUserPolicy(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -133,9 +120,6 @@ func (c *Client) addOperationDeleteUserPolicyMiddlewares(stack *middleware.Stack
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -143,6 +127,7 @@ func newServiceMetadataMiddleware_opDeleteUserPolicy(region string) *awsmiddlewa
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "DeleteUserPolicy",
 	}
 }

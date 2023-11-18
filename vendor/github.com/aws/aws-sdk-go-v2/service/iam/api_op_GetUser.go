@@ -38,10 +38,10 @@ func (c *Client) GetUser(ctx context.Context, params *GetUserInput, optFns ...fu
 
 type GetUserInput struct {
 
-	// The name of the user to get information about. This parameter is optional. If
-	// it is not included, it defaults to the user making the request. This parameter
-	// allows (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string
-	// of characters consisting of upper and lowercase alphanumeric characters with no
+	// The name of the user to get information about. This parameter is optional. If it
+	// is not included, it defaults to the user making the request. This parameter
+	// allows (through its regex pattern (http://wikipedia.org/wiki/regex)) a string of
+	// characters consisting of upper and lowercase alphanumeric characters with no
 	// spaces. You can also include any of the following characters: _+=,.@-
 	UserName *string
 
@@ -53,11 +53,13 @@ type GetUserOutput struct {
 
 	// A structure containing details about the IAM user. Due to a service issue,
 	// password last used data does not include password use from May 3, 2018 22:50 PDT
-	// to May 23, 2018 14:08 PDT. This affects last sign-in (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_finding-unused.html)
+	// to May 23, 2018 14:08 PDT. This affects last sign-in
+	// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_finding-unused.html)
 	// dates shown in the IAM console and password last used dates in the IAM
-	// credential report (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_getting-report.html)
-	// , and returned by this operation. If users signed in during the affected time,
-	// the password last used date that is returned is the date the user last signed in
+	// credential report
+	// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_getting-report.html),
+	// and returned by this operation. If users signed in during the affected time, the
+	// password last used date that is returned is the date the user last signed in
 	// before May 3, 2018. For users that signed in after May 23, 2018 14:08 PDT, the
 	// returned password last used date is accurate. You can use password last used
 	// information to identify unused credentials for deletion. For example, you might
@@ -77,22 +79,12 @@ type GetUserOutput struct {
 }
 
 func (c *Client) addOperationGetUserMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetUser{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetUser{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "GetUser"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -113,13 +105,16 @@ func (c *Client) addOperationGetUserMiddlewares(stack *middleware.Stack, options
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -128,13 +123,7 @@ func (c *Client) addOperationGetUserMiddlewares(stack *middleware.Stack, options
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetUser(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -144,9 +133,6 @@ func (c *Client) addOperationGetUserMiddlewares(stack *middleware.Stack, options
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -172,9 +158,9 @@ type UserExistsWaiterOptions struct {
 	// must resolve to a value lesser than or equal to the MaxDelay.
 	MinDelay time.Duration
 
-	// MaxDelay is the maximum amount of time to delay between retries. If unset or
-	// set to zero, UserExistsWaiter will use default max delay of 120 seconds. Note
-	// that MaxDelay must resolve to value greater than or equal to the MinDelay.
+	// MaxDelay is the maximum amount of time to delay between retries. If unset or set
+	// to zero, UserExistsWaiter will use default max delay of 120 seconds. Note that
+	// MaxDelay must resolve to value greater than or equal to the MinDelay.
 	MaxDelay time.Duration
 
 	// LogWaitAttempts is used to enable logging for waiter retry attempts
@@ -321,6 +307,7 @@ func newServiceMetadataMiddleware_opGetUser(region string) *awsmiddleware.Regist
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "GetUser",
 	}
 }

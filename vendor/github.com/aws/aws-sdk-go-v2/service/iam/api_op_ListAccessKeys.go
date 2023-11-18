@@ -20,10 +20,10 @@ import (
 // used to sign the request. If a temporary access key is used, then UserName is
 // required. If a long-term key is assigned to the user, then UserName is not
 // required. This operation works for access keys under the Amazon Web Services
-// account. If the Amazon Web Services account has no associated users, the root
-// user returns it's own access key IDs by running this command. To ensure the
-// security of your Amazon Web Services account, the secret access key is
-// accessible only during key and user creation.
+// account. Consequently, you can use this operation to manage Amazon Web Services
+// account root user credentials even if the Amazon Web Services account has no
+// associated users. To ensure the security of your Amazon Web Services account,
+// the secret access key is accessible only during key and user creation.
 func (c *Client) ListAccessKeys(ctx context.Context, params *ListAccessKeysInput, optFns ...func(*Options)) (*ListAccessKeysOutput, error) {
 	if params == nil {
 		params = &ListAccessKeysInput{}
@@ -49,17 +49,17 @@ type ListAccessKeysInput struct {
 
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	MaxItems *int32
 
-	// The name of the user. This parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)
-	// ) a string of characters consisting of upper and lowercase alphanumeric
-	// characters with no spaces. You can also include any of the following characters:
-	// _+=,.@-
+	// The name of the user. This parameter allows (through its regex pattern
+	// (http://wikipedia.org/wiki/regex)) a string of characters consisting of upper
+	// and lowercase alphanumeric characters with no spaces. You can also include any
+	// of the following characters: _+=,.@-
 	UserName *string
 
 	noSmithyDocumentSerde
@@ -77,11 +77,11 @@ type ListAccessKeysOutput struct {
 	// were truncated, you can make a subsequent pagination request using the Marker
 	// request parameter to retrieve more items. Note that IAM might return fewer than
 	// the MaxItems number of results even when there are more results available. We
-	// recommend that you check IsTruncated after every call to ensure that you
-	// receive all your results.
+	// recommend that you check IsTruncated after every call to ensure that you receive
+	// all your results.
 	IsTruncated bool
 
-	// When IsTruncated is true , this element is present and contains the value to use
+	// When IsTruncated is true, this element is present and contains the value to use
 	// for the Marker parameter in a subsequent pagination request.
 	Marker *string
 
@@ -92,22 +92,12 @@ type ListAccessKeysOutput struct {
 }
 
 func (c *Client) addOperationListAccessKeysMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpListAccessKeys{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListAccessKeys{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListAccessKeys"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -128,13 +118,16 @@ func (c *Client) addOperationListAccessKeysMiddlewares(stack *middleware.Stack, 
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -143,13 +136,7 @@ func (c *Client) addOperationListAccessKeysMiddlewares(stack *middleware.Stack, 
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListAccessKeys(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -159,9 +146,6 @@ func (c *Client) addOperationListAccessKeysMiddlewares(stack *middleware.Stack, 
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -179,10 +163,10 @@ var _ ListAccessKeysAPIClient = (*Client)(nil)
 type ListAccessKeysPaginatorOptions struct {
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true . If you do not include this
+	// specify, the IsTruncated response element is true. If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true , and Marker contains a value to
+	// IsTruncated response element returns true, and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	Limit int32
 
@@ -267,6 +251,7 @@ func newServiceMetadataMiddleware_opListAccessKeys(region string) *awsmiddleware
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "iam",
 		OperationName: "ListAccessKeys",
 	}
 }

@@ -4,7 +4,6 @@ package identitystore
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
@@ -12,10 +11,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Retrieves the UserId in an identity store. If you have administrator access to
-// a member account, you can use this API from the member account. Read about
-// member accounts (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html)
-// in the Organizations User Guide.
+// Retrieves the UserId in an identity store.
 func (c *Client) GetUserId(ctx context.Context, params *GetUserIdInput, optFns ...func(*Options)) (*GetUserIdOutput, error) {
 	if params == nil {
 		params = &GetUserIdInput{}
@@ -33,10 +29,10 @@ func (c *Client) GetUserId(ctx context.Context, params *GetUserIdInput, optFns .
 
 type GetUserIdInput struct {
 
-	// A unique identifier for a user or group that is not the primary identifier.
-	// This value can be an identifier from an external identity provider (IdP) that is
-	// associated with the user, the group, or a unique attribute. For the unique
-	// attribute, the only valid paths are userName and emails.value .
+	// A unique identifier for a user or group that is not the primary identifier. This
+	// value can be an identifier from an external identity provider (IdP) that is
+	// associated with the user, the group, or a unique attribute. For example, a
+	// unique UserDisplayName.
 	//
 	// This member is required.
 	AlternateIdentifier types.AlternateIdentifier
@@ -68,22 +64,12 @@ type GetUserIdOutput struct {
 }
 
 func (c *Client) addOperationGetUserIdMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpGetUserId{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpGetUserId{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "GetUserId"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -104,13 +90,16 @@ func (c *Client) addOperationGetUserIdMiddlewares(stack *middleware.Stack, optio
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -119,16 +108,10 @@ func (c *Client) addOperationGetUserIdMiddlewares(stack *middleware.Stack, optio
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpGetUserIdValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetUserId(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -140,9 +123,6 @@ func (c *Client) addOperationGetUserIdMiddlewares(stack *middleware.Stack, optio
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -150,6 +130,7 @@ func newServiceMetadataMiddleware_opGetUserId(region string) *awsmiddleware.Regi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "identitystore",
 		OperationName: "GetUserId",
 	}
 }

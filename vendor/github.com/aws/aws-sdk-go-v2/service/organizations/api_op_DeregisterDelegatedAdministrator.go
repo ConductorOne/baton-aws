@@ -4,7 +4,6 @@ package organizations
 
 import (
 	"context"
-	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -19,7 +18,8 @@ import (
 // any potential impacts. You can run this action only for Amazon Web Services
 // services that support this feature. For a current list of services that support
 // it, see the column Supports Delegated Administrator in the table at Amazon Web
-// Services Services that you can use with Organizations (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_list.html)
+// Services Services that you can use with Organizations
+// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_list.html)
 // in the Organizations User Guide. This operation can be called only from the
 // organization's management account.
 func (c *Client) DeregisterDelegatedAdministrator(ctx context.Context, params *DeregisterDelegatedAdministratorInput, optFns ...func(*Options)) (*DeregisterDelegatedAdministratorOutput, error) {
@@ -39,8 +39,8 @@ func (c *Client) DeregisterDelegatedAdministrator(ctx context.Context, params *D
 
 type DeregisterDelegatedAdministratorInput struct {
 
-	// The account ID number of the member account in the organization that you want
-	// to deregister as a delegated administrator.
+	// The account ID number of the member account in the organization that you want to
+	// deregister as a delegated administrator.
 	//
 	// This member is required.
 	AccountId *string
@@ -66,22 +66,12 @@ type DeregisterDelegatedAdministratorOutput struct {
 }
 
 func (c *Client) addOperationDeregisterDelegatedAdministratorMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpDeregisterDelegatedAdministrator{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpDeregisterDelegatedAdministrator{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "DeregisterDelegatedAdministrator"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -102,13 +92,16 @@ func (c *Client) addOperationDeregisterDelegatedAdministratorMiddlewares(stack *
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -117,16 +110,10 @@ func (c *Client) addOperationDeregisterDelegatedAdministratorMiddlewares(stack *
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpDeregisterDelegatedAdministratorValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeregisterDelegatedAdministrator(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -138,9 +125,6 @@ func (c *Client) addOperationDeregisterDelegatedAdministratorMiddlewares(stack *
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -148,6 +132,7 @@ func newServiceMetadataMiddleware_opDeregisterDelegatedAdministrator(region stri
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "organizations",
 		OperationName: "DeregisterDelegatedAdministrator",
 	}
 }

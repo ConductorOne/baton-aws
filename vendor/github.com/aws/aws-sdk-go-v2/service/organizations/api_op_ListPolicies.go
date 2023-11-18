@@ -39,23 +39,34 @@ type ListPoliciesInput struct {
 
 	// Specifies the type of policy that you want to include in the response. You must
 	// specify one of the following values:
-	//   - AISERVICES_OPT_OUT_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_ai-opt-out.html)
-	//   - BACKUP_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_backup.html)
-	//   - SERVICE_CONTROL_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scp.html)
-	//   - TAG_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_tag-policies.html)
+	//
+	// * AISERVICES_OPT_OUT_POLICY
+	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_ai-opt-out.html)
+	//
+	// *
+	// BACKUP_POLICY
+	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_backup.html)
+	//
+	// *
+	// SERVICE_CONTROL_POLICY
+	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scp.html)
+	//
+	// *
+	// TAG_POLICY
+	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_tag-policies.html)
 	//
 	// This member is required.
 	Filter types.PolicyType
 
-	// The total number of results that you want included on each page of the
-	// response. If you do not include this parameter, it defaults to a value that is
-	// specific to the operation. If additional items exist beyond the maximum you
-	// specify, the NextToken response element is present and has a value (is not
-	// null). Include that value as the NextToken request parameter in the next call
-	// to the operation to get the next part of the results. Note that Organizations
-	// might return fewer results than the maximum even when there are more results
-	// available. You should check NextToken after every operation to ensure that you
-	// receive all of the results.
+	// The total number of results that you want included on each page of the response.
+	// If you do not include this parameter, it defaults to a value that is specific to
+	// the operation. If additional items exist beyond the maximum you specify, the
+	// NextToken response element is present and has a value (is not null). Include
+	// that value as the NextToken request parameter in the next call to the operation
+	// to get the next part of the results. Note that Organizations might return fewer
+	// results than the maximum even when there are more results available. You should
+	// check NextToken after every operation to ensure that you receive all of the
+	// results.
 	MaxResults *int32
 
 	// The parameter for receiving additional results if you receive a NextToken
@@ -72,12 +83,12 @@ type ListPoliciesOutput struct {
 	// If present, indicates that more output is available than is included in the
 	// current response. Use this value in the NextToken request parameter in a
 	// subsequent call to the operation to get the next part of the output. You should
-	// repeat this until the NextToken response element comes back as null .
+	// repeat this until the NextToken response element comes back as null.
 	NextToken *string
 
 	// A list of policies that match the filter criteria in the request. The output
 	// list doesn't include the policy contents. To see the content for a policy, see
-	// DescribePolicy .
+	// DescribePolicy.
 	Policies []types.PolicySummary
 
 	// Metadata pertaining to the operation's result.
@@ -87,22 +98,12 @@ type ListPoliciesOutput struct {
 }
 
 func (c *Client) addOperationListPoliciesMiddlewares(stack *middleware.Stack, options Options) (err error) {
-	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
-		return err
-	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListPolicies{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListPolicies{}, middleware.After)
 	if err != nil {
-		return err
-	}
-	if err := addProtocolFinalizerMiddlewares(stack, options, "ListPolicies"); err != nil {
-		return fmt.Errorf("add protocol finalizers: %v", err)
-	}
-
-	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -123,13 +124,16 @@ func (c *Client) addOperationListPoliciesMiddlewares(stack *middleware.Stack, op
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
+	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
+		return err
+	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack, options); err != nil {
+	if err = addClientUserAgent(stack); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -138,16 +142,10 @@ func (c *Client) addOperationListPoliciesMiddlewares(stack *middleware.Stack, op
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
-	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
-		return err
-	}
 	if err = addOpListPoliciesValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListPolicies(options.Region), middleware.Before); err != nil {
-		return err
-	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -157,9 +155,6 @@ func (c *Client) addOperationListPoliciesMiddlewares(stack *middleware.Stack, op
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
-		return err
-	}
-	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -174,15 +169,15 @@ var _ ListPoliciesAPIClient = (*Client)(nil)
 
 // ListPoliciesPaginatorOptions is the paginator options for ListPolicies
 type ListPoliciesPaginatorOptions struct {
-	// The total number of results that you want included on each page of the
-	// response. If you do not include this parameter, it defaults to a value that is
-	// specific to the operation. If additional items exist beyond the maximum you
-	// specify, the NextToken response element is present and has a value (is not
-	// null). Include that value as the NextToken request parameter in the next call
-	// to the operation to get the next part of the results. Note that Organizations
-	// might return fewer results than the maximum even when there are more results
-	// available. You should check NextToken after every operation to ensure that you
-	// receive all of the results.
+	// The total number of results that you want included on each page of the response.
+	// If you do not include this parameter, it defaults to a value that is specific to
+	// the operation. If additional items exist beyond the maximum you specify, the
+	// NextToken response element is present and has a value (is not null). Include
+	// that value as the NextToken request parameter in the next call to the operation
+	// to get the next part of the results. Note that Organizations might return fewer
+	// results than the maximum even when there are more results available. You should
+	// check NextToken after every operation to ensure that you receive all of the
+	// results.
 	Limit int32
 
 	// Set to true if pagination should stop if the service returns a pagination token
@@ -266,6 +261,7 @@ func newServiceMetadataMiddleware_opListPolicies(region string) *awsmiddleware.R
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
+		SigningName:   "organizations",
 		OperationName: "ListPolicies",
 	}
 }
