@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/conductorone/baton-aws/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/spf13/cobra"
+
+	"github.com/conductorone/baton-aws/pkg/connector"
 )
 
 // config defines the external configuration required for the connector to run.
