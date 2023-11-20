@@ -3,8 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
-	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -12,6 +10,8 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 const (
@@ -56,7 +56,13 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 			Id: awsSdk.ToString(role.Arn),
 		}
 		profile := roleProfile(ctx, role)
-		roleResource, err := resourceSdk.NewRoleResource(awsSdk.ToString(role.RoleName), resourceTypeRole, awsSdk.ToString(role.Arn), []resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)}, resourceSdk.WithAnnotation(annos))
+		roleResource, err := resourceSdk.NewRoleResource(
+			awsSdk.ToString(role.RoleName),
+			resourceTypeRole,
+			awsSdk.ToString(role.Arn),
+			[]resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)},
+			resourceSdk.WithAnnotation(annos),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}

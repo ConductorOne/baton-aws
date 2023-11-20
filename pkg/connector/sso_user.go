@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -14,6 +13,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
