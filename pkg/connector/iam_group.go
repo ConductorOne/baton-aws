@@ -127,13 +127,13 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		if err != nil {
 			return nil, "", nil, err
 		}
-		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID)
-		v1Identifier := &v2.V1Identifier{
-			Id: V1GrantID(V1MembershipEntitlementID(resource.Id), awsSdk.ToString(user.Arn)),
-		}
-		annos := annotations.Annotations(grant.Annotations)
-		annos.Update(v1Identifier)
-		grant.Annotations = annos
+		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID,
+			grantSdk.WithAnnotation(
+				&v2.V1Identifier{
+					Id: V1GrantID(V1MembershipEntitlementID(resource.Id), awsSdk.ToString(user.Arn)),
+				},
+			),
+		)
 		rv = append(rv, grant)
 	}
 
@@ -156,34 +156,34 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	return rv, nextPage, nil, nil
 }
 
-func (g *iamGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	//if principal.Id.ResourceType != resourceTypeIAMUser.Id {
-	//	return nil, errors.New("baton-aws: only iam users can be added to an iam group")
-	//}
-
-	if _, err := g.iamClient.AddUserToGroup(ctx, &iam.AddUserToGroupInput{
-		GroupName: awsSdk.String(entitlement.Resource.Id.Resource),
-		UserName:  awsSdk.String(principal.Id.Resource),
-	}); err != nil {
-		return nil, fmt.Errorf("baton-aws: error adding iam user to iam group: %w", err)
-	}
-
-	return nil, nil
-}
-func (g *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	//if grant.Principal.Id.ResourceType != resourceTypeIAMUser.Id {
-	//	return nil, errors.New("baton-aws: only iam users can be added to an iam group")
-	//}
-
-	if _, err := g.iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{
-		GroupName: awsSdk.String(grant.Entitlement.Resource.Id.Resource),
-		UserName:  awsSdk.String(grant.Principal.Id.Resource),
-	}); err != nil {
-		return nil, fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err)
-	}
-
-	return nil, nil
-}
+//func (g *iamGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+//	if principal.Id.ResourceType != resourceTypeIAMUser.Id {
+//		return nil, errors.New("baton-aws: only iam users can be added to an iam group")
+//	}
+//
+//	if _, err := g.iamClient.AddUserToGroup(ctx, &iam.AddUserToGroupInput{
+//		GroupName: awsSdk.String(entitlement.Resource.Id.Resource),
+//		UserName:  awsSdk.String(principal.Id.Resource),
+//	}); err != nil {
+//		return nil, fmt.Errorf("baton-aws: error adding iam user to iam group: %w", err)
+//	}
+//
+//	return nil, nil
+//}
+//func (g *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+//	if grant.Principal.Id.ResourceType != resourceTypeIAMUser.Id {
+//		return nil, errors.New("baton-aws: only iam users can be added to an iam group")
+//	}
+//
+//	if _, err := g.iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{
+//		GroupName: awsSdk.String(grant.Entitlement.Resource.Id.Resource),
+//		UserName:  awsSdk.String(grant.Principal.Id.Resource),
+//	}); err != nil {
+//		return nil, fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err)
+//	}
+//
+//	return nil, nil
+//}
 
 func iamGroupBuilder(iamClient *iam.Client) *iamGroupResourceType {
 	return &iamGroupResourceType{
