@@ -4,6 +4,7 @@ package organizations
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
@@ -16,11 +17,9 @@ import (
 // specified type that the account inherits, plus any policy of that type that is
 // directly attached to the account. This operation applies only to policy types
 // other than service control policies (SCPs). For more information about policy
-// inheritance, see How Policy Inheritance Works
-// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies-inheritance.html)
-// in the Organizations User Guide. This operation can be called only from the
-// organization's management account or by a member account that is a delegated
-// administrator for an Amazon Web Services service.
+// inheritance, see Understanding management policy inheritance (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_inheritance_mgmt.html)
+// in the Organizations User Guide. This operation can be called from any account
+// in the organization.
 func (c *Client) DescribeEffectivePolicy(ctx context.Context, params *DescribeEffectivePolicyInput, optFns ...func(*Options)) (*DescribeEffectivePolicyOutput, error) {
 	if params == nil {
 		params = &DescribeEffectivePolicyInput{}
@@ -40,17 +39,9 @@ type DescribeEffectivePolicyInput struct {
 
 	// The type of policy that you want information about. You can specify one of the
 	// following values:
-	//
-	// * AISERVICES_OPT_OUT_POLICY
-	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_ai-opt-out.html)
-	//
-	// *
-	// BACKUP_POLICY
-	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_backup.html)
-	//
-	// *
-	// TAG_POLICY
-	// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_tag-policies.html)
+	//   - AISERVICES_OPT_OUT_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_ai-opt-out.html)
+	//   - BACKUP_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_backup.html)
+	//   - TAG_POLICY (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_tag-policies.html)
 	//
 	// This member is required.
 	PolicyType types.EffectivePolicyType
@@ -75,12 +66,22 @@ type DescribeEffectivePolicyOutput struct {
 }
 
 func (c *Client) addOperationDescribeEffectivePolicyMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpDescribeEffectivePolicy{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpDescribeEffectivePolicy{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "DescribeEffectivePolicy"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -101,16 +102,13 @@ func (c *Client) addOperationDescribeEffectivePolicyMiddlewares(stack *middlewar
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -119,10 +117,16 @@ func (c *Client) addOperationDescribeEffectivePolicyMiddlewares(stack *middlewar
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpDescribeEffectivePolicyValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDescribeEffectivePolicy(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -134,6 +138,9 @@ func (c *Client) addOperationDescribeEffectivePolicyMiddlewares(stack *middlewar
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -141,7 +148,6 @@ func newServiceMetadataMiddleware_opDescribeEffectivePolicy(region string) *awsm
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "organizations",
 		OperationName: "DescribeEffectivePolicy",
 	}
 }

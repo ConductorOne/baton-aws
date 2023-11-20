@@ -12,7 +12,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the AWS managed policy that is attached to a specified permission set.
+// Lists the Amazon Web Services managed policy that is attached to a specified
+// permission set.
 func (c *Client) ListManagedPoliciesInPermissionSet(ctx context.Context, params *ListManagedPoliciesInPermissionSetInput, optFns ...func(*Options)) (*ListManagedPoliciesInPermissionSetOutput, error) {
 	if params == nil {
 		params = &ListManagedPoliciesInPermissionSetInput{}
@@ -32,7 +33,8 @@ type ListManagedPoliciesInPermissionSetInput struct {
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// AWS Service Namespaces in the AWS General Reference.
+	// Amazon Web Services Service Namespaces in the Amazon Web Services General
+	// Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -42,7 +44,7 @@ type ListManagedPoliciesInPermissionSetInput struct {
 	// This member is required.
 	PermissionSetArn *string
 
-	// The maximum number of results to display for the PermissionSet.
+	// The maximum number of results to display for the PermissionSet .
 	MaxResults *int32
 
 	// The pagination token for the list API. Initially the value is null. Use the
@@ -68,12 +70,22 @@ type ListManagedPoliciesInPermissionSetOutput struct {
 }
 
 func (c *Client) addOperationListManagedPoliciesInPermissionSetMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListManagedPoliciesInPermissionSet{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListManagedPoliciesInPermissionSet{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListManagedPoliciesInPermissionSet"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -94,16 +106,13 @@ func (c *Client) addOperationListManagedPoliciesInPermissionSetMiddlewares(stack
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -112,10 +121,16 @@ func (c *Client) addOperationListManagedPoliciesInPermissionSetMiddlewares(stack
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpListManagedPoliciesInPermissionSetValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListManagedPoliciesInPermissionSet(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -125,6 +140,9 @@ func (c *Client) addOperationListManagedPoliciesInPermissionSetMiddlewares(stack
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -141,7 +159,7 @@ var _ ListManagedPoliciesInPermissionSetAPIClient = (*Client)(nil)
 // ListManagedPoliciesInPermissionSetPaginatorOptions is the paginator options for
 // ListManagedPoliciesInPermissionSet
 type ListManagedPoliciesInPermissionSetPaginatorOptions struct {
-	// The maximum number of results to display for the PermissionSet.
+	// The maximum number of results to display for the PermissionSet .
 	Limit int32
 
 	// Set to true if pagination should stop if the service returns a pagination token
@@ -227,7 +245,6 @@ func newServiceMetadataMiddleware_opListManagedPoliciesInPermissionSet(region st
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "sso",
 		OperationName: "ListManagedPoliciesInPermissionSet",
 	}
 }

@@ -33,15 +33,15 @@ func (c *Client) ListDelegatedAdministrators(ctx context.Context, params *ListDe
 
 type ListDelegatedAdministratorsInput struct {
 
-	// The total number of results that you want included on each page of the response.
-	// If you do not include this parameter, it defaults to a value that is specific to
-	// the operation. If additional items exist beyond the maximum you specify, the
-	// NextToken response element is present and has a value (is not null). Include
-	// that value as the NextToken request parameter in the next call to the operation
-	// to get the next part of the results. Note that Organizations might return fewer
-	// results than the maximum even when there are more results available. You should
-	// check NextToken after every operation to ensure that you receive all of the
-	// results.
+	// The total number of results that you want included on each page of the
+	// response. If you do not include this parameter, it defaults to a value that is
+	// specific to the operation. If additional items exist beyond the maximum you
+	// specify, the NextToken response element is present and has a value (is not
+	// null). Include that value as the NextToken request parameter in the next call
+	// to the operation to get the next part of the results. Note that Organizations
+	// might return fewer results than the maximum even when there are more results
+	// available. You should check NextToken after every operation to ensure that you
+	// receive all of the results.
 	MaxResults *int32
 
 	// The parameter for receiving additional results if you receive a NextToken
@@ -67,7 +67,7 @@ type ListDelegatedAdministratorsOutput struct {
 	// If present, indicates that more output is available than is included in the
 	// current response. Use this value in the NextToken request parameter in a
 	// subsequent call to the operation to get the next part of the output. You should
-	// repeat this until the NextToken response element comes back as null.
+	// repeat this until the NextToken response element comes back as null .
 	NextToken *string
 
 	// Metadata pertaining to the operation's result.
@@ -77,12 +77,22 @@ type ListDelegatedAdministratorsOutput struct {
 }
 
 func (c *Client) addOperationListDelegatedAdministratorsMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpListDelegatedAdministrators{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpListDelegatedAdministrators{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListDelegatedAdministrators"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -103,16 +113,13 @@ func (c *Client) addOperationListDelegatedAdministratorsMiddlewares(stack *middl
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -121,7 +128,13 @@ func (c *Client) addOperationListDelegatedAdministratorsMiddlewares(stack *middl
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListDelegatedAdministrators(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -131,6 +144,9 @@ func (c *Client) addOperationListDelegatedAdministratorsMiddlewares(stack *middl
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -147,15 +163,15 @@ var _ ListDelegatedAdministratorsAPIClient = (*Client)(nil)
 // ListDelegatedAdministratorsPaginatorOptions is the paginator options for
 // ListDelegatedAdministrators
 type ListDelegatedAdministratorsPaginatorOptions struct {
-	// The total number of results that you want included on each page of the response.
-	// If you do not include this parameter, it defaults to a value that is specific to
-	// the operation. If additional items exist beyond the maximum you specify, the
-	// NextToken response element is present and has a value (is not null). Include
-	// that value as the NextToken request parameter in the next call to the operation
-	// to get the next part of the results. Note that Organizations might return fewer
-	// results than the maximum even when there are more results available. You should
-	// check NextToken after every operation to ensure that you receive all of the
-	// results.
+	// The total number of results that you want included on each page of the
+	// response. If you do not include this parameter, it defaults to a value that is
+	// specific to the operation. If additional items exist beyond the maximum you
+	// specify, the NextToken response element is present and has a value (is not
+	// null). Include that value as the NextToken request parameter in the next call
+	// to the operation to get the next part of the results. Note that Organizations
+	// might return fewer results than the maximum even when there are more results
+	// available. You should check NextToken after every operation to ensure that you
+	// receive all of the results.
 	Limit int32
 
 	// Set to true if pagination should stop if the service returns a pagination token
@@ -241,7 +257,6 @@ func newServiceMetadataMiddleware_opListDelegatedAdministrators(region string) *
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "organizations",
 		OperationName: "ListDelegatedAdministrators",
 	}
 }

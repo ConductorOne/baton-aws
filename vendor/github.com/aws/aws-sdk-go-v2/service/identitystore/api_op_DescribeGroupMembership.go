@@ -4,6 +4,7 @@ package identitystore
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
@@ -12,7 +13,9 @@ import (
 )
 
 // Retrieves membership metadata and attributes from MembershipId in an identity
-// store.
+// store. If you have administrator access to a member account, you can use this
+// API from the member account. Read about member accounts (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html)
+// in the Organizations User Guide.
 func (c *Client) DescribeGroupMembership(ctx context.Context, params *DescribeGroupMembershipInput, optFns ...func(*Options)) (*DescribeGroupMembershipOutput, error) {
 	if params == nil {
 		params = &DescribeGroupMembershipInput{}
@@ -72,12 +75,22 @@ type DescribeGroupMembershipOutput struct {
 }
 
 func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpDescribeGroupMembership{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpDescribeGroupMembership{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "DescribeGroupMembership"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -98,16 +111,13 @@ func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middlewar
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -116,10 +126,16 @@ func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middlewar
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpDescribeGroupMembershipValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDescribeGroupMembership(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -131,6 +147,9 @@ func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middlewar
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -138,7 +157,6 @@ func newServiceMetadataMiddleware_opDescribeGroupMembership(region string) *awsm
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "identitystore",
 		OperationName: "DescribeGroupMembership",
 	}
 }

@@ -4,6 +4,7 @@ package ssoadmin
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -30,7 +31,8 @@ type DeleteInlinePolicyFromPermissionSetInput struct {
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// AWS Service Namespaces in the AWS General Reference.
+	// Amazon Web Services Service Namespaces in the Amazon Web Services General
+	// Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -51,12 +53,22 @@ type DeleteInlinePolicyFromPermissionSetOutput struct {
 }
 
 func (c *Client) addOperationDeleteInlinePolicyFromPermissionSetMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpDeleteInlinePolicyFromPermissionSet{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpDeleteInlinePolicyFromPermissionSet{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "DeleteInlinePolicyFromPermissionSet"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -77,16 +89,13 @@ func (c *Client) addOperationDeleteInlinePolicyFromPermissionSetMiddlewares(stac
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -95,10 +104,16 @@ func (c *Client) addOperationDeleteInlinePolicyFromPermissionSetMiddlewares(stac
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpDeleteInlinePolicyFromPermissionSetValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opDeleteInlinePolicyFromPermissionSet(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -110,6 +125,9 @@ func (c *Client) addOperationDeleteInlinePolicyFromPermissionSetMiddlewares(stac
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -117,7 +135,6 @@ func newServiceMetadataMiddleware_opDeleteInlinePolicyFromPermissionSet(region s
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "sso",
 		OperationName: "DeleteInlinePolicyFromPermissionSet",
 	}
 }

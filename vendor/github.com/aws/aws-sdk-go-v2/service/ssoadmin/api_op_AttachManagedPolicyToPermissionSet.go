@@ -4,16 +4,18 @@ package ssoadmin
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Attaches an AWS managed policy ARN to a permission set. If the permission set is
-// already referenced by one or more account assignments, you will need to call
-// ProvisionPermissionSet after this operation. Calling ProvisionPermissionSet
-// applies the corresponding IAM policy updates to all assigned accounts.
+// Attaches an Amazon Web Services managed policy ARN to a permission set. If the
+// permission set is already referenced by one or more account assignments, you
+// will need to call ProvisionPermissionSet after this operation. Calling
+// ProvisionPermissionSet applies the corresponding IAM policy updates to all
+// assigned accounts.
 func (c *Client) AttachManagedPolicyToPermissionSet(ctx context.Context, params *AttachManagedPolicyToPermissionSetInput, optFns ...func(*Options)) (*AttachManagedPolicyToPermissionSetOutput, error) {
 	if params == nil {
 		params = &AttachManagedPolicyToPermissionSetInput{}
@@ -33,12 +35,13 @@ type AttachManagedPolicyToPermissionSetInput struct {
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
 	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// AWS Service Namespaces in the AWS General Reference.
+	// Amazon Web Services Service Namespaces in the Amazon Web Services General
+	// Reference.
 	//
 	// This member is required.
 	InstanceArn *string
 
-	// The AWS managed policy ARN to be attached to a permission set.
+	// The Amazon Web Services managed policy ARN to be attached to a permission set.
 	//
 	// This member is required.
 	ManagedPolicyArn *string
@@ -59,12 +62,22 @@ type AttachManagedPolicyToPermissionSetOutput struct {
 }
 
 func (c *Client) addOperationAttachManagedPolicyToPermissionSetMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpAttachManagedPolicyToPermissionSet{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpAttachManagedPolicyToPermissionSet{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AttachManagedPolicyToPermissionSet"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -85,16 +98,13 @@ func (c *Client) addOperationAttachManagedPolicyToPermissionSetMiddlewares(stack
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -103,10 +113,16 @@ func (c *Client) addOperationAttachManagedPolicyToPermissionSetMiddlewares(stack
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpAttachManagedPolicyToPermissionSetValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opAttachManagedPolicyToPermissionSet(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -118,6 +134,9 @@ func (c *Client) addOperationAttachManagedPolicyToPermissionSetMiddlewares(stack
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -125,7 +144,6 @@ func newServiceMetadataMiddleware_opAttachManagedPolicyToPermissionSet(region st
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "sso",
 		OperationName: "AttachManagedPolicyToPermissionSet",
 	}
 }
