@@ -68,3 +68,15 @@ func ssoGroupIdFromARN(input string) (string, error) {
 	}
 	return after, nil
 }
+
+func ssoUserIdFromARN(input string) (string, error) {
+	id, err := arn.Parse(input)
+	if err != nil {
+		return "", fmt.Errorf("ssoUserIdFromARN: ARN Parse failed: %w", err)
+	}
+	_, after, found := strings.Cut(id.Resource, "/user/")
+	if !found {
+		return "", fmt.Errorf("ssoUserIdFromARN: invalid resrouce '%s' in ARN", input)
+	}
+	return after, nil
+}
