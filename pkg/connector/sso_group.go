@@ -19,8 +19,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
-const MembershipIDMetadataKey = "membership_id"
-
 type ssoGroupResourceType struct {
 	resourceType        *v2.ResourceType
 	ssoClient           *awsSsoAdmin.Client
@@ -146,10 +144,13 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 					Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
 				},
 			),
-			grantSdk.WithGrantMetadata(map[string]interface{}{
-				MembershipIDMetadataKey: awsSdk.ToString(user.MembershipId),
-			}),
 		)
+
+		// MembershipID should always be not-nil here but let's guard ourselves
+		// Just use the MembershipID as the grant ID so that we can easily revoke it later
+		if user.MembershipId != nil {
+			grant.Id = *user.MembershipId
+		}
 		rv = append(rv, grant)
 	}
 	nextPage, err := bag.Marshal()
@@ -201,24 +202,9 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		return nil, errors.New("baton-aws: only sso users can be removed from sso group")
 	}
 
-	grantAnnos := annotations.Annotations(grant.Annotations)
-	meta := &v2.GrantMetadata{}
-	ok, err := grantAnnos.Pick(meta)
-	if err != nil {
-		return nil, fmt.Errorf("baton-aws: error unmarshalling grant metadata: %w", err)
-	}
-	if !ok {
-		return nil, errors.New("baton-aws: grant missing metadata")
-	}
-
-	membershipID, ok := resourceSdk.GetProfileStringValue(meta.Metadata, MembershipIDMetadataKey)
-	if !ok {
-		return nil, errors.New("baton-aws: grant metadata missing membership id")
-	}
-
 	if _, err := g.identityStoreClient.DeleteGroupMembership(ctx, &awsIdentityStore.DeleteGroupMembershipInput{
 		IdentityStoreId: g.identityInstance.IdentityStoreId,
-		MembershipId:    awsSdk.String(membershipID),
+		MembershipId:    awsSdk.String(grant.Id),
 	}); err != nil {
 		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w", err)
 	}
