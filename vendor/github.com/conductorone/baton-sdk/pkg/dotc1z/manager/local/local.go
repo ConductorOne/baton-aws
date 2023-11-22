@@ -1,13 +1,12 @@
 package local
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os"
 
-	"github.com/conductorone/baton-sdk/internal/dotc1z"
+	"github.com/conductorone/baton-sdk/pkg/dotc1z"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -15,10 +14,19 @@ import (
 type localManager struct {
 	filePath string
 	tmpPath  string
+	tmpDir   string
+}
+
+type Option func(*localManager)
+
+func WithTmpDir(tmpDir string) Option {
+	return func(o *localManager) {
+		o.tmpDir = tmpDir
+	}
 }
 
 func (l *localManager) copyFileToTmp(ctx context.Context) error {
-	tmp, err := os.CreateTemp("", "sync-*.c1z")
+	tmp, err := os.CreateTemp(l.tmpDir, "sync-*.c1z")
 	if err != nil {
 		return err
 	}
@@ -47,18 +55,18 @@ func (l *localManager) copyFileToTmp(ctx context.Context) error {
 }
 
 // LoadRaw returns an io.Reader of the bytes in the c1z file.
-func (l *localManager) LoadRaw(ctx context.Context) (io.Reader, error) {
+func (l *localManager) LoadRaw(ctx context.Context) (io.ReadCloser, error) {
 	err := l.copyFileToTmp(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	fBytes, err := os.ReadFile(l.tmpPath)
+	f, err := os.Open(l.tmpPath)
 	if err != nil {
 		return nil, err
 	}
 
-	return bytes.NewBuffer(fBytes), nil
+	return f, nil
 }
 
 // LoadC1Z loads the C1Z file from the local file system.
@@ -76,7 +84,7 @@ func (l *localManager) LoadC1Z(ctx context.Context) (*dotc1z.C1File, error) {
 		zap.String("temp_path", l.tmpPath),
 	)
 
-	return dotc1z.NewC1ZFile(ctx, l.tmpPath)
+	return dotc1z.NewC1ZFile(ctx, l.tmpPath, dotc1z.WithTmpDir(l.tmpDir))
 }
 
 // SaveC1Z saves the C1Z file to the local file system.
@@ -127,8 +135,14 @@ func (l *localManager) Close(ctx context.Context) error {
 }
 
 // New returns a new localManager that uses the given filePath.
-func New(ctx context.Context, filePath string) (*localManager, error) {
-	return &localManager{
+func New(ctx context.Context, filePath string, opts ...Option) (*localManager, error) {
+	ret := &localManager{
 		filePath: filePath,
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(ret)
+	}
+
+	return ret, nil
 }

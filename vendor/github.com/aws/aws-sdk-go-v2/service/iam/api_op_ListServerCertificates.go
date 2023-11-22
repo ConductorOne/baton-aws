@@ -12,17 +12,16 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists the server certificates stored in IAM that have the specified path prefix.
-// If none exist, the operation returns an empty list. You can paginate the results
-// using the MaxItems and Marker parameters. For more information about working
-// with server certificates, see Working with server certificates
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html)
+// Lists the server certificates stored in IAM that have the specified path
+// prefix. If none exist, the operation returns an empty list. You can paginate the
+// results using the MaxItems and Marker parameters. For more information about
+// working with server certificates, see Working with server certificates (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_server-certs.html)
 // in the IAM User Guide. This topic also includes a list of Amazon Web Services
 // services that can use the server certificates that you manage with IAM. IAM
 // resource-listing operations return a subset of the available attributes for the
 // resource. For example, this operation does not return tags, even though they are
 // an attribute of the returned object. To view all of the information for a
-// servercertificate, see GetServerCertificate.
+// servercertificate, see GetServerCertificate .
 func (c *Client) ListServerCertificates(ctx context.Context, params *ListServerCertificatesInput, optFns ...func(*Options)) (*ListServerCertificatesOutput, error) {
 	if params == nil {
 		params = &ListServerCertificatesInput{}
@@ -48,22 +47,22 @@ type ListServerCertificatesInput struct {
 
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true. If you do not include this
+	// specify, the IsTruncated response element is true . If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true, and Marker contains a value to
+	// IsTruncated response element returns true , and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	MaxItems *int32
 
 	// The path prefix for filtering the results. For example: /company/servercerts
 	// would get all server certificates for which the path starts with
-	// /company/servercerts. This parameter is optional. If it is not included, it
+	// /company/servercerts . This parameter is optional. If it is not included, it
 	// defaults to a slash (/), listing all server certificates. This parameter allows
-	// (through its regex pattern (http://wikipedia.org/wiki/regex)) a string of
+	// (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string of
 	// characters consisting of either a forward slash (/) by itself or a string that
 	// must begin and end with forward slashes. In addition, it can contain any ASCII
-	// character from the ! (\u0021) through the DEL character (\u007F), including most
-	// punctuation characters, digits, and upper and lowercased letters.
+	// character from the ! ( \u0021 ) through the DEL character ( \u007F ), including
+	// most punctuation characters, digits, and upper and lowercased letters.
 	PathPrefix *string
 
 	noSmithyDocumentSerde
@@ -81,11 +80,11 @@ type ListServerCertificatesOutput struct {
 	// were truncated, you can make a subsequent pagination request using the Marker
 	// request parameter to retrieve more items. Note that IAM might return fewer than
 	// the MaxItems number of results even when there are more results available. We
-	// recommend that you check IsTruncated after every call to ensure that you receive
-	// all your results.
+	// recommend that you check IsTruncated after every call to ensure that you
+	// receive all your results.
 	IsTruncated bool
 
-	// When IsTruncated is true, this element is present and contains the value to use
+	// When IsTruncated is true , this element is present and contains the value to use
 	// for the Marker parameter in a subsequent pagination request.
 	Marker *string
 
@@ -96,12 +95,22 @@ type ListServerCertificatesOutput struct {
 }
 
 func (c *Client) addOperationListServerCertificatesMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpListServerCertificates{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpListServerCertificates{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "ListServerCertificates"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -122,16 +131,13 @@ func (c *Client) addOperationListServerCertificatesMiddlewares(stack *middleware
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -140,7 +146,13 @@ func (c *Client) addOperationListServerCertificatesMiddlewares(stack *middleware
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListServerCertificates(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -150,6 +162,9 @@ func (c *Client) addOperationListServerCertificatesMiddlewares(stack *middleware
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -168,10 +183,10 @@ var _ ListServerCertificatesAPIClient = (*Client)(nil)
 type ListServerCertificatesPaginatorOptions struct {
 	// Use this only when paginating results to indicate the maximum number of items
 	// you want in the response. If additional items exist beyond the maximum you
-	// specify, the IsTruncated response element is true. If you do not include this
+	// specify, the IsTruncated response element is true . If you do not include this
 	// parameter, the number of items defaults to 100. Note that IAM might return fewer
 	// results, even when there are more results available. In that case, the
-	// IsTruncated response element returns true, and Marker contains a value to
+	// IsTruncated response element returns true , and Marker contains a value to
 	// include in the subsequent call that tells the service where to continue from.
 	Limit int32
 
@@ -256,7 +271,6 @@ func newServiceMetadataMiddleware_opListServerCertificates(region string) *awsmi
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "ListServerCertificates",
 	}
 }

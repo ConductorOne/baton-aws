@@ -4027,6 +4027,70 @@ func (m *awsAwsquery_serializeOpGetLoginProfile) HandleSerialize(ctx context.Con
 	return next.HandleSerialize(ctx, in)
 }
 
+type awsAwsquery_serializeOpGetMFADevice struct {
+}
+
+func (*awsAwsquery_serializeOpGetMFADevice) ID() string {
+	return "OperationSerializer"
+}
+
+func (m *awsAwsquery_serializeOpGetMFADevice) HandleSerialize(ctx context.Context, in middleware.SerializeInput, next middleware.SerializeHandler) (
+	out middleware.SerializeOutput, metadata middleware.Metadata, err error,
+) {
+	request, ok := in.Request.(*smithyhttp.Request)
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown transport type %T", in.Request)}
+	}
+
+	input, ok := in.Parameters.(*GetMFADeviceInput)
+	_ = input
+	if !ok {
+		return out, metadata, &smithy.SerializationError{Err: fmt.Errorf("unknown input parameters type %T", in.Parameters)}
+	}
+
+	operationPath := "/"
+	if len(request.Request.URL.Path) == 0 {
+		request.Request.URL.Path = operationPath
+	} else {
+		request.Request.URL.Path = path.Join(request.Request.URL.Path, operationPath)
+		if request.Request.URL.Path != "/" && operationPath[len(operationPath)-1] == '/' {
+			request.Request.URL.Path += "/"
+		}
+	}
+	request.Request.Method = "POST"
+	httpBindingEncoder, err := httpbinding.NewEncoder(request.URL.Path, request.URL.RawQuery, request.Header)
+	if err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+	httpBindingEncoder.SetHeader("Content-Type").String("application/x-www-form-urlencoded")
+
+	bodyWriter := bytes.NewBuffer(nil)
+	bodyEncoder := query.NewEncoder(bodyWriter)
+	body := bodyEncoder.Object()
+	body.Key("Action").String("GetMFADevice")
+	body.Key("Version").String("2010-05-08")
+
+	if err := awsAwsquery_serializeOpDocumentGetMFADeviceInput(input, bodyEncoder.Value); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	err = bodyEncoder.Encode()
+	if err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	if request, err = request.SetStream(bytes.NewReader(bodyWriter.Bytes())); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+
+	if request.Request, err = httpBindingEncoder.Encode(request.Request); err != nil {
+		return out, metadata, &smithy.SerializationError{Err: err}
+	}
+	in.Request = request
+
+	return next.HandleSerialize(ctx, in)
+}
+
 type awsAwsquery_serializeOpGetOpenIDConnectProvider struct {
 }
 
@@ -10099,9 +10163,6 @@ func (m *awsAwsquery_serializeOpUploadSSHPublicKey) HandleSerialize(ctx context.
 	return next.HandleSerialize(ctx, in)
 }
 func awsAwsquery_serializeDocumentActionNameListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10112,9 +10173,6 @@ func awsAwsquery_serializeDocumentActionNameListType(v []string, value query.Val
 }
 
 func awsAwsquery_serializeDocumentClientIDListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10149,9 +10207,6 @@ func awsAwsquery_serializeDocumentContextEntry(v *types.ContextEntry, value quer
 }
 
 func awsAwsquery_serializeDocumentContextEntryListType(v []types.ContextEntry, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10164,9 +10219,6 @@ func awsAwsquery_serializeDocumentContextEntryListType(v []types.ContextEntry, v
 }
 
 func awsAwsquery_serializeDocumentContextKeyValueListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10177,9 +10229,6 @@ func awsAwsquery_serializeDocumentContextKeyValueListType(v []string, value quer
 }
 
 func awsAwsquery_serializeDocumentEntityListType(v []types.EntityType, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10190,9 +10239,6 @@ func awsAwsquery_serializeDocumentEntityListType(v []types.EntityType, value que
 }
 
 func awsAwsquery_serializeDocumentResourceNameListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10203,9 +10249,6 @@ func awsAwsquery_serializeDocumentResourceNameListType(v []string, value query.V
 }
 
 func awsAwsquery_serializeDocumentServiceNamespaceListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10216,9 +10259,6 @@ func awsAwsquery_serializeDocumentServiceNamespaceListType(v []string, value que
 }
 
 func awsAwsquery_serializeDocumentSimulationPolicyListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10246,9 +10286,6 @@ func awsAwsquery_serializeDocumentTag(v *types.Tag, value query.Value) error {
 }
 
 func awsAwsquery_serializeDocumentTagKeyListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10259,9 +10296,6 @@ func awsAwsquery_serializeDocumentTagKeyListType(v []string, value query.Value) 
 }
 
 func awsAwsquery_serializeDocumentTagListType(v []types.Tag, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -10274,9 +10308,6 @@ func awsAwsquery_serializeDocumentTagListType(v []types.Tag, value query.Value) 
 }
 
 func awsAwsquery_serializeDocumentThumbprintListType(v []string, value query.Value) error {
-	if len(v) == 0 {
-		return nil
-	}
 	array := value.Array("member")
 
 	for i := range v {
@@ -11297,6 +11328,23 @@ func awsAwsquery_serializeOpDocumentGetInstanceProfileInput(v *GetInstanceProfil
 func awsAwsquery_serializeOpDocumentGetLoginProfileInput(v *GetLoginProfileInput, value query.Value) error {
 	object := value.Object()
 	_ = object
+
+	if v.UserName != nil {
+		objectKey := object.Key("UserName")
+		objectKey.String(*v.UserName)
+	}
+
+	return nil
+}
+
+func awsAwsquery_serializeOpDocumentGetMFADeviceInput(v *GetMFADeviceInput, value query.Value) error {
+	object := value.Object()
+	_ = object
+
+	if v.SerialNumber != nil {
+		objectKey := object.Key("SerialNumber")
+		objectKey.String(*v.SerialNumber)
+	}
 
 	if v.UserName != nil {
 		objectKey := object.Key("UserName")

@@ -790,6 +790,9 @@ func awsAwsquery_deserializeOpErrorCreateAccountAlias(response *smithyhttp.Respo
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("EntityAlreadyExists", errorCode):
 		return awsAwsquery_deserializeErrorEntityAlreadyExistsException(response, errorBody)
 
@@ -2306,6 +2309,9 @@ func awsAwsquery_deserializeOpErrorDeactivateMFADevice(response *smithyhttp.Resp
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("EntityTemporarilyUnmodifiable", errorCode):
 		return awsAwsquery_deserializeErrorEntityTemporarilyUnmodifiableException(response, errorBody)
 
@@ -2467,6 +2473,9 @@ func awsAwsquery_deserializeOpErrorDeleteAccountAlias(response *smithyhttp.Respo
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("LimitExceeded", errorCode):
 		return awsAwsquery_deserializeErrorLimitExceededException(response, errorBody)
 
@@ -3799,6 +3808,9 @@ func awsAwsquery_deserializeOpErrorDeleteSigningCertificate(response *smithyhttp
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("LimitExceeded", errorCode):
 		return awsAwsquery_deserializeErrorLimitExceededException(response, errorBody)
 
@@ -4191,6 +4203,9 @@ func awsAwsquery_deserializeOpErrorDeleteVirtualMFADevice(response *smithyhttp.R
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("DeleteConflict", errorCode):
 		return awsAwsquery_deserializeErrorDeleteConflictException(response, errorBody)
 
@@ -4522,6 +4537,9 @@ func awsAwsquery_deserializeOpErrorEnableMFADevice(response *smithyhttp.Response
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("EntityAlreadyExists", errorCode):
 		return awsAwsquery_deserializeErrorEntityAlreadyExistsException(response, errorBody)
 
@@ -4975,9 +4993,6 @@ func awsAwsquery_deserializeOpErrorGetAccessKeyLastUsed(response *smithyhttp.Res
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
-	case strings.EqualFold("NoSuchEntity", errorCode):
-		return awsAwsquery_deserializeErrorNoSuchEntityException(response, errorBody)
-
 	default:
 		genericError := &smithy.GenericAPIError{
 			Code:    errorCode,
@@ -6055,6 +6070,117 @@ func (m *awsAwsquery_deserializeOpGetLoginProfile) HandleDeserialize(ctx context
 }
 
 func awsAwsquery_deserializeOpErrorGetLoginProfile(response *smithyhttp.Response, metadata *middleware.Metadata) error {
+	var errorBuffer bytes.Buffer
+	if _, err := io.Copy(&errorBuffer, response.Body); err != nil {
+		return &smithy.DeserializationError{Err: fmt.Errorf("failed to copy error response body, %w", err)}
+	}
+	errorBody := bytes.NewReader(errorBuffer.Bytes())
+
+	errorCode := "UnknownError"
+	errorMessage := errorCode
+
+	errorComponents, err := awsxml.GetErrorResponseComponents(errorBody, false)
+	if err != nil {
+		return err
+	}
+	if reqID := errorComponents.RequestID; len(reqID) != 0 {
+		awsmiddleware.SetRequestIDMetadata(metadata, reqID)
+	}
+	if len(errorComponents.Code) != 0 {
+		errorCode = errorComponents.Code
+	}
+	if len(errorComponents.Message) != 0 {
+		errorMessage = errorComponents.Message
+	}
+	errorBody.Seek(0, io.SeekStart)
+	switch {
+	case strings.EqualFold("NoSuchEntity", errorCode):
+		return awsAwsquery_deserializeErrorNoSuchEntityException(response, errorBody)
+
+	case strings.EqualFold("ServiceFailure", errorCode):
+		return awsAwsquery_deserializeErrorServiceFailureException(response, errorBody)
+
+	default:
+		genericError := &smithy.GenericAPIError{
+			Code:    errorCode,
+			Message: errorMessage,
+		}
+		return genericError
+
+	}
+}
+
+type awsAwsquery_deserializeOpGetMFADevice struct {
+}
+
+func (*awsAwsquery_deserializeOpGetMFADevice) ID() string {
+	return "OperationDeserializer"
+}
+
+func (m *awsAwsquery_deserializeOpGetMFADevice) HandleDeserialize(ctx context.Context, in middleware.DeserializeInput, next middleware.DeserializeHandler) (
+	out middleware.DeserializeOutput, metadata middleware.Metadata, err error,
+) {
+	out, metadata, err = next.HandleDeserialize(ctx, in)
+	if err != nil {
+		return out, metadata, err
+	}
+
+	response, ok := out.RawResponse.(*smithyhttp.Response)
+	if !ok {
+		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
+	}
+
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return out, metadata, awsAwsquery_deserializeOpErrorGetMFADevice(response, &metadata)
+	}
+	output := &GetMFADeviceOutput{}
+	out.Result = output
+
+	var buff [1024]byte
+	ringBuffer := smithyio.NewRingBuffer(buff[:])
+	body := io.TeeReader(response.Body, ringBuffer)
+	rootDecoder := xml.NewDecoder(body)
+	t, err := smithyxml.FetchRootElement(rootDecoder)
+	if err == io.EOF {
+		return out, metadata, nil
+	}
+	if err != nil {
+		var snapshot bytes.Buffer
+		io.Copy(&snapshot, ringBuffer)
+		return out, metadata, &smithy.DeserializationError{
+			Err:      fmt.Errorf("failed to decode response body, %w", err),
+			Snapshot: snapshot.Bytes(),
+		}
+	}
+
+	decoder := smithyxml.WrapNodeDecoder(rootDecoder, t)
+	t, err = decoder.GetElement("GetMFADeviceResult")
+	if err != nil {
+		var snapshot bytes.Buffer
+		io.Copy(&snapshot, ringBuffer)
+		err = &smithy.DeserializationError{
+			Err:      fmt.Errorf("failed to decode response body, %w", err),
+			Snapshot: snapshot.Bytes(),
+		}
+		return out, metadata, err
+	}
+
+	decoder = smithyxml.WrapNodeDecoder(decoder.Decoder, t)
+	err = awsAwsquery_deserializeOpDocumentGetMFADeviceOutput(&output, decoder)
+	if err != nil {
+		var snapshot bytes.Buffer
+		io.Copy(&snapshot, ringBuffer)
+		err = &smithy.DeserializationError{
+			Err:      fmt.Errorf("failed to decode response body, %w", err),
+			Snapshot: snapshot.Bytes(),
+		}
+		return out, metadata, err
+	}
+
+	return out, metadata, err
+}
+
+func awsAwsquery_deserializeOpErrorGetMFADevice(response *smithyhttp.Response, metadata *middleware.Metadata) error {
 	var errorBuffer bytes.Buffer
 	if _, err := io.Copy(&errorBuffer, response.Body); err != nil {
 		return &smithy.DeserializationError{Err: fmt.Errorf("failed to copy error response body, %w", err)}
@@ -12250,6 +12376,9 @@ func awsAwsquery_deserializeOpErrorResyncMFADevice(response *smithyhttp.Response
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("InvalidAuthenticationCode", errorCode):
 		return awsAwsquery_deserializeErrorInvalidAuthenticationCodeException(response, errorBody)
 
@@ -15435,6 +15564,9 @@ func awsAwsquery_deserializeOpErrorUploadSigningCertificate(response *smithyhttp
 	}
 	errorBody.Seek(0, io.SeekStart)
 	switch {
+	case strings.EqualFold("ConcurrentModification", errorCode):
+		return awsAwsquery_deserializeErrorConcurrentModificationException(response, errorBody)
+
 	case strings.EqualFold("DuplicateCertificate", errorCode):
 		return awsAwsquery_deserializeErrorDuplicateCertificateException(response, errorBody)
 
@@ -17724,6 +17856,104 @@ func awsAwsquery_deserializeDocumentCertificateListTypeUnwrapped(v *[]types.Sign
 		}
 		mv = *destAddr
 		sv = append(sv, mv)
+	}
+	*v = sv
+	return nil
+}
+func awsAwsquery_deserializeDocumentCertificationMapType(v *map[string]string, decoder smithyxml.NodeDecoder) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	var sv map[string]string
+	if *v == nil {
+		sv = make(map[string]string, 0)
+	} else {
+		sv = *v
+	}
+
+	for {
+		t, done, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if done {
+			break
+		}
+		switch {
+		case strings.EqualFold("entry", t.Name.Local):
+			entryDecoder := smithyxml.WrapNodeDecoder(decoder.Decoder, t)
+			if err := awsAwsquery_deserializeDocumentCertificationMapTypeUnwrapped(&sv, entryDecoder); err != nil {
+				return err
+			}
+
+		default:
+			err = decoder.Decoder.Skip()
+			if err != nil {
+				return err
+			}
+
+		}
+	}
+	*v = sv
+	return nil
+}
+
+func awsAwsquery_deserializeDocumentCertificationMapTypeUnwrapped(v *map[string]string, decoder smithyxml.NodeDecoder) error {
+	var sv map[string]string
+	if *v == nil {
+		sv = make(map[string]string, 0)
+	} else {
+		sv = *v
+	}
+
+	var ek string
+	var ev string
+	for {
+		t, done, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if done {
+			sv[ek] = ev
+			break
+		}
+		originalDecoder := decoder
+		decoder = smithyxml.WrapNodeDecoder(originalDecoder.Decoder, t)
+		switch {
+		case strings.EqualFold("key", t.Name.Local):
+			val, err := decoder.Value()
+			if err != nil {
+				return err
+			}
+			if val == nil {
+				break
+			}
+			{
+				xtv := string(val)
+				ek = xtv
+			}
+
+		case strings.EqualFold("value", t.Name.Local):
+			val, err := decoder.Value()
+			if err != nil {
+				return err
+			}
+			if val == nil {
+				break
+			}
+			{
+				xtv := string(val)
+				ev = xtv
+			}
+
+		default:
+			err = decoder.Decoder.Skip()
+			if err != nil {
+				return err
+			}
+
+		}
+		decoder = originalDecoder
 	}
 	*v = sv
 	return nil
@@ -27482,6 +27712,91 @@ func awsAwsquery_deserializeOpDocumentGetLoginProfileOutput(v **GetLoginProfileO
 			nodeDecoder := smithyxml.WrapNodeDecoder(decoder.Decoder, t)
 			if err := awsAwsquery_deserializeDocumentLoginProfile(&sv.LoginProfile, nodeDecoder); err != nil {
 				return err
+			}
+
+		default:
+			// Do nothing and ignore the unexpected tag element
+			err = decoder.Decoder.Skip()
+			if err != nil {
+				return err
+			}
+
+		}
+		decoder = originalDecoder
+	}
+	*v = sv
+	return nil
+}
+
+func awsAwsquery_deserializeOpDocumentGetMFADeviceOutput(v **GetMFADeviceOutput, decoder smithyxml.NodeDecoder) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	var sv *GetMFADeviceOutput
+	if *v == nil {
+		sv = &GetMFADeviceOutput{}
+	} else {
+		sv = *v
+	}
+
+	for {
+		t, done, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		if done {
+			break
+		}
+		originalDecoder := decoder
+		decoder = smithyxml.WrapNodeDecoder(originalDecoder.Decoder, t)
+		switch {
+		case strings.EqualFold("Certifications", t.Name.Local):
+			nodeDecoder := smithyxml.WrapNodeDecoder(decoder.Decoder, t)
+			if err := awsAwsquery_deserializeDocumentCertificationMapType(&sv.Certifications, nodeDecoder); err != nil {
+				return err
+			}
+
+		case strings.EqualFold("EnableDate", t.Name.Local):
+			val, err := decoder.Value()
+			if err != nil {
+				return err
+			}
+			if val == nil {
+				break
+			}
+			{
+				xtv := string(val)
+				t, err := smithytime.ParseDateTime(xtv)
+				if err != nil {
+					return err
+				}
+				sv.EnableDate = ptr.Time(t)
+			}
+
+		case strings.EqualFold("SerialNumber", t.Name.Local):
+			val, err := decoder.Value()
+			if err != nil {
+				return err
+			}
+			if val == nil {
+				break
+			}
+			{
+				xtv := string(val)
+				sv.SerialNumber = ptr.String(xtv)
+			}
+
+		case strings.EqualFold("UserName", t.Name.Local):
+			val, err := decoder.Value()
+			if err != nil {
+				return err
+			}
+			if val == nil {
+				break
+			}
+			{
+				xtv := string(val)
+				sv.UserName = ptr.String(xtv)
 			}
 
 		default:

@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -12,7 +13,9 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -61,7 +64,13 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 			Id: groupArn,
 		}
 		profile := ssoGroupProfile(ctx, group)
-		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.DisplayName), resourceTypeSSOGroup, nil, groupArn, profile, annos)
+		groupResource, err := resourceSdk.NewGroupResource(
+			awsSdk.ToString(group.DisplayName),
+			resourceTypeSSOGroup,
+			groupArn,
+			[]resourceSdk.GroupTraitOption{resourceSdk.WithGroupProfile(profile)},
+			resourceSdk.WithAnnotation(annos),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -87,7 +96,7 @@ func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Reso
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
 	})
-	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeSSOUser)
+	member := entitlementSdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, entitlementSdk.WithGrantableTo(resourceTypeSSOUser))
 	member.Description = fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
@@ -125,17 +134,23 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 			continue
 		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member.Value)
-		uID, err := sdk.NewResourceID(resourceTypeSSOUser, userARN)
+		uID, err := resourceSdk.NewResourceID(resourceTypeSSOUser, userARN)
 		if err != nil {
 			return nil, "", nil, err
 		}
-		grant := sdk.NewGrant(resource, groupMemberEntitlement, uID)
-		v1Identifier := &v2.V1Identifier{
-			Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
+		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID,
+			grantSdk.WithAnnotation(
+				&v2.V1Identifier{
+					Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
+				},
+			),
+		)
+
+		// MembershipID should always be not-nil here but let's guard ourselves
+		// Just use the MembershipID as the grant ID so that we can easily revoke it later
+		if user.MembershipId != nil {
+			grant.Id = *user.MembershipId
 		}
-		annos := annotations.Annotations(grant.Annotations)
-		annos.Update(v1Identifier)
-		grant.Annotations = annos
 		rv = append(rv, grant)
 	}
 	nextPage, err := bag.Marshal()
@@ -153,6 +168,48 @@ func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStore
 		identityStoreClient: identityStoreClient,
 		ssoClient:           ssoClient,
 	}
+}
+
+func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	if principal.Id.ResourceType != resourceTypeSSOUser.Id {
+		return nil, errors.New("baton-aws: only sso users can be added to a sso group")
+	}
+
+	groupID, err := ssoGroupIdFromARN(entitlement.Resource.Id.Resource)
+	if err != nil {
+		return nil, err
+	}
+
+	userID, err := ssoUserIdFromARN(principal.Id.Resource)
+	if err != nil {
+		return nil, err
+	}
+
+	input := &awsIdentityStore.CreateGroupMembershipInput{
+		GroupId:         awsSdk.String(groupID),
+		IdentityStoreId: g.identityInstance.IdentityStoreId,
+		MemberId:        &awsIdentityStoreTypes.MemberIdMemberUserId{Value: userID},
+	}
+
+	if _, err := g.identityStoreClient.CreateGroupMembership(ctx, input); err != nil {
+		return nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
+	}
+
+	return nil, nil
+}
+func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	if grant.Principal.Id.ResourceType != resourceTypeSSOUser.Id {
+		return nil, errors.New("baton-aws: only sso users can be removed from sso group")
+	}
+
+	if _, err := g.identityStoreClient.DeleteGroupMembership(ctx, &awsIdentityStore.DeleteGroupMembershipInput{
+		IdentityStoreId: g.identityInstance.IdentityStoreId,
+		MembershipId:    awsSdk.String(grant.Id),
+	}); err != nil {
+		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w", err)
+	}
+
+	return nil, nil
 }
 
 func ssoGroupProfile(ctx context.Context, group awsIdentityStoreTypes.Group) map[string]interface{} {

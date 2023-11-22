@@ -11,7 +11,7 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 type iamUserResourceType struct {
@@ -52,7 +52,10 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
-		userResource, err := sdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeIAMUser, nil, awsSdk.ToString(user.Arn), getUserEmail(user), profile, annos)
+		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeIAMUser, awsSdk.ToString(user.Arn), []resourceSdk.UserTraitOption{
+			resourceSdk.WithEmail(getUserEmail(user), true),
+			resourceSdk.WithUserProfile(profile),
+		}, resourceSdk.WithAnnotation(annos))
 		if err != nil {
 			return nil, "", nil, err
 		}

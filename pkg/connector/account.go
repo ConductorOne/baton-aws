@@ -17,7 +17,8 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 const (
@@ -72,7 +73,13 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: awsSdk.ToString(account.Id),
 		}
 		profile := accountProfile(ctx, account)
-		userResource, err := sdk.NewAppResource(awsSdk.ToString(account.Name), resourceTypeAccount, nil, awsSdk.ToString(account.Id), "", profile, annos)
+		userResource, err := resourceSdk.NewAppResource(
+			awsSdk.ToString(account.Name),
+			resourceTypeAccount,
+			awsSdk.ToString(account.Id),
+			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
+			resourceSdk.WithAnnotation(annos),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -99,7 +106,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
 	// we fetch all permission sets, so that even on accounts that aren't associated with a permission set
-	// you could od a Grant Request for it -- and we'll just have an entitlement with zero entries in it in ListGrants.
+	// you could do a Grant Request for it -- and we'll just have an entitlement with zero entries in it in ListGrants.
 	allPS, err := o.getPermissionSets(ctx)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: getPermissionSets failed: %w", err)
@@ -115,7 +122,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		annos.Update(&v2.V1Identifier{
 			Id: b.String(),
 		})
-		member := sdk.NewAssignmentEntitlement(resource, accountMemberEntitlement, resourceTypeAccount)
+		member := entitlementSdk.NewAssignmentEntitlement(resource, accountMemberEntitlement, entitlementSdk.WithGrantableTo(resourceTypeAccount))
 		member.Description = awsSdk.ToString(ps.Description)
 		member.Annotations = annos
 		member.Id = b.String()

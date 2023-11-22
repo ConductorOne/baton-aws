@@ -4,20 +4,20 @@ package organizations
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Enables the specified member account to administer the Organizations features of
-// the specified Amazon Web Services service. It grants read-only access to
+// Enables the specified member account to administer the Organizations features
+// of the specified Amazon Web Services service. It grants read-only access to
 // Organizations service data. The account still requires IAM permissions to access
 // and administer the Amazon Web Services service. You can run this action only for
 // Amazon Web Services services that support this feature. For a current list of
 // services that support it, see the column Supports Delegated Administrator in the
-// table at Amazon Web Services Services that you can use with Organizations
-// (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_list.html)
+// table at Amazon Web Services Services that you can use with Organizations (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_integrate_services_list.html)
 // in the Organizations User Guide. This operation can be called only from the
 // organization's management account.
 func (c *Client) RegisterDelegatedAdministrator(ctx context.Context, params *RegisterDelegatedAdministratorInput, optFns ...func(*Options)) (*RegisterDelegatedAdministratorOutput, error) {
@@ -37,8 +37,8 @@ func (c *Client) RegisterDelegatedAdministrator(ctx context.Context, params *Reg
 
 type RegisterDelegatedAdministratorInput struct {
 
-	// The account ID number of the member account in the organization to register as a
-	// delegated administrator.
+	// The account ID number of the member account in the organization to register as
+	// a delegated administrator.
 	//
 	// This member is required.
 	AccountId *string
@@ -60,12 +60,22 @@ type RegisterDelegatedAdministratorOutput struct {
 }
 
 func (c *Client) addOperationRegisterDelegatedAdministratorMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsjson11_serializeOpRegisterDelegatedAdministrator{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsjson11_deserializeOpRegisterDelegatedAdministrator{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "RegisterDelegatedAdministrator"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -86,16 +96,13 @@ func (c *Client) addOperationRegisterDelegatedAdministratorMiddlewares(stack *mi
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -104,10 +111,16 @@ func (c *Client) addOperationRegisterDelegatedAdministratorMiddlewares(stack *mi
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpRegisterDelegatedAdministratorValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opRegisterDelegatedAdministrator(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -119,6 +132,9 @@ func (c *Client) addOperationRegisterDelegatedAdministratorMiddlewares(stack *mi
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -126,7 +142,6 @@ func newServiceMetadataMiddleware_opRegisterDelegatedAdministrator(region string
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "organizations",
 		OperationName: "RegisterDelegatedAdministrator",
 	}
 }

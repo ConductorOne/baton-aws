@@ -17,15 +17,15 @@ import (
 	"time"
 )
 
-// Retrieves information about the specified role, including the role's path, GUID,
-// ARN, and the role's trust policy that grants permission to assume the role. For
-// more information about roles, see Working with roles
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/WorkingWithRoles.html).
-// Policies returned by this operation are URL-encoded compliant with RFC 3986
-// (https://tools.ietf.org/html/rfc3986). You can use a URL decoding method to
-// convert the policy back to plain JSON text. For example, if you use Java, you
-// can use the decode method of the java.net.URLDecoder utility class in the Java
-// SDK. Other languages and SDKs provide similar functionality.
+// Retrieves information about the specified role, including the role's path,
+// GUID, ARN, and the role's trust policy that grants permission to assume the
+// role. For more information about roles, see IAM roles (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)
+// in the IAM User Guide. Policies returned by this operation are URL-encoded
+// compliant with RFC 3986 (https://tools.ietf.org/html/rfc3986) . You can use a
+// URL decoding method to convert the policy back to plain JSON text. For example,
+// if you use Java, you can use the decode method of the java.net.URLDecoder
+// utility class in the Java SDK. Other languages and SDKs provide similar
+// functionality.
 func (c *Client) GetRole(ctx context.Context, params *GetRoleInput, optFns ...func(*Options)) (*GetRoleOutput, error) {
 	if params == nil {
 		params = &GetRoleInput{}
@@ -44,7 +44,7 @@ func (c *Client) GetRole(ctx context.Context, params *GetRoleInput, optFns ...fu
 type GetRoleInput struct {
 
 	// The name of the IAM role to get information about. This parameter allows
-	// (through its regex pattern (http://wikipedia.org/wiki/regex)) a string of
+	// (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string of
 	// characters consisting of upper and lowercase alphanumeric characters with no
 	// spaces. You can also include any of the following characters: _+=,.@-
 	//
@@ -69,12 +69,22 @@ type GetRoleOutput struct {
 }
 
 func (c *Client) addOperationGetRoleMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetRole{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetRole{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GetRole"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -95,16 +105,13 @@ func (c *Client) addOperationGetRoleMiddlewares(stack *middleware.Stack, options
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -113,10 +120,16 @@ func (c *Client) addOperationGetRoleMiddlewares(stack *middleware.Stack, options
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpGetRoleValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetRole(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -126,6 +139,9 @@ func (c *Client) addOperationGetRoleMiddlewares(stack *middleware.Stack, options
 		return err
 	}
 	if err = addRequestResponseLogging(stack, options); err != nil {
+		return err
+	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
 		return err
 	}
 	return nil
@@ -151,9 +167,9 @@ type RoleExistsWaiterOptions struct {
 	// must resolve to a value lesser than or equal to the MaxDelay.
 	MinDelay time.Duration
 
-	// MaxDelay is the maximum amount of time to delay between retries. If unset or set
-	// to zero, RoleExistsWaiter will use default max delay of 120 seconds. Note that
-	// MaxDelay must resolve to value greater than or equal to the MinDelay.
+	// MaxDelay is the maximum amount of time to delay between retries. If unset or
+	// set to zero, RoleExistsWaiter will use default max delay of 120 seconds. Note
+	// that MaxDelay must resolve to value greater than or equal to the MinDelay.
 	MaxDelay time.Duration
 
 	// LogWaitAttempts is used to enable logging for waiter retry attempts
@@ -300,7 +316,6 @@ func newServiceMetadataMiddleware_opGetRole(region string) *awsmiddleware.Regist
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "GetRole",
 	}
 }

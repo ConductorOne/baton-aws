@@ -4,6 +4,7 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/iam/types"
@@ -14,7 +15,7 @@ import (
 // Retrieves the user name for the specified IAM user. A login profile is created
 // when you create a password for the user to access the Amazon Web Services
 // Management Console. If the user does not exist or does not have a password, the
-// operation returns a 404 (NoSuchEntity) error. If you create an IAM user with
+// operation returns a 404 ( NoSuchEntity ) error. If you create an IAM user with
 // access to the console, the CreateDate reflects the date you created the initial
 // password for the user. If you create an IAM user with programmatic access, and
 // then later add a password for the user to access the Amazon Web Services
@@ -39,8 +40,8 @@ func (c *Client) GetLoginProfile(ctx context.Context, params *GetLoginProfileInp
 type GetLoginProfileInput struct {
 
 	// The name of the user whose login profile you want to retrieve. This parameter
-	// allows (through its regex pattern (http://wikipedia.org/wiki/regex)) a string of
-	// characters consisting of upper and lowercase alphanumeric characters with no
+	// allows (through its regex pattern (http://wikipedia.org/wiki/regex) ) a string
+	// of characters consisting of upper and lowercase alphanumeric characters with no
 	// spaces. You can also include any of the following characters: _+=,.@-
 	//
 	// This member is required.
@@ -64,12 +65,22 @@ type GetLoginProfileOutput struct {
 }
 
 func (c *Client) addOperationGetLoginProfileMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpGetLoginProfile{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpGetLoginProfile{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "GetLoginProfile"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -90,16 +101,13 @@ func (c *Client) addOperationGetLoginProfileMiddlewares(stack *middleware.Stack,
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -108,10 +116,16 @@ func (c *Client) addOperationGetLoginProfileMiddlewares(stack *middleware.Stack,
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpGetLoginProfileValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opGetLoginProfile(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -123,6 +137,9 @@ func (c *Client) addOperationGetLoginProfileMiddlewares(stack *middleware.Stack,
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -130,7 +147,6 @@ func newServiceMetadataMiddleware_opGetLoginProfile(region string) *awsmiddlewar
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "GetLoginProfile",
 	}
 }

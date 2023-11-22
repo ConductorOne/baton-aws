@@ -10,7 +10,9 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/sdk"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
 const (
@@ -55,7 +57,15 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 			Id: awsSdk.ToString(group.Arn),
 		}
 		profile := iamGroupProfile(ctx, group)
-		groupResource, err := sdk.NewGroupResource(awsSdk.ToString(group.GroupName), resourceTypeIAMGroup, nil, awsSdk.ToString(group.Arn), profile, annos)
+		groupResource, err := resourceSdk.NewGroupResource(
+			awsSdk.ToString(group.GroupName),
+			resourceTypeIAMGroup,
+			awsSdk.ToString(group.Arn),
+			[]resourceSdk.GroupTraitOption{
+				resourceSdk.WithGroupProfile(profile),
+			},
+			resourceSdk.WithAnnotation(annos),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -85,7 +95,7 @@ func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Re
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
 	})
-	member := sdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, resourceTypeIAMUser)
+	member := entitlementSdk.NewAssignmentEntitlement(resource, groupMemberEntitlement, entitlementSdk.WithGrantableTo(resourceTypeIAMUser))
 	member.Description = fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
@@ -113,17 +123,17 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	var rv []*v2.Grant
 	for _, user := range resp.Users {
-		uID, err := sdk.NewResourceID(resourceTypeIAMUser, awsSdk.ToString(user.Arn))
+		uID, err := resourceSdk.NewResourceID(resourceTypeIAMUser, awsSdk.ToString(user.Arn))
 		if err != nil {
 			return nil, "", nil, err
 		}
-		grant := sdk.NewGrant(resource, groupMemberEntitlement, uID)
-		v1Identifier := &v2.V1Identifier{
-			Id: V1GrantID(V1MembershipEntitlementID(resource.Id), awsSdk.ToString(user.Arn)),
-		}
-		annos := annotations.Annotations(grant.Annotations)
-		annos.Update(v1Identifier)
-		grant.Annotations = annos
+		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID,
+			grantSdk.WithAnnotation(
+				&v2.V1Identifier{
+					Id: V1GrantID(V1MembershipEntitlementID(resource.Id), awsSdk.ToString(user.Arn)),
+				},
+			),
+		)
 		rv = append(rv, grant)
 	}
 

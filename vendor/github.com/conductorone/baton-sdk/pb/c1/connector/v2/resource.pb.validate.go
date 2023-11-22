@@ -148,6 +148,21 @@ func (m *ResourceType) validate(all bool) error {
 
 	}
 
+	if m.GetDescription() != "" {
+
+		if l := len(m.GetDescription()); l < 1 || l > 4096 {
+			err := ResourceTypeValidationError{
+				field:  "Description",
+				reason: "value length must be between 1 and 4096 bytes, inclusive",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
 	if len(errors) > 0 {
 		return ResourceTypeMultiError(errors)
 	}
@@ -295,10 +310,10 @@ func (m *ResourceTypesServiceListResourceTypesRequest) validate(all bool) error 
 
 	if m.GetPageToken() != "" {
 
-		if l := len(m.GetPageToken()); l < 1 || l > 2048 {
+		if l := len(m.GetPageToken()); l < 1 || l > 4096 {
 			err := ResourceTypesServiceListResourceTypesRequestValidationError{
 				field:  "PageToken",
-				reason: "value length must be between 1 and 2048 bytes, inclusive",
+				reason: "value length must be between 1 and 4096 bytes, inclusive",
 			}
 			if !all {
 				return err
@@ -485,10 +500,10 @@ func (m *ResourceTypesServiceListResourceTypesResponse) validate(all bool) error
 
 	if m.GetNextPageToken() != "" {
 
-		if l := len(m.GetNextPageToken()); l < 1 || l > 2048 {
+		if l := len(m.GetNextPageToken()); l < 1 || l > 4096 {
 			err := ResourceTypesServiceListResourceTypesResponseValidationError{
 				field:  "NextPageToken",
-				reason: "value length must be between 1 and 2048 bytes, inclusive",
+				reason: "value length must be between 1 and 4096 bytes, inclusive",
 			}
 			if !all {
 				return err
@@ -660,6 +675,8 @@ func (m *ResourceId) validate(all bool) error {
 		}
 		errors = append(errors, err)
 	}
+
+	// no validation rules for BatonResource
 
 	if len(errors) > 0 {
 		return ResourceIdMultiError(errors)
@@ -867,6 +884,23 @@ func (m *Resource) validate(all bool) error {
 
 	}
 
+	if m.GetDescription() != "" {
+
+		if l := len(m.GetDescription()); l < 1 || l > 2048 {
+			err := ResourceValidationError{
+				field:  "Description",
+				reason: "value length must be between 1 and 2048 bytes, inclusive",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+	}
+
+	// no validation rules for BatonResource
+
 	if len(errors) > 0 {
 		return ResourceMultiError(errors)
 	}
@@ -1024,10 +1058,10 @@ func (m *ResourcesServiceListResourcesRequest) validate(all bool) error {
 
 	if m.GetPageToken() != "" {
 
-		if l := len(m.GetPageToken()); l < 1 || l > 2048 {
+		if l := len(m.GetPageToken()); l < 1 || l > 4096 {
 			err := ResourcesServiceListResourcesRequestValidationError{
 				field:  "PageToken",
-				reason: "value length must be between 1 and 2048 bytes, inclusive",
+				reason: "value length must be between 1 and 4096 bytes, inclusive",
 			}
 			if !all {
 				return err
@@ -1212,10 +1246,10 @@ func (m *ResourcesServiceListResourcesResponse) validate(all bool) error {
 
 	if m.GetNextPageToken() != "" {
 
-		if l := len(m.GetNextPageToken()); l < 1 || l > 2048 {
+		if l := len(m.GetNextPageToken()); l < 1 || l > 4096 {
 			err := ResourcesServiceListResourcesResponseValidationError{
 				field:  "NextPageToken",
-				reason: "value length must be between 1 and 2048 bytes, inclusive",
+				reason: "value length must be between 1 and 4096 bytes, inclusive",
 			}
 			if !all {
 				return err

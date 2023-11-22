@@ -4,6 +4,7 @@ package iam
 
 import (
 	"context"
+	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/smithy-go/middleware"
@@ -14,18 +15,15 @@ import (
 // profile can contain only one role, and this quota cannot be increased. You can
 // remove the existing role and then add a different role to an instance profile.
 // You must then wait for the change to appear across all of Amazon Web Services
-// because of eventual consistency
-// (https://en.wikipedia.org/wiki/Eventual_consistency). To force the change, you
-// must disassociate the instance profile
-// (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DisassociateIamInstanceProfile.html)
-// and then associate the instance profile
-// (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_AssociateIamInstanceProfile.html),
-// or you can stop your instance and then restart it. The caller of this operation
-// must be granted the PassRole permission on the IAM role by a permissions policy.
-// For more information about roles, see Working with roles
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/WorkingWithRoles.html). For
-// more information about instance profiles, see About instance profiles
-// (https://docs.aws.amazon.com/IAM/latest/UserGuide/AboutInstanceProfiles.html).
+// because of eventual consistency (https://en.wikipedia.org/wiki/Eventual_consistency)
+// . To force the change, you must disassociate the instance profile (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DisassociateIamInstanceProfile.html)
+// and then associate the instance profile (https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_AssociateIamInstanceProfile.html)
+// , or you can stop your instance and then restart it. The caller of this
+// operation must be granted the PassRole permission on the IAM role by a
+// permissions policy. For more information about roles, see IAM roles (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)
+// in the IAM User Guide. For more information about instance profiles, see Using
+// instance profiles (https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use_switch-role-ec2_instance-profiles.html)
+// in the IAM User Guide.
 func (c *Client) AddRoleToInstanceProfile(ctx context.Context, params *AddRoleToInstanceProfileInput, optFns ...func(*Options)) (*AddRoleToInstanceProfileOutput, error) {
 	if params == nil {
 		params = &AddRoleToInstanceProfileInput{}
@@ -44,17 +42,17 @@ func (c *Client) AddRoleToInstanceProfile(ctx context.Context, params *AddRoleTo
 type AddRoleToInstanceProfileInput struct {
 
 	// The name of the instance profile to update. This parameter allows (through its
-	// regex pattern (http://wikipedia.org/wiki/regex)) a string of characters
+	// regex pattern (http://wikipedia.org/wiki/regex) ) a string of characters
 	// consisting of upper and lowercase alphanumeric characters with no spaces. You
 	// can also include any of the following characters: _+=,.@-
 	//
 	// This member is required.
 	InstanceProfileName *string
 
-	// The name of the role to add. This parameter allows (through its regex pattern
-	// (http://wikipedia.org/wiki/regex)) a string of characters consisting of upper
-	// and lowercase alphanumeric characters with no spaces. You can also include any
-	// of the following characters: _+=,.@-
+	// The name of the role to add. This parameter allows (through its regex pattern (http://wikipedia.org/wiki/regex)
+	// ) a string of characters consisting of upper and lowercase alphanumeric
+	// characters with no spaces. You can also include any of the following characters:
+	// _+=,.@-
 	//
 	// This member is required.
 	RoleName *string
@@ -70,12 +68,22 @@ type AddRoleToInstanceProfileOutput struct {
 }
 
 func (c *Client) addOperationAddRoleToInstanceProfileMiddlewares(stack *middleware.Stack, options Options) (err error) {
+	if err := stack.Serialize.Add(&setOperationInputMiddleware{}, middleware.After); err != nil {
+		return err
+	}
 	err = stack.Serialize.Add(&awsAwsquery_serializeOpAddRoleToInstanceProfile{}, middleware.After)
 	if err != nil {
 		return err
 	}
 	err = stack.Deserialize.Add(&awsAwsquery_deserializeOpAddRoleToInstanceProfile{}, middleware.After)
 	if err != nil {
+		return err
+	}
+	if err := addProtocolFinalizerMiddlewares(stack, options, "AddRoleToInstanceProfile"); err != nil {
+		return fmt.Errorf("add protocol finalizers: %v", err)
+	}
+
+	if err = addlegacyEndpointContextSetter(stack, options); err != nil {
 		return err
 	}
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
@@ -96,16 +104,13 @@ func (c *Client) addOperationAddRoleToInstanceProfileMiddlewares(stack *middlewa
 	if err = addRetryMiddlewares(stack, options); err != nil {
 		return err
 	}
-	if err = addHTTPSignerV4Middleware(stack, options); err != nil {
-		return err
-	}
 	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
 		return err
 	}
 	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
 		return err
 	}
-	if err = addClientUserAgent(stack); err != nil {
+	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
 	if err = smithyhttp.AddErrorCloseResponseBodyMiddleware(stack); err != nil {
@@ -114,10 +119,16 @@ func (c *Client) addOperationAddRoleToInstanceProfileMiddlewares(stack *middlewa
 	if err = smithyhttp.AddCloseResponseBodyMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
+		return err
+	}
 	if err = addOpAddRoleToInstanceProfileValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opAddRoleToInstanceProfile(options.Region), middleware.Before); err != nil {
+		return err
+	}
+	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -129,6 +140,9 @@ func (c *Client) addOperationAddRoleToInstanceProfileMiddlewares(stack *middlewa
 	if err = addRequestResponseLogging(stack, options); err != nil {
 		return err
 	}
+	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -136,7 +150,6 @@ func newServiceMetadataMiddleware_opAddRoleToInstanceProfile(region string) *aws
 	return &awsmiddleware.RegisterServiceMetadata{
 		Region:        region,
 		ServiceID:     ServiceID,
-		SigningName:   "iam",
 		OperationName: "AddRoleToInstanceProfile",
 	}
 }
