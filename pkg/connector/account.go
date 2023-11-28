@@ -122,7 +122,9 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		annos.Update(&v2.V1Identifier{
 			Id: b.String(),
 		})
-		member := entitlementSdk.NewAssignmentEntitlement(resource, accountMemberEntitlement, entitlementSdk.WithGrantableTo(resourceTypeAccount))
+		member := entitlementSdk.NewAssignmentEntitlement(resource, accountMemberEntitlement,
+			entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
+		)
 		member.Description = awsSdk.ToString(ps.Description)
 		member.Annotations = annos
 		member.Id = b.String()
@@ -250,6 +252,92 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 	return rv, "", nil, nil
 }
 
+func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	principalType := awsSsoAdminTypes.PrincipalType("")
+	principalId := ""
+	switch principal.Id.ResourceType {
+	case resourceTypeSSOUser.Id:
+		principalType = awsSsoAdminTypes.PrincipalTypeUser
+		ssoUserID, err := ssoUserIdFromARN(principal.Id.Resource)
+		if err != nil {
+			return nil, err
+		}
+		principalId = ssoUserID
+	case resourceTypeSSOGroup.Id:
+		principalType = awsSsoAdminTypes.PrincipalTypeGroup
+		ssoGroupID, err := ssoGroupIdFromARN(principal.Id.Resource)
+		if err != nil {
+			return nil, err
+		}
+		principalId = ssoGroupID
+	default:
+		return nil, fmt.Errorf("aws-connector: invalid principal resource type: %s", principal.Id.ResourceType)
+	}
+
+	binding := &PermissionSetBinding{}
+	if err := binding.UnmarshalText([]byte(entitlement.Id)); err != nil {
+		return nil, err
+	}
+
+	inp := &awsSsoAdmin.CreateAccountAssignmentInput{
+		InstanceArn:      o.identityInstance.InstanceArn,
+		PermissionSetArn: awsSdk.String(binding.PermissionSetId),
+		PrincipalId:      awsSdk.String(principalId),
+		PrincipalType:    principalType,
+		TargetId:         awsSdk.String(binding.AccountID),
+		TargetType:       awsSsoAdminTypes.TargetTypeAwsAccount,
+	}
+
+	if _, err := o.ssoAdminClient.CreateAccountAssignment(ctx, inp); err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	principal := grant.Principal
+	entitlement := grant.Entitlement
+	principalType := awsSsoAdminTypes.PrincipalType("")
+	principalId := ""
+	switch principal.Id.ResourceType {
+	case resourceTypeSSOUser.Id:
+		principalType = awsSsoAdminTypes.PrincipalTypeUser
+		ssoUserID, err := ssoUserIdFromARN(principal.Id.Resource)
+		if err != nil {
+			return nil, err
+		}
+		principalId = ssoUserID
+	case resourceTypeSSOGroup.Id:
+		principalType = awsSsoAdminTypes.PrincipalTypeGroup
+		ssoGroupID, err := ssoGroupIdFromARN(principal.Id.Resource)
+		if err != nil {
+			return nil, err
+		}
+		principalId = ssoGroupID
+	default:
+		return nil, fmt.Errorf("aws-connector: invalid principal resource type: %s", principal.Id.ResourceType)
+	}
+
+	binding := &PermissionSetBinding{}
+	if err := binding.UnmarshalText([]byte(entitlement.Id)); err != nil {
+		return nil, err
+	}
+
+	inp := &awsSsoAdmin.DeleteAccountAssignmentInput{
+		InstanceArn:      o.identityInstance.InstanceArn,
+		PermissionSetArn: awsSdk.String(binding.PermissionSetId),
+		PrincipalId:      awsSdk.String(principalId),
+		PrincipalType:    principalType,
+		TargetId:         awsSdk.String(binding.AccountID),
+		TargetType:       awsSsoAdminTypes.TargetTypeAwsAccount,
+	}
+
+	if _, err := o.ssoAdminClient.DeleteAccountAssignment(ctx, inp); err != nil {
+		return nil, err
+	}
+	return nil, nil
+}
+
 func (o *accountResourceType) getPermissionSet(ctx context.Context, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
 	if v, ok := o._permissionSetDetailsCache.Load(permissionSetId); ok {
 		return v.(*awsSsoAdminTypes.PermissionSet), nil
@@ -267,8 +355,14 @@ func (o *accountResourceType) getPermissionSet(ctx context.Context, permissionSe
 	return resp.PermissionSet, nil
 }
 
-func accountBuilder(orgClient *awsOrgs.Client, roleArn string, ssoAdminClient *awsSsoAdmin.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata,
-	region string, identityClient *awsIdentityStore.Client) *accountResourceType {
+func accountBuilder(
+	orgClient *awsOrgs.Client,
+	roleArn string,
+	ssoAdminClient *awsSsoAdmin.Client,
+	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+	region string,
+	identityClient *awsIdentityStore.Client,
+) *accountResourceType {
 	return &accountResourceType{
 		resourceType:     resourceTypeAccount,
 		orgClient:        orgClient,

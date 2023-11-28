@@ -66,7 +66,10 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			awsSdk.ToString(user.UserName),
 			resourceTypeSSOUser,
 			userARN,
-			[]resourceSdk.UserTraitOption{resourceSdk.WithEmail(getSsoUserEmail(user), true), resourceSdk.WithUserProfile(profile)},
+			[]resourceSdk.UserTraitOption{
+				resourceSdk.WithEmail(getSsoUserEmail(user), true),
+				resourceSdk.WithUserProfile(profile),
+			},
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {
