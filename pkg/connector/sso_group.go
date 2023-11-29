@@ -215,7 +215,7 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		awsSdk.ToString(g.identityInstance.IdentityStoreId),
 		userID,
 		membership.MembershipId,
-		principal,
+		entitlement.Resource,
 	)
 	if err != nil {
 		return nil, nil, err
