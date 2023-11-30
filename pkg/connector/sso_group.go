@@ -103,6 +103,28 @@ func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Reso
 	return []*v2.Entitlement{member}, "", nil, nil
 }
 
+func createUserSSOGroupMembershipGrant(region string, identityStoreID string, memberID string, membershipID *string, groupResource *v2.Resource) (*v2.Grant, error) {
+	userARN := ssoUserToARN(region, identityStoreID, memberID)
+	uID, err := resourceSdk.NewResourceID(resourceTypeSSOUser, userARN)
+	if err != nil {
+		return nil, err
+	}
+	grant := grantSdk.NewGrant(groupResource, groupMemberEntitlement, uID,
+		grantSdk.WithAnnotation(
+			&v2.V1Identifier{
+				Id: V1GrantID(V1MembershipEntitlementID(groupResource.Id), userARN),
+			},
+		),
+	)
+
+	// MembershipID should always be not-nil here but let's guard ourselves
+	// Just use the MembershipID as the grant ID so that we can easily revoke it later
+	if membershipID != nil {
+		grant.Id = *membershipID
+	}
+	return grant, nil
+}
+
 func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
@@ -133,23 +155,15 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		if !ok {
 			continue
 		}
-		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member.Value)
-		uID, err := resourceSdk.NewResourceID(resourceTypeSSOUser, userARN)
+		grant, err := createUserSSOGroupMembershipGrant(
+			o.region,
+			awsSdk.ToString(o.identityInstance.IdentityStoreId),
+			member.Value,
+			user.MembershipId,
+			resource,
+		)
 		if err != nil {
 			return nil, "", nil, err
-		}
-		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID,
-			grantSdk.WithAnnotation(
-				&v2.V1Identifier{
-					Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
-				},
-			),
-		)
-
-		// MembershipID should always be not-nil here but let's guard ourselves
-		// Just use the MembershipID as the grant ID so that we can easily revoke it later
-		if user.MembershipId != nil {
-			grant.Id = *user.MembershipId
 		}
 		rv = append(rv, grant)
 	}
@@ -170,19 +184,19 @@ func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStore
 	}
 }
 
-func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
 	if principal.Id.ResourceType != resourceTypeSSOUser.Id {
-		return nil, errors.New("baton-aws: only sso users can be added to a sso group")
+		return nil, nil, errors.New("baton-aws: only sso users can be added to a sso group")
 	}
 
 	groupID, err := ssoGroupIdFromARN(entitlement.Resource.Id.Resource)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	userID, err := ssoUserIdFromARN(principal.Id.Resource)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	input := &awsIdentityStore.CreateGroupMembershipInput{
@@ -191,11 +205,22 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		MemberId:        &awsIdentityStoreTypes.MemberIdMemberUserId{Value: userID},
 	}
 
-	if _, err := g.identityStoreClient.CreateGroupMembership(ctx, input); err != nil {
-		return nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
+	membership, err := g.identityStoreClient.CreateGroupMembership(ctx, input)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
 	}
 
-	return nil, nil
+	grant, err := createUserSSOGroupMembershipGrant(
+		g.region,
+		awsSdk.ToString(g.identityInstance.IdentityStoreId),
+		userID,
+		membership.MembershipId,
+		entitlement.Resource,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return []*v2.Grant{grant}, nil, nil
 }
 func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	if grant.Principal.Id.ResourceType != resourceTypeSSOUser.Id {
