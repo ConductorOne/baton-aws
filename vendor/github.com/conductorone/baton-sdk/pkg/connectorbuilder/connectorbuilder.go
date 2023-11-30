@@ -63,19 +63,17 @@ func NewConnector(ctx context.Context, in interface{}) (types.ConnectorServer, e
 			}
 			ret.resourceBuilders[rType.Id] = rb
 
+			if err := validateProvisionerVersion(ctx, rb); err != nil {
+				return nil, err
+			}
+
 			if provisioner, ok := rb.(ResourceProvisioner); ok {
-				if _, ok := rb.(ResourceProvisionerV2); ok {
-					return nil, fmt.Errorf("error: resource type %s implements both ResourceProvisioner and ResourceProvisionerV2", rType.Id)
-				}
 				if _, ok := ret.resourceProvisioners[rType.Id]; ok {
 					return nil, fmt.Errorf("error: duplicate resource type found %s", rType.Id)
 				}
 				ret.resourceProvisioners[rType.Id] = provisioner
 			}
 			if provisioner, ok := rb.(ResourceProvisionerV2); ok {
-				if _, ok := rb.(ResourceProvisioner); ok {
-					return nil, fmt.Errorf("error: resource type %s implements both ResourceProvisioner and ResourceProvisionerV2", rType.Id)
-				}
 				if _, ok := ret.resourceProvisionersV2[rType.Id]; ok {
 					return nil, fmt.Errorf("error: duplicate resource type found %s", rType.Id)
 				}
@@ -90,6 +88,16 @@ func NewConnector(ctx context.Context, in interface{}) (types.ConnectorServer, e
 	default:
 		return nil, fmt.Errorf("input was not a ConnectorBuilder or a ConnectorServer")
 	}
+}
+
+func validateProvisionerVersion(ctx context.Context, p ResourceSyncer) error {
+	_, ok := p.(ResourceProvisioner)
+	_, okV2 := p.(ResourceProvisionerV2)
+
+	if ok && okV2 {
+		return fmt.Errorf("error: resource type %s implements both ResourceProvisioner and ResourceProvisionerV2", p.ResourceType(ctx).Id)
+	}
+	return nil
 }
 
 // ListResourceTypes lists all available resource types.
@@ -246,18 +254,27 @@ func (b *builderImpl) Revoke(ctx context.Context, request *v2.GrantManagerServic
 
 	rt := request.Grant.Entitlement.Resource.Id.ResourceType
 	provisioner, ok := b.resourceProvisioners[rt]
-	if !ok {
-		l.Error("error: resource type does not have provisioner configured", zap.String("resource_type", rt))
-		return nil, fmt.Errorf("error: resource type does not have provisioner configured")
+	if ok {
+		annos, err := provisioner.Revoke(ctx, request.Grant)
+		if err != nil {
+			l.Error("error: revoke failed", zap.Error(err))
+			return nil, fmt.Errorf("error: revoke failed: %w", err)
+		}
+		return &v2.GrantManagerServiceRevokeResponse{Annotations: annos}, nil
 	}
 
-	annos, err := provisioner.Revoke(ctx, request.Grant)
-	if err != nil {
-		l.Error("error: revoke failed", zap.Error(err))
-		return nil, fmt.Errorf("error: revoke failed: %w", err)
+	provisionerV2, ok := b.resourceProvisionersV2[rt]
+	if ok {
+		annos, err := provisionerV2.Revoke(ctx, request.Grant)
+		if err != nil {
+			l.Error("error: revoke failed", zap.Error(err))
+			return nil, fmt.Errorf("error: revoke failed: %w", err)
+		}
+		return &v2.GrantManagerServiceRevokeResponse{Annotations: annos}, nil
 	}
 
-	return &v2.GrantManagerServiceRevokeResponse{Annotations: annos}, nil
+	l.Error("error: resource type does not have provisioner configured", zap.String("resource_type", rt))
+	return nil, fmt.Errorf("error: resource type does not have provisioner configured")
 }
 
 // GetAsset streams the asset to the client.
