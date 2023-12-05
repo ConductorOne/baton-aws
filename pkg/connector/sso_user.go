@@ -131,9 +131,7 @@ func ssoUserProfile(ctx context.Context, user awsIdentityStoreTypes.User) map[st
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
 			}
-			if attr != nil {
-				lv = append(lv, attr)
-			}
+			lv = append(lv, attr)
 		}
 		profile["external_ids"] = lv
 	}

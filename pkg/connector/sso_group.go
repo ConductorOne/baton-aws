@@ -249,9 +249,7 @@ func ssoGroupProfile(ctx context.Context, group awsIdentityStoreTypes.Group) map
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
 			}
-
 			lv = append(lv, attr)
-
 		}
 		profile["external_ids"] = lv
 	}
