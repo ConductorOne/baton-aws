@@ -16,7 +16,6 @@ import (
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type ssoGroupResourceType struct {
@@ -244,17 +243,15 @@ func ssoGroupProfile(ctx context.Context, group awsIdentityStoreTypes.Group) map
 	profile["aws_group_id"] = awsSdk.ToString(group.GroupId)
 
 	if len(group.ExternalIds) >= 1 {
-		lv := &structpb.ListValue{}
+		lv := []interface{}{}
 		for _, ext := range group.ExternalIds {
-			attr, _ := structpb.NewStruct(map[string]interface{}{
+			attr := map[string]interface{}{
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
-			})
-			if attr != nil {
-				lv.Values = append(lv.Values, structpb.NewStructValue(attr))
 			}
+			lv = append(lv, attr)
 		}
-		profile["external_ids"] = structpb.NewListValue(lv)
+		profile["external_ids"] = lv
 	}
 
 	return profile

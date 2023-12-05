@@ -14,7 +14,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type ssoUserResourceType struct {
@@ -126,17 +125,15 @@ func ssoUserProfile(ctx context.Context, user awsIdentityStoreTypes.User) map[st
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
 	if len(user.ExternalIds) >= 1 {
-		lv := &structpb.ListValue{}
+		lv := []interface{}{}
 		for _, ext := range user.ExternalIds {
-			attr, _ := structpb.NewStruct(map[string]interface{}{
+			attr := map[string]interface{}{
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
-			})
-			if attr != nil {
-				lv.Values = append(lv.Values, structpb.NewStructValue(attr))
 			}
+			lv = append(lv, attr)
 		}
-		profile["external_ids"] = structpb.NewListValue(lv)
+		profile["external_ids"] = lv
 	}
 	return profile
 }
