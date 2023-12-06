@@ -57,7 +57,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		status, err := o.scimClient.getUserStatus(ctx, &user)
+		status, err := o.scimClient.getUserStatus(ctx, awsSdk.ToString(user.UserId))
 		if err != nil {
 			return nil, "", nil, fmt.Errorf("aws-connector: failed to get user status from scim: %w", err)
 		}

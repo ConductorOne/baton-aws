@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 )
 
@@ -140,7 +138,7 @@ func (sc *awsIdentityCenterSCIMClient) getUser(ctx context.Context, userID strin
 	return user, nil
 }
 
-func (sc *awsIdentityCenterSCIMClient) getUserStatus(ctx context.Context, u *types.User) (v2.UserTrait_Status_Status, error) {
+func (sc *awsIdentityCenterSCIMClient) getUserStatus(ctx context.Context, userID string) (v2.UserTrait_Status_Status, error) {
 	status := v2.UserTrait_Status_STATUS_ENABLED
 
 	// If SCIM is enabled, we can fetch the user status from the SCIM API because it's not available in the SSO API.
@@ -149,7 +147,7 @@ func (sc *awsIdentityCenterSCIMClient) getUserStatus(ctx context.Context, u *typ
 	// so we're doomed to making <page_size> requests.
 	// https://repost.aws/questions/QUTLAhQGa4ReatoAnQSkx11w/iam-identity-center-identitystore-api-is-missing-the-active-attribute-on-user-datatype
 	if sc.scimEnabled {
-		scimUser, err := sc.getUser(ctx, awsSdk.ToString(u.UserId))
+		scimUser, err := sc.getUser(ctx, userID)
 		if err != nil {
 			return v2.UserTrait_Status_STATUS_UNSPECIFIED, fmt.Errorf("aws-connector: scim.GetUser failed: %w", err)
 		}
