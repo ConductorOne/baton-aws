@@ -53,6 +53,7 @@ func getConnector(ctx context.Context, cfg *config) (types.ConnectorServer, erro
 		RoleARN:                 cfg.RoleARN,
 		SCIMEndpoint:            cfg.SCIMEndpoint,
 		SCIMToken:               cfg.SCIMToken,
+		SCIMEnabled:             cfg.SCIMEnabled,
 	}
 
 	cb, err := connector.New(ctx, config)
