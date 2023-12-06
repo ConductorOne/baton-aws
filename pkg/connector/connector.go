@@ -88,6 +88,7 @@ type Config struct {
 	RoleARN                 string
 	SCIMToken               string
 	SCIMEndpoint            string
+	SCIMEnabled             bool
 }
 
 type AWS struct {
@@ -273,7 +274,7 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		ssoRegion:               config.GlobalAwsSsoRegion,
 		scimEndpoint:            config.SCIMEndpoint,
 		scimToken:               config.SCIMToken,
-		scimEnabled:             config.SCIMEndpoint != "" && config.SCIMToken != "",
+		scimEnabled:             config.SCIMEnabled,
 		baseClient:              httpClient,
 		baseConfig:              baseConfig.Copy(),
 		_onceCallingConfig:      map[string]*sync.Once{},

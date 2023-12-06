@@ -29,6 +29,7 @@ type config struct {
 
 	SCIMEndpoint string `mapstructure:"scim-endpoint"`
 	SCIMToken    string `mapstructure:"scim-token"`
+	SCIMEnabled  bool   `mapstructure:"scim-enabled"`
 
 	UseAssumeRole bool `mapstructure:"use-assume-role"`
 }
@@ -66,6 +67,7 @@ func cmdFlags(cmd *cobra.Command) {
 	cmd.PersistentFlags().String("global-secret-access-key", "", "The global-secret-access-key for the aws account. ($BATON_GLOBAL_SECRET_ACCESS_KEY)")
 	cmd.PersistentFlags().String("global-access-key-id", "", "The global-access-key-id for the aws account. ($BATON_GLOBAL_ACCESS_KEY_ID)")
 	cmd.PersistentFlags().Bool("use-assume-role", false, "Enable support for assume role. ($BATON_GLOBAL_USE_ASSUME_ROLE)")
+	cmd.PersistentFlags().Bool("scim-enabled", false, "Enable support for pulling SSO User status from the AWS SCIM API. ($BATON_SCIM_ENABLED)")
 	cmd.PersistentFlags().String("scim-endpoint", "", "The SCIMv2 endpoint for aws identity center. ($BATON_SCIM_ENDPOINT)")
 	cmd.PersistentFlags().String("scim-token", "", "The SCIMv2 token for aws identity center. ($BATON_SCIM_TOKEN)")
 }
