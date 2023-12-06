@@ -51,6 +51,8 @@ func getConnector(ctx context.Context, cfg *config) (types.ConnectorServer, erro
 		GlobalAwsSsoEnabled:     cfg.GlobalAwsSsoEnabled,
 		ExternalID:              cfg.ExternalID,
 		RoleARN:                 cfg.RoleARN,
+		SCIMEndpoint:            cfg.SCIMEndpoint,
+		SCIMToken:               cfg.SCIMToken,
 	}
 
 	cb, err := connector.New(ctx, config)

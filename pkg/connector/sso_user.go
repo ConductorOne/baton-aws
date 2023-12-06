@@ -21,6 +21,7 @@ type ssoUserResourceType struct {
 	ssoClient           *awsSsoAdmin.Client
 	identityStoreClient *awsIdentityStore.Client
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
+	scimClient          *awsIdentityCenterSCIMClient
 	region              string
 }
 
@@ -56,6 +57,10 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
+		status, err := o.scimClient.getUserStatus(ctx, &user)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: failed to get user status from scim: %w", err)
+		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		annos := &v2.V1Identifier{
 			Id: userARN,
@@ -68,6 +73,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			[]resourceSdk.UserTraitOption{
 				resourceSdk.WithEmail(getSsoUserEmail(user), true),
 				resourceSdk.WithUserProfile(profile),
+				resourceSdk.WithStatus(status),
 			},
 			resourceSdk.WithAnnotation(annos),
 		)
@@ -99,13 +105,20 @@ func (o *ssoUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagin
 	return nil, "", nil, nil
 }
 
-func ssoUserBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStoreClient *awsIdentityStore.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata) *ssoUserResourceType {
+func ssoUserBuilder(
+	region string,
+	ssoClient *awsSsoAdmin.Client,
+	identityStoreClient *awsIdentityStore.Client,
+	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+	scimClient *awsIdentityCenterSCIMClient,
+) *ssoUserResourceType {
 	return &ssoUserResourceType{
 		resourceType:        resourceTypeSSOUser,
 		region:              region,
 		identityInstance:    identityInstance,
 		identityStoreClient: identityStoreClient,
 		ssoClient:           ssoClient,
+		scimClient:          scimClient,
 	}
 }
 
