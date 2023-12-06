@@ -83,15 +83,9 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		rv = append(rv, userResource)
 	}
 
-	// TODO(lauren) update connector-sdk version and simplify this by just calling bag.NextToken
-	err = bag.Next(awsSdk.ToString(resp.NextToken))
+	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
 	if err != nil {
 		return nil, "", nil, err
-	}
-
-	nextPage, err := bag.Marshal()
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag: %w", err)
 	}
 
 	return rv, nextPage, nil, nil

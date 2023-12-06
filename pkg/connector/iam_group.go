@@ -142,15 +142,9 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return rv, "", nil, nil
 	}
 
-	// TODO(lauren) update connector-sdk version and simplify this by just calling bag.NextToken
-	err = bag.Next(awsSdk.ToString(resp.Marker))
+	nextPage, err := bag.NextToken(awsSdk.ToString(resp.Marker))
 	if err != nil {
 		return nil, "", nil, err
-	}
-
-	nextPage, err := bag.Marshal()
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag: %w", err)
 	}
 
 	return rv, nextPage, nil, nil

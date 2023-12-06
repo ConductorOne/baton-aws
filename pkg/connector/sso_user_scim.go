@@ -27,7 +27,7 @@ type SCIMUserAddress struct {
 	Type string `json:"type"`
 }
 
-// SCIMUser is an AWS Identity Center SCIM User
+// SCIMUser is an AWS Identity Center SCIM User.
 type SCIMUser struct {
 	ID       string   `json:"id,omitempty"`
 	Schemas  []string `json:"schemas"`
@@ -50,16 +50,15 @@ type awsIdentityCenterSCIMClient struct {
 	Token    string
 }
 
-// TODO(morgabra) util-ify something like this?
 type ssoSCIMRetrier struct {
 	attempts int64
 }
 
-// as configured, will try 3 times over 120ms
 func newSSOSCIMRetrier() *ssoSCIMRetrier {
 	return &ssoSCIMRetrier{}
 }
 
+// Will try 3 times over 120 ms.
 func (r *ssoSCIMRetrier) wait(ctx context.Context) bool {
 	if r.attempts >= 3 {
 		return false
