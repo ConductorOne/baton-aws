@@ -143,7 +143,7 @@ func (o *AWS) ssoAdminClient(ctx context.Context) (*awsSsoAdmin.Client, error) {
 
 func (o *AWS) ssoSCIMClient(ctx context.Context) (*awsIdentityCenterSCIMClient, error) {
 	if !o.scimEnabled {
-		return nil, nil
+		return &awsIdentityCenterSCIMClient{scimEnabled: false}, nil
 	}
 
 	normalizedEndpoint, err := NormalizeAWSIdentityCenterSCIMUrl(o.scimEndpoint)

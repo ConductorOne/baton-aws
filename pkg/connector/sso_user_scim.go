@@ -139,6 +139,9 @@ func (sc *awsIdentityCenterSCIMClient) getUser(ctx context.Context, userID strin
 
 func (sc *awsIdentityCenterSCIMClient) getUserStatus(ctx context.Context, userID string) (v2.UserTrait_Status_Status, error) {
 	status := v2.UserTrait_Status_STATUS_ENABLED
+	if sc == nil {
+		return status, nil
+	}
 
 	// If SCIM is enabled, we can fetch the user status from the SCIM API because it's not available in the SSO API.
 	// This is tragic because the identitystore API is missing the active attribute on the user datatype.
