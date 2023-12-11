@@ -21,10 +21,6 @@ import (
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 )
 
-const (
-	accountMemberEntitlement = "member"
-)
-
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        *awsOrgs.Client
@@ -111,7 +107,6 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: getPermissionSets failed: %w", err)
 	}
-
 	rv := make([]*v2.Entitlement, 0, len(allPS))
 	for _, ps := range allPS {
 		b := &PermissionSetBinding{
@@ -122,14 +117,15 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		annos.Update(&v2.V1Identifier{
 			Id: b.String(),
 		})
-		member := entitlementSdk.NewAssignmentEntitlement(resource, accountMemberEntitlement,
+		displayName := fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
+		member := entitlementSdk.NewAssignmentEntitlement(resource, displayName,
 			entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
 		)
 		member.Description = awsSdk.ToString(ps.Description)
 		member.Annotations = annos
 		member.Id = b.String()
-		member.DisplayName = fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
-		return []*v2.Entitlement{member}, "", nil, nil
+		member.Slug = fmt.Sprintf("%s access", awsSdk.ToString(ps.Name))
+		rv = append(rv, member)
 	}
 	return rv, "", nil, nil
 }
@@ -453,7 +449,6 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoA
 		}
 		o._permissionSetsCache = append(o._permissionSetsCache, ps)
 	}
-
 	return o._permissionSetsCache, nil
 }
 
