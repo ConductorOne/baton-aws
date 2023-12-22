@@ -87,12 +87,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		return rv, "", nil, nil
 	}
 
-	err = bag.Next(awsSdk.ToString(resp.NextToken))
-	if err != nil {
-		return nil, "", nil, err
-	}
-
-	nextPage, err := bag.Marshal()
+	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag: %w", err)
 	}

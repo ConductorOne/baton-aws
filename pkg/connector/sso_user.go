@@ -83,6 +83,11 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		rv = append(rv, userResource)
 	}
 
+	hasNextPage := resp.NextToken != nil
+	if !hasNextPage {
+		return rv, "", nil, nil
+	}
+
 	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
 	if err != nil {
 		return nil, "", nil, err
