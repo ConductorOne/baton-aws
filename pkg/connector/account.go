@@ -200,7 +200,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 
 						members, err := o.getGroupMembers(ctx, awsSdk.ToString(assignment.PrincipalId))
 						if err != nil {
-							return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed: %w", err)
+							return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(assignment.PrincipalId), err)
 						}
 						for _, member := range members {
 							userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member)
