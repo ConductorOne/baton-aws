@@ -76,6 +76,11 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		rv = append(rv, groupResource)
 	}
 
+	hasNextPage := resp.NextToken != nil
+	if !hasNextPage {
+		return rv, "", nil, nil
+	}
+
 	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
 	if err != nil {
 		return nil, "", nil, err
@@ -159,6 +164,11 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 			return nil, "", nil, err
 		}
 		rv = append(rv, grant)
+	}
+
+	hasNextPage := resp.NextToken != nil
+	if !hasNextPage {
+		return rv, "", nil, nil
 	}
 
 	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
