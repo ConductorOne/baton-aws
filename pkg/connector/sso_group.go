@@ -140,7 +140,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	resp, err := o.identityStoreClient.ListGroupMemberships(ctx, input)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed: %w", err)
+		return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err)
 	}
 
 	for _, user := range resp.GroupMemberships {
@@ -160,9 +160,10 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		}
 		rv = append(rv, grant)
 	}
-	nextPage, err := bag.Marshal()
+
+	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag: %w", err)
+		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
 	}
 	return rv, nextPage, nil, nil
 }
