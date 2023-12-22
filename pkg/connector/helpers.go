@@ -64,7 +64,10 @@ func ssoGroupIdFromARN(input string) (string, error) {
 	}
 	_, after, found := strings.Cut(id.Resource, "/group/")
 	if !found {
-		return "", fmt.Errorf("ssoGroupIdFromARN: invalid resrouce '%s' in ARN", input)
+		return "", fmt.Errorf("ssoGroupIdFromARN: invalid resource '%s' in ARN", input)
+	}
+	if after == "" {
+		return "", fmt.Errorf("ssoGroupIdFromARN: invalid resource '%s' in ARN", input)
 	}
 	return after, nil
 }
@@ -76,7 +79,10 @@ func ssoUserIdFromARN(input string) (string, error) {
 	}
 	_, after, found := strings.Cut(id.Resource, "/user/")
 	if !found {
-		return "", fmt.Errorf("ssoUserIdFromARN: invalid resrouce '%s' in ARN", input)
+		return "", fmt.Errorf("ssoUserIdFromARN: invalid resource '%s' in ARN", input)
+	}
+	if after == "" {
+		return "", fmt.Errorf("ssoUserIdFromARN: invalid resource '%s' in ARN", input)
 	}
 	return after, nil
 }
