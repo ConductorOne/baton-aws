@@ -83,7 +83,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		rv = append(rv, userResource)
 	}
 
-	return Paginate(rv, bag, resp.NextToken)
+	return paginate(rv, bag, resp.NextToken)
 }
 
 func (o *ssoUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {

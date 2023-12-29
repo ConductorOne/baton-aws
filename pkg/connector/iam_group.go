@@ -72,17 +72,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		rv = append(rv, groupResource)
 	}
 
-	hasNextPage := resp.IsTruncated && resp.Marker != nil
-	if !hasNextPage {
-		return rv, "", nil, nil
-	}
-
-	nextPage, err := bag.NextToken(awsSdk.ToString(resp.Marker))
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag: %w", err)
-	}
-
-	return rv, nextPage, nil, nil
+	return paginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
 }
 
 func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
@@ -132,7 +122,7 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	return PaginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
+	return paginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
 }
 
 func iamGroupBuilder(iamClient *iam.Client) *iamGroupResourceType {

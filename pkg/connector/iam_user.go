@@ -62,7 +62,7 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		rv = append(rv, userResource)
 	}
 
-	return PaginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
+	return paginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
 }
 
 func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {

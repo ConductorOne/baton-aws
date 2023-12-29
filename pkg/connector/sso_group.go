@@ -76,7 +76,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		rv = append(rv, groupResource)
 	}
 
-	return Paginate(rv, bag, resp.NextToken)
+	return paginate(rv, bag, resp.NextToken)
 }
 
 func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
@@ -156,7 +156,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	rv, nextPage, anno, err := Paginate(rv, bag, resp.NextToken)
+	rv, nextPage, anno, err := paginate(rv, bag, resp.NextToken)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
 	}
