@@ -179,22 +179,15 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 				for _, assignment := range assignmentsResp.AccountAssignments {
 					switch assignment.PrincipalType {
 					case awsSsoAdminTypes.PrincipalTypeGroup:
-						groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
-						var groupAnnos annotations.Annotations
-						groupAnnos.Update(&v2.V1Identifier{
-							Id: V1GrantID(entitlement.Id, groupARN),
-						})
-						rv = append(rv, &v2.Grant{
-							Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
-							Entitlement: entitlement,
-							Principal: &v2.Resource{
-								Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
-							},
-							Annotations: groupAnnos,
-						})
-
 						members, err := o.getGroupMembers(ctx, awsSdk.ToString(assignment.PrincipalId))
 						if err != nil {
+							var notFoundException *awsIdentityStoreTypes.ResourceNotFoundException
+							if errors.As(err, &notFoundException) {
+								if notFoundException.ResourceType == awsIdentityStoreTypes.ResourceTypeGroup {
+									// group was deleted but not removed from the permission set, let's skip it
+									continue
+								}
+							}
 							return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(assignment.PrincipalId), err)
 						}
 						for _, member := range members {
@@ -212,6 +205,20 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 								Annotations: userAnnos,
 							})
 						}
+
+						groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+						var groupAnnos annotations.Annotations
+						groupAnnos.Update(&v2.V1Identifier{
+							Id: V1GrantID(entitlement.Id, groupARN),
+						})
+						rv = append(rv, &v2.Grant{
+							Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
+							Entitlement: entitlement,
+							Principal: &v2.Resource{
+								Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
+							},
+							Annotations: groupAnnos,
+						})
 					case awsSsoAdminTypes.PrincipalTypeUser:
 						userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
 						var userAnnos annotations.Annotations
