@@ -76,17 +76,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		rv = append(rv, groupResource)
 	}
 
-	hasNextPage := resp.NextToken != nil
-	if !hasNextPage {
-		return rv, "", nil, nil
-	}
-
-	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
-	if err != nil {
-		return nil, "", nil, err
-	}
-
-	return rv, nextPage, nil, nil
+	return Paginate(rv, bag, resp.NextToken)
 }
 
 func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
@@ -166,16 +156,11 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	hasNextPage := resp.NextToken != nil
-	if !hasNextPage {
-		return rv, "", nil, nil
-	}
-
-	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
+	rv, nextPage, anno, err := Paginate(rv, bag, resp.NextToken)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
 	}
-	return rv, nextPage, nil, nil
+	return rv, nextPage, anno, nil
 }
 
 func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStoreClient *awsIdentityStore.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata) *ssoGroupResourceType {
