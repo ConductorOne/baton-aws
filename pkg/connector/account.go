@@ -82,17 +82,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		rv = append(rv, userResource)
 	}
 
-	hasNextPage := resp.NextToken != nil
-	if !hasNextPage {
-		return rv, "", nil, nil
-	}
-
-	nextPage, err := bag.NextToken(awsSdk.ToString(resp.NextToken))
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag: %w", err)
-	}
-
-	return rv, nextPage, nil, nil
+	return paginate(rv, bag, resp.NextToken)
 }
 
 func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
