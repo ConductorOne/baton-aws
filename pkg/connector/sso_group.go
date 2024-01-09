@@ -121,6 +121,12 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	}
 	rv := make([]*v2.Grant, 0, 32)
 
+	if bag.Current() == nil {
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeSSOGroup.Id,
+		})
+	}
+
 	groupId, err := ssoGroupIdFromARN(resource.Id.Resource)
 	if err != nil {
 		return nil, "", nil, err
