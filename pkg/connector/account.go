@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -19,6 +20,13 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
+)
+
+const (
+	MaxAccountAssignmentCreationAttempts = 20
+	AccountAssignmentCreationRetryDelay  = 15 * time.Second
 )
 
 type accountResourceType struct {
@@ -276,11 +284,59 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		TargetType:       awsSsoAdminTypes.TargetTypeAwsAccount,
 	}
 
-	if _, err := o.ssoAdminClient.CreateAccountAssignment(ctx, inp); err != nil {
+	createOut, err := o.ssoAdminClient.CreateAccountAssignment(ctx, inp)
+	if err != nil {
 		return nil, err
 	}
 
-	return nil, nil
+	creationComplete := false
+	attemptCount := 0
+	attemptLogger := ctxzap.Extract(ctx).With(
+		zap.Int("attempt", attemptCount),
+		zap.String("request_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.RequestId)),
+		zap.String("principal_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PrincipalId)),
+		zap.String("principal_type", string(createOut.AccountAssignmentCreationStatus.PrincipalType)),
+		zap.String("status", string(createOut.AccountAssignmentCreationStatus.Status)),
+		zap.String("permission_set_arn", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PermissionSetArn)),
+	)
+	for !creationComplete {
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("aws-connector: account assignment creation failed: %w", ctx.Err())
+		case <-time.After(AccountAssignmentCreationRetryDelay):
+		}
+
+		attemptCount++
+		attemptLogger.Debug("waiting for account assignment creation to complete, checking status...")
+		descOut, err := o.ssoAdminClient.DescribeAccountAssignmentCreationStatus(ctx, &awsSsoAdmin.DescribeAccountAssignmentCreationStatusInput{
+			AccountAssignmentCreationRequestId: createOut.AccountAssignmentCreationStatus.RequestId,
+			InstanceArn:                        o.identityInstance.InstanceArn,
+		})
+		if err != nil {
+			attemptLogger.Error("DescribeAccountAssignmentCreationStatus failed", zap.Error(err))
+			return nil, err
+		}
+
+		switch descOut.AccountAssignmentCreationStatus.Status {
+		case awsSsoAdminTypes.StatusValuesInProgress:
+			attemptLogger.Debug("account assignment creation still in progress")
+		case awsSsoAdminTypes.StatusValuesFailed:
+			attemptLogger.Error("account assignment creation failed",
+				zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason)))
+			return nil, fmt.Errorf("aws-connector: account assignment creation failed: %s", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason))
+		case awsSsoAdminTypes.StatusValuesSucceeded:
+			creationComplete = true
+			attemptLogger.Info("account assignment creation complete")
+			return nil, nil
+		}
+
+		// 15 seconds per attempt, 20 attempts == 5 minutes
+		if attemptCount > MaxAccountAssignmentCreationAttempts {
+			return nil, errors.New("aws-connector: account assignment creation timed out")
+		}
+	}
+
+	return nil, fmt.Errorf("aws-connector: unexpected exit while waiting for account assignment creation to complete")
 }
 func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	principal := grant.Principal
