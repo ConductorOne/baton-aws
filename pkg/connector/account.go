@@ -289,7 +289,6 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		return nil, err
 	}
 
-	creationComplete := false
 	attemptCount := 0
 	attemptLogger := ctxzap.Extract(ctx).With(
 		zap.Int("attempt", attemptCount),
@@ -299,7 +298,8 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		zap.String("status", string(createOut.AccountAssignmentCreationStatus.Status)),
 		zap.String("permission_set_arn", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PermissionSetArn)),
 	)
-	for !creationComplete {
+
+	for {
 		select {
 		case <-ctx.Done():
 			return nil, fmt.Errorf("aws-connector: account assignment creation failed: %w", ctx.Err())
@@ -325,7 +325,6 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 				zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason)))
 			return nil, fmt.Errorf("aws-connector: account assignment creation failed: %s", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason))
 		case awsSsoAdminTypes.StatusValuesSucceeded:
-			creationComplete = true
 			attemptLogger.Info("account assignment creation complete")
 			return nil, nil
 		}
@@ -335,8 +334,6 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 			return nil, errors.New("aws-connector: account assignment creation timed out")
 		}
 	}
-
-	return nil, fmt.Errorf("aws-connector: unexpected exit while waiting for account assignment creation to complete")
 }
 func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	principal := grant.Principal
