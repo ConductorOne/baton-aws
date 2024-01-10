@@ -250,7 +250,6 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 }
 
 func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	l := ctxzap.Extract(ctx)
 	principalType := awsSsoAdminTypes.PrincipalType("")
 	principalId := ""
 	switch principal.Id.ResourceType {
@@ -291,16 +290,14 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		return nil, err
 	}
 
-	attemptCount := 1
-	attemptLogger := l.With(
-		zap.Int("attempt", attemptCount),
+	l := ctxzap.Extract(ctx).With(
 		zap.String("request_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.RequestId)),
 		zap.String("principal_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PrincipalId)),
 		zap.String("principal_type", string(createOut.AccountAssignmentCreationStatus.PrincipalType)),
 		zap.String("permission_set_arn", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PermissionSetArn)),
 	)
 
-	complete, err := o.checkCreateAccountAssignmentStatus(ctx, attemptLogger, createOut.AccountAssignmentCreationStatus)
+	complete, err := o.checkCreateAccountAssignmentStatus(ctx, l, createOut.AccountAssignmentCreationStatus)
 	if err != nil {
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
@@ -321,9 +318,8 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		case <-time.After(AccountAssignmentRetryDelay):
 		}
 
-		attemptCount++
-		attemptLogger.Debug("aws-connector: waiting for account assignment creation to complete, checking status...")
-		complete, err = o.checkCreateAccountAssignmentStatus(waitCtx, attemptLogger, createOut.AccountAssignmentCreationStatus)
+		l.Debug("aws-connector: waiting for account assignment creation to complete, checking status...")
+		complete, err = o.checkCreateAccountAssignmentStatus(waitCtx, l, createOut.AccountAssignmentCreationStatus)
 		if err != nil {
 			return nil, err
 		}
@@ -387,7 +383,6 @@ func (o *accountResourceType) checkDeleteAccountAssignmentStatus(ctx context.Con
 }
 
 func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	l := ctxzap.Extract(ctx)
 	principal := grant.Principal
 	entitlement := grant.Entitlement
 	principalType := awsSsoAdminTypes.PrincipalType("")
@@ -430,16 +425,14 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		return nil, err
 	}
 
-	attemptCount := 1
-	attemptLogger := l.With(
-		zap.Int("attempt", attemptCount),
+	l := ctxzap.Extract(ctx).With(
 		zap.String("request_id", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.RequestId)),
 		zap.String("principal_id", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.PrincipalId)),
 		zap.String("principal_type", string(deleteOut.AccountAssignmentDeletionStatus.PrincipalType)),
 		zap.String("permission_set_arn", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.PermissionSetArn)),
 	)
 
-	complete, err := o.checkDeleteAccountAssignmentStatus(ctx, attemptLogger, deleteOut.AccountAssignmentDeletionStatus)
+	complete, err := o.checkDeleteAccountAssignmentStatus(ctx, l, deleteOut.AccountAssignmentDeletionStatus)
 	if err != nil {
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
@@ -460,9 +453,8 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		case <-time.After(AccountAssignmentRetryDelay):
 		}
 
-		attemptCount++
-		attemptLogger.Debug("aws-connector: waiting for account assignment deletion to complete, checking status...")
-		complete, err = o.checkDeleteAccountAssignmentStatus(waitCtx, attemptLogger, deleteOut.AccountAssignmentDeletionStatus)
+		l.Debug("aws-connector: waiting for account assignment deletion to complete, checking status...")
+		complete, err = o.checkDeleteAccountAssignmentStatus(waitCtx, l, deleteOut.AccountAssignmentDeletionStatus)
 		if err != nil {
 			return nil, err
 		}
