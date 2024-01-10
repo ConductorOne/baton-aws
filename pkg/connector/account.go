@@ -30,10 +30,6 @@ const (
 	AccountAssignmentRetryDelay      = 1 * time.Second
 )
 
-var (
-	errCreateAccountAssignmentFailure = errors.New("aws-connector: account assignment creation failed")
-)
-
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        *awsOrgs.Client
