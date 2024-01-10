@@ -15,18 +15,23 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
+
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
 )
 
 const (
-	MaxAccountAssignmentCreationAttempts = 20
-	AccountAssignmentCreationRetryDelay  = 15 * time.Second
+	AccountAssignmentMaxWaitDuration = 5 * time.Minute
+	AccountAssignmentRetryDelay      = 1 * time.Second
+)
+
+var (
+	errCreateAccountAssignmentFailure = errors.New("aws-connector: account assignment creation failed")
 )
 
 type accountResourceType struct {
@@ -249,6 +254,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 }
 
 func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
 	principalType := awsSsoAdminTypes.PrincipalType("")
 	principalId := ""
 	switch principal.Id.ResourceType {
@@ -289,53 +295,103 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		return nil, err
 	}
 
-	attemptCount := 0
-	attemptLogger := ctxzap.Extract(ctx).With(
+	attemptCount := 1
+	attemptLogger := l.With(
 		zap.Int("attempt", attemptCount),
 		zap.String("request_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.RequestId)),
 		zap.String("principal_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PrincipalId)),
 		zap.String("principal_type", string(createOut.AccountAssignmentCreationStatus.PrincipalType)),
-		zap.String("status", string(createOut.AccountAssignmentCreationStatus.Status)),
 		zap.String("permission_set_arn", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PermissionSetArn)),
 	)
 
-	for {
+	complete, err := o.checkCreateAccountAssignmentStatus(ctx, attemptLogger, createOut.AccountAssignmentCreationStatus)
+	if err != nil {
+		var ae *awsSsoAdminTypes.AccessDeniedException
+		if errors.As(err, &ae) {
+			l.Info("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
+			complete = true
+		} else {
+			return nil, err
+		}
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, AccountAssignmentMaxWaitDuration)
+	defer cancel()
+
+	for !complete {
 		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("aws-connector: account assignment creation failed: %w", ctx.Err())
-		case <-time.After(AccountAssignmentCreationRetryDelay):
+		case <-waitCtx.Done():
+			return nil, fmt.Errorf("aws-connector: account assignment creation timed out: %w", ctx.Err())
+		case <-time.After(AccountAssignmentRetryDelay):
 		}
 
 		attemptCount++
-		attemptLogger.Debug("waiting for account assignment creation to complete, checking status...")
-		descOut, err := o.ssoAdminClient.DescribeAccountAssignmentCreationStatus(ctx, &awsSsoAdmin.DescribeAccountAssignmentCreationStatusInput{
-			AccountAssignmentCreationRequestId: createOut.AccountAssignmentCreationStatus.RequestId,
-			InstanceArn:                        o.identityInstance.InstanceArn,
-		})
+		attemptLogger.Debug("aws-connector: waiting for account assignment creation to complete, checking status...")
+		complete, err = o.checkCreateAccountAssignmentStatus(waitCtx, attemptLogger, createOut.AccountAssignmentCreationStatus)
 		if err != nil {
-			attemptLogger.Error("DescribeAccountAssignmentCreationStatus failed", zap.Error(err))
 			return nil, err
 		}
+	}
 
-		switch descOut.AccountAssignmentCreationStatus.Status {
-		case awsSsoAdminTypes.StatusValuesInProgress:
-			attemptLogger.Debug("account assignment creation still in progress")
-		case awsSsoAdminTypes.StatusValuesFailed:
-			attemptLogger.Error("account assignment creation failed",
-				zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason)))
-			return nil, fmt.Errorf("aws-connector: account assignment creation failed: %s", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason))
-		case awsSsoAdminTypes.StatusValuesSucceeded:
-			attemptLogger.Info("account assignment creation complete")
-			return nil, nil
-		}
+	return nil, nil
+}
 
-		// 15 seconds per attempt, 20 attempts == 5 minutes
-		if attemptCount > MaxAccountAssignmentCreationAttempts {
-			return nil, errors.New("aws-connector: account assignment creation timed out")
-		}
+// checkCreateAccountAssignmentStatus checks the status of the account assignment creation request. It returns true if the request is complete, false if it is still in progress.
+func (o *accountResourceType) checkCreateAccountAssignmentStatus(ctx context.Context, l *zap.Logger, resp *awsSsoAdminTypes.AccountAssignmentOperationStatus) (bool, error) {
+	descOut, err := o.ssoAdminClient.DescribeAccountAssignmentCreationStatus(ctx, &awsSsoAdmin.DescribeAccountAssignmentCreationStatusInput{
+		AccountAssignmentCreationRequestId: resp.RequestId,
+		InstanceArn:                        o.identityInstance.InstanceArn,
+	})
+	if err != nil {
+		l.Error("aws-connector: DescribeAccountAssignmentCreationStatus request failed", zap.Error(err))
+		return false, err
+	}
+
+	switch descOut.AccountAssignmentCreationStatus.Status {
+	case awsSsoAdminTypes.StatusValuesInProgress:
+		l.Debug("aws-connector: account assignment creation still in progress")
+		return false, nil
+	case awsSsoAdminTypes.StatusValuesFailed:
+		l.Error("aws-connector: account assignment creation failed", zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason)))
+		return true, fmt.Errorf("aws-connector: %s", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason))
+	case awsSsoAdminTypes.StatusValuesSucceeded:
+		l.Debug("aws-connector: account assignment creation succeeded")
+		return true, nil
+	default:
+		l.Error("aws-connector: unexpected status", zap.String("status", string(descOut.AccountAssignmentCreationStatus.Status)))
+		return false, errors.New("aws-connector: account assignment creation failed")
 	}
 }
+
+// checkDeleteAccountAssignmentStatus checks the status of the account assignment deletion request. It returns true if the request is complete, false if it is still in progress.
+func (o *accountResourceType) checkDeleteAccountAssignmentStatus(ctx context.Context, l *zap.Logger, resp *awsSsoAdminTypes.AccountAssignmentOperationStatus) (bool, error) {
+	descOut, err := o.ssoAdminClient.DescribeAccountAssignmentDeletionStatus(ctx, &awsSsoAdmin.DescribeAccountAssignmentDeletionStatusInput{
+		AccountAssignmentDeletionRequestId: resp.RequestId,
+		InstanceArn:                        o.identityInstance.InstanceArn,
+	})
+	if err != nil {
+		l.Error("aws-connector: DescribeAccountAssignmentDeletionStatus request failed", zap.Error(err))
+		return false, err
+	}
+
+	switch descOut.AccountAssignmentDeletionStatus.Status {
+	case awsSsoAdminTypes.StatusValuesInProgress:
+		l.Debug("aws-connector: account assignment deletion still in progress")
+		return false, nil
+	case awsSsoAdminTypes.StatusValuesFailed:
+		l.Error("aws-connector: account assignment deletion failed", zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentDeletionStatus.FailureReason)))
+		return true, fmt.Errorf("aws-connector: %s", awsSdk.ToString(descOut.AccountAssignmentDeletionStatus.FailureReason))
+	case awsSsoAdminTypes.StatusValuesSucceeded:
+		l.Debug("aws-connector: account assignment deletion succeeded")
+		return true, nil
+	default:
+		l.Error("aws-connector: unexpected status", zap.String("status", string(descOut.AccountAssignmentDeletionStatus.Status)))
+		return false, errors.New("aws-connector: account assignment deletion failed")
+	}
+}
+
 func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
 	principal := grant.Principal
 	entitlement := grant.Entitlement
 	principalType := awsSsoAdminTypes.PrincipalType("")
@@ -373,9 +429,49 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		TargetType:       awsSsoAdminTypes.TargetTypeAwsAccount,
 	}
 
-	if _, err := o.ssoAdminClient.DeleteAccountAssignment(ctx, inp); err != nil {
+	deleteOut, err := o.ssoAdminClient.DeleteAccountAssignment(ctx, inp)
+	if err != nil {
 		return nil, err
 	}
+
+	attemptCount := 1
+	attemptLogger := l.With(
+		zap.Int("attempt", attemptCount),
+		zap.String("request_id", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.RequestId)),
+		zap.String("principal_id", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.PrincipalId)),
+		zap.String("principal_type", string(deleteOut.AccountAssignmentDeletionStatus.PrincipalType)),
+		zap.String("permission_set_arn", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.PermissionSetArn)),
+	)
+
+	complete, err := o.checkDeleteAccountAssignmentStatus(ctx, attemptLogger, deleteOut.AccountAssignmentDeletionStatus)
+	if err != nil {
+		var ae *awsSsoAdminTypes.AccessDeniedException
+		if errors.As(err, &ae) {
+			l.Info("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
+			complete = true
+		} else {
+			return nil, err
+		}
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, AccountAssignmentMaxWaitDuration)
+	defer cancel()
+
+	for !complete {
+		select {
+		case <-waitCtx.Done():
+			return nil, fmt.Errorf("aws-connector: account assignment deletion timed out: %w", ctx.Err())
+		case <-time.After(AccountAssignmentRetryDelay):
+		}
+
+		attemptCount++
+		attemptLogger.Debug("aws-connector: waiting for account assignment deletion to complete, checking status...")
+		complete, err = o.checkDeleteAccountAssignmentStatus(waitCtx, attemptLogger, deleteOut.AccountAssignmentDeletionStatus)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return nil, nil
 }
 
