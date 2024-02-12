@@ -5,8 +5,10 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"google.golang.org/protobuf/proto"
 )
 
 const (
@@ -72,6 +74,21 @@ func ssoGroupIdFromARN(input string) (string, error) {
 	return after, nil
 }
 
+func iamGroupNameFromARN(input string) (string, error) {
+	id, err := arn.Parse(input)
+	if err != nil {
+		return "", fmt.Errorf("iamGroupIdFromARN: ARN Parse failed: %w", err)
+	}
+	_, after, found := strings.Cut(id.Resource, "group/")
+	if !found {
+		return "", fmt.Errorf("iamGroupIdFromARN: invalid resource '%s' in ARN", input)
+	}
+	if after == "" {
+		return "", fmt.Errorf("iamGroupIdFromARN: invalid resource '%s' in ARN", input)
+	}
+	return after, nil
+}
+
 func ssoUserIdFromARN(input string) (string, error) {
 	id, err := arn.Parse(input)
 	if err != nil {
@@ -85,4 +102,38 @@ func ssoUserIdFromARN(input string) (string, error) {
 		return "", fmt.Errorf("ssoUserIdFromARN: invalid resource '%s' in ARN", input)
 	}
 	return after, nil
+}
+
+func iamUserNameFromARN(input string) (string, error) {
+	id, err := arn.Parse(input)
+	if err != nil {
+		return "", fmt.Errorf("iamUserNameFromARN: ARN Parse failed: %w", err)
+	}
+	_, after, found := strings.Cut(id.Resource, "user/")
+	if !found {
+		return "", fmt.Errorf("iamUserNameFromARN: invalid resource '%s' in ARN", input)
+	}
+	if after == "" {
+		return "", fmt.Errorf("iamUserNameFromARN: invalid resource '%s' in ARN", input)
+	}
+	return after, nil
+}
+
+func extractRequestID(md *middleware.Metadata) proto.Message {
+	if md == nil {
+		return nil
+	}
+
+	if !md.Has("RequestId") {
+		return nil
+	}
+
+	reqId, ok := md.Get("RequestId").(string)
+	if !ok {
+		return nil
+	}
+
+	return &v2.RequestId{
+		RequestId: reqId,
+	}
 }
