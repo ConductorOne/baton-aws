@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	aws_middleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -128,12 +129,12 @@ func extractRequestID(md *middleware.Metadata) proto.Message {
 		return nil
 	}
 
-	reqId, ok := md.Get("RequestId").(string)
-	if !ok {
-		return nil
+	reqId, hasReqId := aws_middleware.GetRequestIDMetadata(*md)
+	if hasReqId {
+		return &v2.RequestId{
+			RequestId: reqId,
+		}
 	}
 
-	return &v2.RequestId{
-		RequestId: reqId,
-	}
+	return nil
 }

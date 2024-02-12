@@ -11,6 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.22.3
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.22.1
 	github.com/aws/aws-sdk-go-v2/service/sts v1.25.4
+	github.com/aws/smithy-go v1.17.0
 	github.com/conductorone/baton-sdk v0.1.13
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/spf13/cobra v1.8.0
@@ -33,7 +34,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.44.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.17.3 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.20.1 // indirect
-	github.com/aws/smithy-go v1.17.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/doug-martin/goqu/v9 v9.19.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
