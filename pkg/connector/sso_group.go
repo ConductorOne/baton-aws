@@ -225,7 +225,13 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		l.Error("aws-connector: Failed to create grant", zap.Error(err), zap.String("membership_id", awsSdk.ToString(membership.MembershipId)))
 		return nil, nil, err
 	}
-	return []*v2.Grant{grant}, nil, nil
+
+	annos := annotations.New()
+	if reqId := extractRequestID(&membership.ResultMetadata); reqId != nil {
+		annos.Append(reqId)
+	}
+
+	return []*v2.Grant{grant}, annos, nil
 }
 func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	if grant.Principal.Id.ResourceType != resourceTypeSSOUser.Id {
@@ -237,15 +243,21 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		zap.String("identity_store_id", awsSdk.ToString(g.identityInstance.IdentityStoreId)),
 	)
 
-	if _, err := g.identityStoreClient.DeleteGroupMembership(ctx, &awsIdentityStore.DeleteGroupMembershipInput{
+	resp, err := g.identityStoreClient.DeleteGroupMembership(ctx, &awsIdentityStore.DeleteGroupMembershipInput{
 		IdentityStoreId: g.identityInstance.IdentityStoreId,
 		MembershipId:    awsSdk.String(grant.Id),
-	}); err != nil {
+	})
+	if err != nil {
 		l.Error("aws-connector: Failed to delete group membership", zap.Error(err))
 		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w", err)
 	}
 
-	return nil, nil
+	annos := annotations.New()
+	if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
+		annos.Append(reqId)
+	}
+
+	return annos, nil
 }
 
 func ssoGroupProfile(ctx context.Context, group awsIdentityStoreTypes.Group) map[string]interface{} {

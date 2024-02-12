@@ -181,12 +181,12 @@ func (o *iamGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		),
 	)
 
-	rv := annotations.New()
+	annos := annotations.New()
 	if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
-		rv.Append(reqId)
+		annos.Append(reqId)
 	}
 
-	return []*v2.Grant{grant}, nil, nil
+	return []*v2.Grant{grant}, annos, nil
 }
 
 func (o *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
@@ -212,10 +212,10 @@ func (o *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		return nil, fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err)
 	}
 
-	rv := annotations.New()
+	annos := annotations.New()
 	if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
-		rv.Append(reqId)
+		annos.Append(reqId)
 	}
 
-	return rv, nil
+	return annos, nil
 }
