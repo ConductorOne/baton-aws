@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -142,4 +143,79 @@ func iamGroupProfile(ctx context.Context, group iamTypes.Group) map[string]inter
 	profile["aws_group_id"] = awsSdk.ToString(group.GroupId)
 
 	return profile
+}
+
+func (o *iamGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+	if principal.Id.ResourceType != resourceTypeIAMUser.Id {
+		return nil, nil, errors.New("baton-aws: only iam users can be removed from iam group")
+	}
+
+	groupName, err := iamGroupNameFromARN(entitlement.Resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	userName, err := iamUserNameFromARN(principal.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	resp, err := o.iamClient.AddUserToGroup(ctx, &iam.AddUserToGroupInput{
+		GroupName: awsSdk.String(groupName),
+		UserName:  awsSdk.String(userName),
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-aws: error adding iam user to iam group: %w", err)
+	}
+
+	grant := grantSdk.NewGrant(
+		entitlement.Resource,
+		groupMemberEntitlement, principal.Id,
+		grantSdk.WithAnnotation(
+			&v2.V1Identifier{
+				Id: V1GrantID(
+					V1MembershipEntitlementID(entitlement.Resource.Id),
+					principal.Id.Resource,
+				),
+			},
+		),
+	)
+
+	rv := annotations.New()
+	if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
+		rv.Append(reqId)
+	}
+
+	return []*v2.Grant{grant}, nil, nil
+}
+
+func (o *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
+	if grant.Principal.Id.ResourceType != resourceTypeIAMUser.Id {
+		return nil, errors.New("baton-aws: only iam users can be removed from iam group")
+	}
+
+	groupName, err := iamGroupNameFromARN(grant.Entitlement.Resource.Id.Resource)
+	if err != nil {
+		return nil, err
+	}
+
+	userName, err := iamUserNameFromARN(grant.Principal.Id.Resource)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := o.iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{
+		GroupName: awsSdk.String(groupName),
+		UserName:  awsSdk.String(userName),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err)
+	}
+
+	rv := annotations.New()
+	if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
+		rv.Append(reqId)
+	}
+
+	return rv, nil
 }
