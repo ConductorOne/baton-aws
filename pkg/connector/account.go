@@ -527,7 +527,7 @@ func (o *accountResourceType) getGroupMembers(ctx context.Context, groupId strin
 		IdentityStoreId: o.identityInstance.IdentityStoreId,
 		GroupId:         awsSdk.String(groupId),
 	}
-	userIds := make([]string, 0, 16)
+	userIDs := make([]string, 0, 16)
 	paginator := awsIdentityStore.NewListGroupMembershipsPaginator(o.identityClient, input)
 	for {
 		resp, err := paginator.NextPage(ctx)
@@ -539,14 +539,14 @@ func (o *accountResourceType) getGroupMembers(ctx context.Context, groupId strin
 			if !ok {
 				continue
 			}
-			userIds = append(userIds, member.Value)
+			userIDs = append(userIDs, member.Value)
 		}
 		if !paginator.HasMorePages() {
 			break
 		}
 	}
-	o._groupMembersCache.Store(groupId, userIds)
-	return userIds, nil
+	o._groupMembersCache.Store(groupId, userIDs)
+	return userIDs, nil
 }
 
 func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoAdminTypes.PermissionSet, error) {
