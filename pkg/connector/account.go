@@ -290,6 +290,11 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		return nil, err
 	}
 
+	annos := annotations.New()
+	if reqId := extractRequestID(&createOut.ResultMetadata); reqId != nil {
+		annos.Append(reqId)
+	}
+
 	l := ctxzap.Extract(ctx).With(
 		zap.String("request_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.RequestId)),
 		zap.String("principal_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PrincipalId)),
@@ -325,7 +330,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		}
 	}
 
-	return nil, nil
+	return annos, nil
 }
 
 // checkCreateAccountAssignmentStatus checks the status of the account assignment creation request. It returns true if the request is complete, false if it is still in progress.
@@ -425,6 +430,11 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		return nil, err
 	}
 
+	annos := annotations.New()
+	if reqId := extractRequestID(&deleteOut.ResultMetadata); reqId != nil {
+		annos.Append(reqId)
+	}
+
 	l := ctxzap.Extract(ctx).With(
 		zap.String("request_id", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.RequestId)),
 		zap.String("principal_id", awsSdk.ToString(deleteOut.AccountAssignmentDeletionStatus.PrincipalId)),
@@ -460,7 +470,7 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		}
 	}
 
-	return nil, nil
+	return annos, nil
 }
 
 func (o *accountResourceType) getPermissionSet(ctx context.Context, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
