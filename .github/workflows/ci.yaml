@@ -66,7 +66,7 @@ jobs:
       - name: Build baton
         working-directory: ./baton
         run: go build ./cmd/baton
-      - name: Test grant/revoking IAM entitlements
+      - name: Test grant/revoking entitlements
         env:
           BATON: ./baton/baton
           BATON_AWS: ./baton-aws
