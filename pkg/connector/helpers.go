@@ -2,6 +2,7 @@ package connector
 
 import (
 	"fmt"
+	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -80,14 +81,12 @@ func iamGroupNameFromARN(input string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("iamGroupIdFromARN: ARN Parse failed: %w", err)
 	}
-	_, after, found := strings.Cut(id.Resource, "group/")
-	if !found {
+	val := path.Base(id.Resource)
+	if val == "/" || val == "." {
 		return "", fmt.Errorf("iamGroupIdFromARN: invalid resource '%s' in ARN", input)
 	}
-	if after == "" {
-		return "", fmt.Errorf("iamGroupIdFromARN: invalid resource '%s' in ARN", input)
-	}
-	return after, nil
+
+	return val, nil
 }
 
 func ssoUserIdFromARN(input string) (string, error) {
@@ -110,14 +109,11 @@ func iamUserNameFromARN(input string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("iamUserNameFromARN: ARN Parse failed: %w", err)
 	}
-	_, after, found := strings.Cut(id.Resource, "user/")
-	if !found {
+	val := path.Base(id.Resource)
+	if val == "/" || val == "." {
 		return "", fmt.Errorf("iamUserNameFromARN: invalid resource '%s' in ARN", input)
 	}
-	if after == "" {
-		return "", fmt.Errorf("iamUserNameFromARN: invalid resource '%s' in ARN", input)
-	}
-	return after, nil
+	return val, nil
 }
 
 func extractRequestID(md *middleware.Metadata) proto.Message {
