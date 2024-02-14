@@ -147,7 +147,7 @@ func iamGroupProfile(ctx context.Context, group iamTypes.Group) map[string]inter
 
 func (o *iamGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
 	if principal.Id.ResourceType != resourceTypeIAMUser.Id {
-		return nil, nil, errors.New("baton-aws: only iam users can be removed from iam group")
+		return nil, nil, errors.New("baton-aws: only iam users can be added to iam group")
 	}
 
 	groupName, err := iamGroupNameFromARN(entitlement.Resource.Id.Resource)
