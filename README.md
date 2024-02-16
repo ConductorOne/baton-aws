@@ -90,3 +90,137 @@ Flags:
 Use "baton-aws [command] --help" for more information about a command.
 
 ```
+
+---
+
+# Configuring Permissions for AWS IAM Roles
+
+If you'd like to run `baton-aws` you may use these policies for your IAM roles. The first is for syncing all objects, the second for syncing and provisioning all objects.
+
+_These policies have comments prefixed with // that need to be removed before use._
+
+## Syncing all supported objects
+```json5
+{
+  "Statement": [
+    {
+      "Action": [
+        "iam:ListUsers",
+        "iam:ListGroups",
+        "iam:ListRoles",
+        "iam:GetGroup"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // The minimum permissions required for the connector to sync. This will get IAM Users, Groups, and Roles
+      "Sid": "MinimumRequiredPermissionsSyncIAMUsersGroupsRoles"
+    },
+    {
+      "Action": [
+        "iam:ListAccountAliases"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Use account aliases instead of the account names when possible
+      "Sid": "UseMoreDescriptiveAccountAliases"
+    },
+    {
+      "Action": [
+        "identitystore:ListUsers",
+        "identitystore:ListGroups",
+        "identitystore:ListGroupMemberships",
+        "organizations:ListAccounts",
+        "sso:DescribePermissionSet",
+        "sso:ListAccountAssignments",
+        "sso:ListInstances",
+        "sso:ListPermissionSets",
+        "sso:ListPermissionSetsProvisionedToAccount"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Sync identity center users, groups, and permision sets, as well as the organization accounts
+      "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
+    }
+  ],
+  "Version": "2012-10-17"
+}
+```
+
+## Syncing and Provisioning all supported objects
+```json5
+{
+  "Statement": [
+    {
+      "Action": [
+        "iam:ListUsers",
+        "iam:ListGroups",
+        "iam:ListRoles",
+        "iam:GetGroup"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // The minimum permissions required for the connector to sync. This will get IAM Users, Groups, and Roles
+      "Sid": "MinimumRequiredPermissionsSyncIAMUsersGroupsRoles"
+    },
+    {
+      "Action": [
+        "iam:ListAccountAliases"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Use account aliases instead of the account names when possible
+      "Sid": "UseMoreDescriptiveAccountAliases"
+    },
+    {
+      "Action": [
+        "identitystore:ListUsers",
+        "identitystore:ListGroups",
+        "identitystore:ListGroupMemberships",
+        "organizations:ListAccounts",
+        "sso:DescribePermissionSet",
+        "sso:ListAccountAssignments",
+        "sso:ListInstances",
+        "sso:ListPermissionSets",
+        "sso:ListPermissionSetsProvisionedToAccount"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Sync identity center users, groups, and permision sets, as well as the organization accounts
+      "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
+    },
+    {
+      "Action": [
+        "iam:AddUserToGroup",
+        "iam:RemoveUserFromGroup"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Enable provisioning of IAM users to Groups
+      "Sid": "IAMUserToGroupProvisioning"
+    },
+    {
+      "Action": [
+        "identitystore:CreateGroupMembership",
+        "identitystore:DeleteGroupMembership"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Enable provisioning of Identity Store users to Groups
+      "Sid": "SSOUserToGroupProvisioning"
+    },
+    {
+      "Action": [
+        "sso:CreateAccountAssignment",
+        "sso:DeleteAccountAssignment",
+        "sso:DescribeAccountAssignmentCreationStatus",
+        "sso:DescribeAccountAssignmentDeletionStatus"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Enable provisioning of SSO Users directly to permission sets in accounts
+      "Sid": "SSOUserToAccountPermissionSetProvisioning"
+    }
+  ],
+  "Version": "2012-10-17"
+}
+```
