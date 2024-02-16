@@ -224,3 +224,45 @@ _These policies have comments prefixed with // that need to be removed before us
   "Version": "2012-10-17"
 }
 ```
+
+## Important Policy Footnote
+
+In some occasions, the configuration of the policies or accounts may require additional permissions.
+These are not called directly by baton-aws, but are used by AWS to ensure some further safety, for example in situations where you are changing the root org.
+If you've used the above policy and are still experiencing issues provisioning, try integrating the below into your policy.
+
+```json5
+{
+  "Sid": "IAMListPoliciesPermissions",
+  "Effect": "Allow",
+  "Action": [
+    "iam:ListPolicies"
+  ],
+  "Resource": "*"
+},
+{
+  "Sid": "AccessToSSOProvisionedRoles",
+  "Effect": "Allow",
+  "Action": [
+    "iam:AttachRolePolicy",
+    "iam:CreateRole",
+    "iam:DeleteRole",
+    "iam:DeleteRolePolicy",
+    "iam:DetachRolePolicy",
+    "iam:GetRole",
+    "iam:ListAttachedRolePolicies",
+    "iam:ListRolePolicies",
+    "iam:PutRolePolicy",
+    "iam:UpdateRole",
+    "iam:UpdateRoleDescription"
+  ],
+  "Resource": "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*"
+},
+{
+  "Effect": "Allow",
+  "Action": [
+    "iam:GetSAMLProvider"
+  ],
+  "Resource": "arn:aws:iam::*:saml-provider/AWSSSO_*_DO_NOT_DELETE"
+}
+```
