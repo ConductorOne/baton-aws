@@ -138,7 +138,7 @@ func (sc *awsIdentityCenterSCIMClient) getUser(ctx context.Context, userID strin
 }
 
 func (sc *awsIdentityCenterSCIMClient) getUserStatus(ctx context.Context, userID string) (v2.UserTrait_Status_Status, error) {
-	status := v2.UserTrait_Status_STATUS_ENABLED
+	status := v2.UserTrait_Status_STATUS_UNSPECIFIED
 	if sc == nil {
 		return status, nil
 	}
