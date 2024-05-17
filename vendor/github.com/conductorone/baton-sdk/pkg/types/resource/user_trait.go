@@ -2,10 +2,13 @@ package resource
 
 import (
 	"fmt"
+	"time"
+
+	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 type UserTraitOption func(ut *v2.UserTrait) error
@@ -13,6 +16,14 @@ type UserTraitOption func(ut *v2.UserTrait) error
 func WithStatus(status v2.UserTrait_Status_Status) UserTraitOption {
 	return func(ut *v2.UserTrait) error {
 		ut.Status = &v2.UserTrait_Status{Status: status}
+
+		return nil
+	}
+}
+
+func WithDetailedStatus(status v2.UserTrait_Status_Status, details string) UserTraitOption {
+	return func(ut *v2.UserTrait) error {
+		ut.Status = &v2.UserTrait_Status{Status: status, Details: details}
 
 		return nil
 	}
@@ -70,6 +81,34 @@ func WithUserProfile(profile map[string]interface{}) UserTraitOption {
 func WithAccountType(accountType v2.UserTrait_AccountType) UserTraitOption {
 	return func(ut *v2.UserTrait) error {
 		ut.AccountType = accountType
+		return nil
+	}
+}
+
+func WithCreatedAt(createdAt time.Time) UserTraitOption {
+	return func(ut *v2.UserTrait) error {
+		ut.CreatedAt = timestamppb.New(createdAt)
+		return nil
+	}
+}
+
+func WithLastLogin(lastLogin time.Time) UserTraitOption {
+	return func(ut *v2.UserTrait) error {
+		ut.LastLogin = timestamppb.New(lastLogin)
+		return nil
+	}
+}
+
+func WithMFAStatus(mfaStatus *v2.UserTrait_MFAStatus) UserTraitOption {
+	return func(ut *v2.UserTrait) error {
+		ut.MfaStatus = mfaStatus
+		return nil
+	}
+}
+
+func WithSSOStatus(ssoStatus *v2.UserTrait_SSOStatus) UserTraitOption {
+	return func(ut *v2.UserTrait) error {
+		ut.SsoStatus = ssoStatus
 		return nil
 	}
 }
