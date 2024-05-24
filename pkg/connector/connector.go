@@ -349,6 +349,7 @@ func (c *AWS) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadClo
 }
 
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncer{}
 	iamClient, err := c.iamClient(ctx)
 	if err == nil {
@@ -356,18 +357,22 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	}
 	ix, err := c.getIdentityInstance(ctx)
 	if err != nil {
+		l.Error("getIdentityInstance error", zap.Error(err))
 		return rs
 	}
 	ssoAdminClient, err := c.ssoAdminClient(ctx)
 	if err != nil {
+		l.Error("ssoAdminClient error", zap.Error(err))
 		return rs
 	}
 	identityStoreClient, err := c.identityStoreClient(ctx)
 	if err != nil {
+		l.Error("identityStoreClient error", zap.Error(err))
 		return rs
 	}
 	scimClient, err := c.ssoSCIMClient(ctx)
 	if err != nil {
+		l.Error("scimClient error", zap.Error(err))
 		return rs
 	}
 	if c.ssoEnabled {
@@ -378,6 +383,8 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		orgClient, err := c.orgClient(ctx)
 		if err == nil {
 			rs = append(rs, accountBuilder(orgClient, c.roleARN, ssoAdminClient, ix, c.ssoRegion, identityStoreClient))
+		} else {
+			l.Error("accountBuilder error", zap.Error(err))
 		}
 	}
 	return rs
