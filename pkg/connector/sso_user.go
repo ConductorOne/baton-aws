@@ -66,15 +66,32 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: userARN,
 		}
 		profile := ssoUserProfile(ctx, user)
+		userOptions := []resourceSdk.UserTraitOption{
+			resourceSdk.WithUserProfile(profile),
+			resourceSdk.WithStatus(status),
+		}
+		foundPrimaryEmail := false
+		emailFromUsername := getSsoUserEmail(user)
+		if emailFromUsername != "" {
+			userOptions = append(userOptions, resourceSdk.WithEmail(emailFromUsername, true))
+			foundPrimaryEmail = true
+		}
+		for _, email := range user.Emails {
+			if email.Value == nil {
+				continue
+			}
+			// If we haven't already found an email, make this one primary, otherwise it's non-primary
+			userOptions = append(userOptions, resourceSdk.WithEmail(*email.Value, !foundPrimaryEmail))
+			// If this is our first primary email, mark it as such
+			if !foundPrimaryEmail {
+				foundPrimaryEmail = true
+			}
+		}
 		userResource, err := resourceSdk.NewUserResource(
 			awsSdk.ToString(user.UserName),
 			resourceTypeSSOUser,
 			userARN,
-			[]resourceSdk.UserTraitOption{
-				resourceSdk.WithEmail(getSsoUserEmail(user), true),
-				resourceSdk.WithUserProfile(profile),
-				resourceSdk.WithStatus(status),
-			},
+			userOptions,
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {
