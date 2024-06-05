@@ -66,12 +66,12 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: userARN,
 		}
 		profile := ssoUserProfile(ctx, user)
-		emailFromUsername := getSsoUserEmail(user)
 		userOptions := []resourceSdk.UserTraitOption{
 			resourceSdk.WithUserProfile(profile),
 			resourceSdk.WithStatus(status),
 		}
 		foundPrimaryEmail := false
+		emailFromUsername := getSsoUserEmail(user)
 		if emailFromUsername != "" {
 			userOptions = append(userOptions, resourceSdk.WithEmail(emailFromUsername, true))
 			foundPrimaryEmail = true
