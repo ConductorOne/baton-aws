@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -210,6 +211,11 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 
 	membership, err := g.identityStoreClient.CreateGroupMembership(ctx, input)
 	if err != nil {
+		l.Error("GRANT UNSCC", zap.Error(err))
+		if strings.Contains(err.Error(), "ConflictException: Member and Group relationship already exists") {
+			ctxzap.Extract(ctx).Info("Role membership to Grant not found; treating as successful because the end state is achieved")
+			return nil, nil, nil
+		}
 		l.Error("aws-connector: Failed to create group membership", zap.Error(err))
 		return nil, nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
 	}
@@ -249,6 +255,9 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 	})
 	if err != nil {
 		l.Error("aws-connector: Failed to delete group membership", zap.Error(err))
+		if strings.Contains(err.Error(), "https response error StatusCode: 400") {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w", err)
 	}
 
