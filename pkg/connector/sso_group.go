@@ -211,9 +211,8 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 
 	membership, err := g.identityStoreClient.CreateGroupMembership(ctx, input)
 	if err != nil {
-		l.Error("GRANT UNSCC", zap.Error(err))
 		if strings.Contains(err.Error(), "ConflictException: Member and Group relationship already exists") {
-			ctxzap.Extract(ctx).Info("Role membership to Grant not found; treating as successful because the end state is achieved")
+			ctxzap.Extract(ctx).Info("Group membership to Grant not found; treating as successful because the end state is achieved")
 			return nil, nil, nil
 		}
 		l.Error("aws-connector: Failed to create group membership", zap.Error(err))
