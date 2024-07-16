@@ -355,27 +355,27 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if err == nil {
 		rs = append(rs, iamUserBuilder(iamClient), iamRoleBuilder(iamClient), iamGroupBuilder(iamClient))
 	}
+	if !c.ssoEnabled && !c.orgsEnabled {
+		return rs
+	}
+
 	ix, err := c.getIdentityInstance(ctx)
 	if err != nil {
 		l.Error("getIdentityInstance error", zap.Error(err))
-		return rs
 	}
 	ssoAdminClient, err := c.ssoAdminClient(ctx)
 	if err != nil {
 		l.Error("ssoAdminClient error", zap.Error(err))
-		return rs
 	}
 	identityStoreClient, err := c.identityStoreClient(ctx)
 	if err != nil {
 		l.Error("identityStoreClient error", zap.Error(err))
-		return rs
-	}
-	scimClient, err := c.ssoSCIMClient(ctx)
-	if err != nil {
-		l.Error("scimClient error", zap.Error(err))
-		return rs
 	}
 	if c.ssoEnabled {
+		scimClient, err := c.ssoSCIMClient(ctx)
+		if err != nil {
+			l.Error("scimClient error", zap.Error(err))
+		}
 		rs = append(rs, ssoUserBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix, scimClient))
 		rs = append(rs, ssoGroupBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix))
 	}
