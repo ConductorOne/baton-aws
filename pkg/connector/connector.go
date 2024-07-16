@@ -382,10 +382,9 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.orgsEnabled {
 		orgClient, err := c.orgClient(ctx)
 		if err == nil {
-			rs = append(rs, accountBuilder(orgClient, c.roleARN, ssoAdminClient, ix, c.ssoRegion, identityStoreClient))
-		} else {
 			l.Error("accountBuilder error", zap.Error(err))
 		}
+		rs = append(rs, accountBuilder(orgClient, c.roleARN, ssoAdminClient, ix, c.ssoRegion, identityStoreClient))
 	}
 	return rs
 }
