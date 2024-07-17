@@ -115,9 +115,16 @@ type AWS struct {
 	_identityInstancesCacheMtx sync.Mutex
 	_identityInstancesCacheErr error
 	_identityInstancesCache    []*awsSsoAdminTypes.InstanceMetadata
+
+	iamClient           *iam.Client
+	orgClient           *awsOrgs.Client
+	ssoAdminClient      *awsSsoAdmin.Client
+	ssoSCIMClient       *awsIdentityCenterSCIMClient
+	identityStoreClient *awsIdentityStore.Client
+	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 }
 
-func (o *AWS) iamClient(ctx context.Context) (*iam.Client, error) {
+func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
 	callingConfig, err := o.getCallingConfig(ctx, o.globalRegion)
 	if err != nil {
 		return nil, err
@@ -125,23 +132,7 @@ func (o *AWS) iamClient(ctx context.Context) (*iam.Client, error) {
 	return iam.NewFromConfig(callingConfig), nil
 }
 
-func (o *AWS) orgClient(ctx context.Context) (*awsOrgs.Client, error) {
-	callingConfig, err := o.getCallingConfig(ctx, o.globalRegion)
-	if err != nil {
-		return nil, err
-	}
-	return awsOrgs.NewFromConfig(callingConfig), nil
-}
-
-func (o *AWS) ssoAdminClient(ctx context.Context) (*awsSsoAdmin.Client, error) {
-	callingConfig, err := o.getCallingConfig(ctx, o.ssoRegion)
-	if err != nil {
-		return nil, err
-	}
-	return awsSsoAdmin.NewFromConfig(callingConfig), nil
-}
-
-func (o *AWS) ssoSCIMClient(ctx context.Context) (*awsIdentityCenterSCIMClient, error) {
+func (o *AWS) getSSOSCIMClient(ctx context.Context) (*awsIdentityCenterSCIMClient, error) {
 	if !o.scimEnabled {
 		return &awsIdentityCenterSCIMClient{scimEnabled: false}, nil
 	}
@@ -165,20 +156,12 @@ func (o *AWS) ssoSCIMClient(ctx context.Context) (*awsIdentityCenterSCIMClient, 
 	}, nil
 }
 
-func (o *AWS) stsClient(ctx context.Context) (*sts.Client, error) {
+func (o *AWS) getSTSClient(ctx context.Context) (*sts.Client, error) {
 	callingConfig, err := o.getCallingConfig(ctx, o.globalRegion)
 	if err != nil {
 		return nil, err
 	}
 	return sts.NewFromConfig(callingConfig), nil
-}
-
-func (o *AWS) identityStoreClient(ctx context.Context) (*awsIdentityStore.Client, error) {
-	callingConfig, err := o.getCallingConfig(ctx, o.ssoRegion)
-	if err != nil {
-		return nil, err
-	}
-	return awsIdentityStore.NewFromConfig(callingConfig), nil
 }
 
 func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Config, error) {
@@ -286,11 +269,16 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
 	}
 
+	err = rv.SetupClients(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	return rv, nil
 }
 
 func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
-	stsSvc, err := c.stsClient(ctx)
+	stsSvc, err := c.getSTSClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +293,7 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		return nil, fmt.Errorf("aws-connector: failed to validate ARN: %w", err)
 	}
 
-	iamClient, err := c.iamClient(ctx)
+	iamClient, err := c.getIAMClient(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -348,48 +336,68 @@ func (c *AWS) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadClo
 	return "", nil, nil
 }
 
-func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
-	l := ctxzap.Extract(ctx)
-	rs := []connectorbuilder.ResourceSyncer{}
-	iamClient, err := c.iamClient(ctx)
-	if err == nil {
-		rs = append(rs, iamUserBuilder(iamClient), iamRoleBuilder(iamClient), iamGroupBuilder(iamClient))
-	}
-	if !c.ssoEnabled && !c.orgsEnabled {
-		return rs
+func (c *AWS) SetupClients(ctx context.Context) error {
+	globalCallingConfig, err := c.getCallingConfig(ctx, c.globalRegion)
+	if err != nil {
+		return err
 	}
 
-	ix, err := c.getIdentityInstance(ctx)
-	if err != nil {
-		l.Error("getIdentityInstance error", zap.Error(err))
+	c.iamClient = iam.NewFromConfig(globalCallingConfig)
+
+	// The other clients are only needed if sso or org syncing is enabled
+	if !c.ssoEnabled && !c.orgsEnabled {
+		return nil
 	}
-	ssoAdminClient, err := c.ssoAdminClient(ctx)
-	if err != nil {
-		l.Error("ssoAdminClient error", zap.Error(err))
+
+	if c.orgsEnabled {
+		c.orgClient = awsOrgs.NewFromConfig(globalCallingConfig)
 	}
-	identityStoreClient, err := c.identityStoreClient(ctx)
+
+	ssoCallingConfig, err := c.getCallingConfig(ctx, c.ssoRegion)
 	if err != nil {
-		l.Error("identityStoreClient error", zap.Error(err))
+		return err
 	}
+	c.identityStoreClient = awsIdentityStore.NewFromConfig(ssoCallingConfig)
+	c.ssoAdminClient = awsSsoAdmin.NewFromConfig(ssoCallingConfig)
+
+	identityInstance, err := c.getIdentityInstance(ctx, c.ssoAdminClient)
+	if err != nil {
+		return err
+	}
+	c.identityInstance = identityInstance
+
 	if c.ssoEnabled {
-		scimClient, err := c.ssoSCIMClient(ctx)
+		scimClient, err := c.getSSOSCIMClient(ctx)
 		if err != nil {
-			l.Error("scimClient error", zap.Error(err))
+			return err
 		}
-		rs = append(rs, ssoUserBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix, scimClient))
-		rs = append(rs, ssoGroupBuilder(c.ssoRegion, ssoAdminClient, identityStoreClient, ix))
+		c.ssoSCIMClient = scimClient
+	}
+
+	return nil
+}
+
+func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+	l := ctxzap.Extract(ctx)
+	rs := []connectorbuilder.ResourceSyncer{
+		iamUserBuilder(c.iamClient),
+		iamRoleBuilder(c.iamClient),
+		iamGroupBuilder(c.iamClient),
+	}
+
+	if c.ssoEnabled {
+		l.Debug("ssoEnabled. creating ssoUserBuilder and ssoGroupBuilder")
+		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c.ssoSCIMClient))
+		rs = append(rs, ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
 	}
 	if c.orgsEnabled {
-		orgClient, err := c.orgClient(ctx)
-		if err == nil {
-			l.Error("accountBuilder error", zap.Error(err))
-		}
-		rs = append(rs, accountBuilder(orgClient, c.roleARN, ssoAdminClient, ix, c.ssoRegion, identityStoreClient))
+		l.Debug("orgsEnabled. creating accountBuilder")
+		rs = append(rs, accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient))
 	}
 	return rs
 }
 
-func (c *AWS) getIdentityInstance(ctx context.Context) (*awsSsoAdminTypes.InstanceMetadata, error) {
+func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Client) (*awsSsoAdminTypes.InstanceMetadata, error) {
 	c._identityInstancesCacheMtx.Lock()
 	defer c._identityInstancesCacheMtx.Unlock()
 	if c._identityInstancesCacheErr != nil {
@@ -398,11 +406,6 @@ func (c *AWS) getIdentityInstance(ctx context.Context) (*awsSsoAdminTypes.Instan
 
 	if len(c._identityInstancesCache) == 1 {
 		return c._identityInstancesCache[0], nil
-	}
-
-	ssoClient, err := c.ssoAdminClient(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	paginator := awsSsoAdmin.NewListInstancesPaginator(ssoClient, &awsSsoAdmin.ListInstancesInput{})
