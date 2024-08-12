@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
 	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
+	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -181,6 +183,67 @@ func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStore
 	}
 }
 
+type GroupMembershipOutput struct {
+	MembershipId   *string
+	ResultMetadata middleware.Metadata
+}
+
+// createOrGetMembership the `CreateGroupMembership()` method errors when a
+// group membership already exists. Instead of passing along the
+// `ConflictError`, attempt to get the group membership with a call to
+// `CreateGroupMembership()`.
+func (g *ssoGroupResourceType) createOrGetMembership(
+	ctx context.Context,
+	groupID string,
+	userID string,
+) (*GroupMembershipOutput, error) {
+	logger := ctxzap.Extract(ctx).With(
+		zap.String("group_id", groupID),
+		zap.String("user_id", userID),
+		zap.String(
+			"identity_store_id",
+			awsSdk.ToString(g.identityInstance.IdentityStoreId),
+		),
+	)
+	groupIdString := awsSdk.String(groupID)
+	memberId := awsIdentityStoreTypes.MemberIdMemberUserId{Value: userID}
+	createInput := &awsIdentityStore.CreateGroupMembershipInput{
+		GroupId:         groupIdString,
+		IdentityStoreId: g.identityInstance.IdentityStoreId,
+		MemberId:        &memberId,
+	}
+	createdMembership, err := g.identityStoreClient.CreateGroupMembership(ctx, createInput)
+	if err == nil {
+		return &GroupMembershipOutput{
+			MembershipId:   createdMembership.MembershipId,
+			ResultMetadata: createdMembership.ResultMetadata,
+		}, nil
+	}
+
+	if !strings.Contains(
+		err.Error(),
+		"ConflictException: Member and Group relationship already exists",
+	) {
+		return nil, err
+	}
+
+	logger.Info("ConflictException when creating group, falling back to GET")
+
+	getInput := awsIdentityStore.GetGroupMembershipIdInput{
+		GroupId:         groupIdString,
+		IdentityStoreId: g.identityInstance.IdentityStoreId,
+		MemberId:        &memberId,
+	}
+	foundMembership, err := g.identityStoreClient.GetGroupMembershipId(ctx, &getInput)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GroupMembershipOutput{
+		MembershipId: foundMembership.MembershipId,
+	}, nil
+}
+
 func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
 	if principal.Id.ResourceType != resourceTypeSSOUser.Id {
 		return nil, nil, errors.New("baton-aws: only sso users can be added to a sso group")
@@ -202,13 +265,7 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		zap.String("identity_store_id", awsSdk.ToString(g.identityInstance.IdentityStoreId)),
 	)
 
-	input := &awsIdentityStore.CreateGroupMembershipInput{
-		GroupId:         awsSdk.String(groupID),
-		IdentityStoreId: g.identityInstance.IdentityStoreId,
-		MemberId:        &awsIdentityStoreTypes.MemberIdMemberUserId{Value: userID},
-	}
-
-	membership, err := g.identityStoreClient.CreateGroupMembership(ctx, input)
+	membership, err := g.createOrGetMembership(ctx, groupID, userID)
 	if err != nil {
 		l.Error("aws-connector: Failed to create group membership", zap.Error(err))
 		return nil, nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
