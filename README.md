@@ -64,31 +64,37 @@ Usage:
   baton-aws [command]
 
 Available Commands:
+  capabilities       Get connector capabilities
   completion         Generate the autocompletion script for the specified shell
   help               Help about any command
 
 Flags:
-      --external-id string                  The external id for the aws account. ($BATON_EXTERNAL_ID)
-  -f, --file string                         The path to the c1z file to sync with ($C1_FILE) (default "sync.c1z")
-      --global-secret-access-key string     The global-secret-access-key for the aws account. ($BATON_GLOBAL_SECRET_ACCESS_KEY)
-      --global-access-key-id string         The global-access-key-id for the aws account. ($BATON_GLOBAL_ACCESS_KEY_ID)
-      --global-region string                The region for the aws account. ($BATON_GLOBAL_REGION)
-      --use-assume-role bool                Enable support for assume role. ($BATON_GLOBAL_USE_ASSUME_ROLE)
-      --external-id string                  The external id for the aws account. ($BATON_EXTERNAL_ID)
-      --role-arn string                     The role arn for the aws account. ($BATON_ROLE_ARN)
-      --global-binding-external-id string   The global external id for the aws account. ($BATON_GLOBAL_BINDING_EXTERNAL_ID)
-      --global-role-arn string              The role arn for the binding aws account. ($BATON_GLOBAL_ROLE_ARN)
-      --global-aws-sso-region string        The region for the sso identities. ($BATON_GLOBAL_AWS_SSO_REGION)
-      --global-aws-sso-enabled bool         Enable support for AWS IAM Identity Center. ($BATON_GLOBAL_AWS_SSO_ENABLED)
-      --global-aws-orgs-enabled bool        Enable support for AWS Organizations. ($BATON_GLOBAL_AWS_ORGS_ENABLED)
+      --client-id string                    The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
+      --client-secret string                The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
+      --external-id string                  The external id for the aws account ($BATON_EXTERNAL_ID)
+  -f, --file string                         The path to the c1z file to sync with ($BATON_FILE) (default "sync.c1z")
+      --global-access-key-id string         The global-access-key-id for the aws account ($BATON_GLOBAL_ACCESS_KEY_ID)
+      --global-aws-orgs-enabled             Enable support for AWS Organizations ($BATON_GLOBAL_AWS_ORGS_ENABLED)
+      --global-aws-sso-enabled              Enable support for AWS IAM Identity Center ($BATON_GLOBAL_AWS_SSO_ENABLED)
+      --global-aws-sso-region string        The region for the sso identities ($BATON_GLOBAL_AWS_SSO_REGION) (default "us-east-1")
+      --global-binding-external-id string   The global external id for the aws account ($BATON_GLOBAL_BINDING_EXTERNAL_ID)
+      --global-region string                The region for the aws account ($BATON_GLOBAL_REGION)
+      --global-role-arn string              The role arn for the aws account ($BATON_GLOBAL_ROLE_ARN)
+      --global-secret-access-key string     The global-secret-access-key for the aws account ($BATON_GLOBAL_SECRET_ACCESS_KEY)
   -h, --help                                help for baton-aws
-      --log-format string                   The output format for logs: json, console ($C1_LOG_FORMAT) (default "json")
-      --log-level string                    The log level: debug, info, warn, error ($C1_LOG_LEVEL) (default "info")
-      --role-arn string                     The role arn for the aws account. ($BATON_ROLE_ARN)
+      --log-format string                   The output format for logs: json, console ($BATON_LOG_FORMAT) (default "json")
+      --log-level string                    The log level: debug, info, warn, error ($BATON_LOG_LEVEL) (default "info")
+  -p, --provisioning                        This must be set in order for provisioning actions to be enabled ($BATON_PROVISIONING)
+      --role-arn string                     The role arn for the aws account ($BATON_ROLE_ARN)
+      --scim-enabled                        Enable support for pulling SSO User status from the AWS SCIM API ($BATON_SCIM_ENABLED)
+      --scim-endpoint string                The SCIMv2 endpoint for aws identity center ($BATON_SCIM_ENDPOINT)
+      --scim-token string                   The SCIMv2 token for aws identity center ($BATON_SCIM_TOKEN)
+      --skip-full-sync                      This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
+      --ticketing                           This must be set to enable ticketing support ($BATON_TICKETING)
+      --use-assume                          Enable support for assume role ($BATON_USE_ASSUME)
   -v, --version                             version for baton-aws
 
 Use "baton-aws [command] --help" for more information about a command.
-
 ```
 
 ---
@@ -139,7 +145,7 @@ _These policies have comments prefixed with // that need to be removed before us
       ],
       "Effect": "Allow",
       "Resource": "*",
-      // Sync identity center users, groups, and permision sets, as well as the organization accounts
+      // Sync identity center users, groups, and permission sets, as well as the organization accounts
       "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
     }
   ],
@@ -187,7 +193,7 @@ _These policies have comments prefixed with // that need to be removed before us
       ],
       "Effect": "Allow",
       "Resource": "*",
-      // Sync identity center users, groups, and permision sets, as well as the organization accounts
+      // Sync identity center users, groups, and permission sets, as well as the organization accounts
       "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
     },
     {
