@@ -181,7 +181,12 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	return rv, nextPage, anno, nil
 }
 
-func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStoreClient *awsIdentityStore.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata) *ssoGroupResourceType {
+func ssoGroupBuilder(
+	region string,
+	ssoClient *awsSsoAdmin.Client,
+	identityStoreClient *awsIdentityStore.Client,
+	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+) *ssoGroupResourceType {
 	return &ssoGroupResourceType{
 		resourceType:        resourceTypeSSOGroup,
 		region:              region,

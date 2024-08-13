@@ -231,10 +231,17 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		awsConfig.WithRegion(config.GlobalRegion),
 		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
 	}
-	// either we have a access key directly into our binding account, or we use instance identity to swap into that role
+	// Either we have an access key directly into our binding account, or we use
+	// instance identity to swap into that role.
 	if config.GlobalAccessKeyID != "" && config.GlobalSecretAccessKey != "" {
 		opts = append(opts,
-			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(config.GlobalAccessKeyID, config.GlobalSecretAccessKey, "")),
+			awsConfig.WithCredentialsProvider(
+				credentials.NewStaticCredentialsProvider(
+					config.GlobalAccessKeyID,
+					config.GlobalSecretAccessKey,
+					"",
+				),
+			),
 		)
 	}
 
