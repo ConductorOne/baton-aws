@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
@@ -38,9 +37,8 @@ type ListPermissionSetsProvisionedToAccountInput struct {
 	AccountId *string
 
 	// The ARN of the IAM Identity Center instance under which the operation will be
-	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and
-	// Amazon Web Services Service Namespaces in the Amazon Web Services General
-	// Reference.
+	// executed. For more information about ARNs, see Amazon Resource Names (ARNs) and Amazon Web Services Service Namespacesin the Amazon Web Services
+	// General Reference.
 	//
 	// This member is required.
 	InstanceArn *string
@@ -95,25 +93,25 @@ func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(s
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -128,13 +126,19 @@ func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(s
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
 	if err = addOpListPermissionSetsProvisionedToAccountValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListPermissionSetsProvisionedToAccount(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -151,14 +155,6 @@ func (c *Client) addOperationListPermissionSetsProvisionedToAccountMiddlewares(s
 	}
 	return nil
 }
-
-// ListPermissionSetsProvisionedToAccountAPIClient is a client that implements the
-// ListPermissionSetsProvisionedToAccount operation.
-type ListPermissionSetsProvisionedToAccountAPIClient interface {
-	ListPermissionSetsProvisionedToAccount(context.Context, *ListPermissionSetsProvisionedToAccountInput, ...func(*Options)) (*ListPermissionSetsProvisionedToAccountOutput, error)
-}
-
-var _ ListPermissionSetsProvisionedToAccountAPIClient = (*Client)(nil)
 
 // ListPermissionSetsProvisionedToAccountPaginatorOptions is the paginator options
 // for ListPermissionSetsProvisionedToAccount
@@ -226,6 +222,9 @@ func (p *ListPermissionSetsProvisionedToAccountPaginator) NextPage(ctx context.C
 	}
 	params.MaxResults = limit
 
+	optFns = append([]func(*Options){
+		addIsPaginatorUserAgent,
+	}, optFns...)
 	result, err := p.client.ListPermissionSetsProvisionedToAccount(ctx, &params, optFns...)
 	if err != nil {
 		return nil, err
@@ -244,6 +243,14 @@ func (p *ListPermissionSetsProvisionedToAccountPaginator) NextPage(ctx context.C
 
 	return result, nil
 }
+
+// ListPermissionSetsProvisionedToAccountAPIClient is a client that implements the
+// ListPermissionSetsProvisionedToAccount operation.
+type ListPermissionSetsProvisionedToAccountAPIClient interface {
+	ListPermissionSetsProvisionedToAccount(context.Context, *ListPermissionSetsProvisionedToAccountInput, ...func(*Options)) (*ListPermissionSetsProvisionedToAccountOutput, error)
+}
+
+var _ ListPermissionSetsProvisionedToAccountAPIClient = (*Client)(nil)
 
 func newServiceMetadataMiddleware_opListPermissionSetsProvisionedToAccount(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{

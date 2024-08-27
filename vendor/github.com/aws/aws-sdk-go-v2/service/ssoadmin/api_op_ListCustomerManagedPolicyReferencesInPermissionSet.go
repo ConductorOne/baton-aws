@@ -6,13 +6,12 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// Lists all customer managed policies attached to a specified PermissionSet .
+// Lists all customer managed policies attached to a specified PermissionSet.
 func (c *Client) ListCustomerManagedPolicyReferencesInPermissionSet(ctx context.Context, params *ListCustomerManagedPolicyReferencesInPermissionSetInput, optFns ...func(*Options)) (*ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
 	if params == nil {
 		params = &ListCustomerManagedPolicyReferencesInPermissionSetInput{}
@@ -89,25 +88,25 @@ func (c *Client) addOperationListCustomerManagedPolicyReferencesInPermissionSetM
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -122,13 +121,19 @@ func (c *Client) addOperationListCustomerManagedPolicyReferencesInPermissionSetM
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
 	if err = addOpListCustomerManagedPolicyReferencesInPermissionSetValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListCustomerManagedPolicyReferencesInPermissionSet(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -145,14 +150,6 @@ func (c *Client) addOperationListCustomerManagedPolicyReferencesInPermissionSetM
 	}
 	return nil
 }
-
-// ListCustomerManagedPolicyReferencesInPermissionSetAPIClient is a client that
-// implements the ListCustomerManagedPolicyReferencesInPermissionSet operation.
-type ListCustomerManagedPolicyReferencesInPermissionSetAPIClient interface {
-	ListCustomerManagedPolicyReferencesInPermissionSet(context.Context, *ListCustomerManagedPolicyReferencesInPermissionSetInput, ...func(*Options)) (*ListCustomerManagedPolicyReferencesInPermissionSetOutput, error)
-}
-
-var _ ListCustomerManagedPolicyReferencesInPermissionSetAPIClient = (*Client)(nil)
 
 // ListCustomerManagedPolicyReferencesInPermissionSetPaginatorOptions is the
 // paginator options for ListCustomerManagedPolicyReferencesInPermissionSet
@@ -221,6 +218,9 @@ func (p *ListCustomerManagedPolicyReferencesInPermissionSetPaginator) NextPage(c
 	}
 	params.MaxResults = limit
 
+	optFns = append([]func(*Options){
+		addIsPaginatorUserAgent,
+	}, optFns...)
 	result, err := p.client.ListCustomerManagedPolicyReferencesInPermissionSet(ctx, &params, optFns...)
 	if err != nil {
 		return nil, err
@@ -239,6 +239,14 @@ func (p *ListCustomerManagedPolicyReferencesInPermissionSetPaginator) NextPage(c
 
 	return result, nil
 }
+
+// ListCustomerManagedPolicyReferencesInPermissionSetAPIClient is a client that
+// implements the ListCustomerManagedPolicyReferencesInPermissionSet operation.
+type ListCustomerManagedPolicyReferencesInPermissionSetAPIClient interface {
+	ListCustomerManagedPolicyReferencesInPermissionSet(context.Context, *ListCustomerManagedPolicyReferencesInPermissionSetInput, ...func(*Options)) (*ListCustomerManagedPolicyReferencesInPermissionSetOutput, error)
+}
+
+var _ ListCustomerManagedPolicyReferencesInPermissionSetAPIClient = (*Client)(nil)
 
 func newServiceMetadataMiddleware_opListCustomerManagedPolicyReferencesInPermissionSet(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{
