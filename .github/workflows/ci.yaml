@@ -5,11 +5,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: 1.21.x
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Run linters
         uses: golangci/golangci-lint-action@v3
         with:
@@ -24,11 +24,11 @@ jobs:
     steps:
       - name: Install Go
         if: success()
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: go tests
         run: go test -v -covermode=count -json ./... > test.json
       - name: annotate go tests
@@ -38,13 +38,18 @@ jobs:
           test-results: test.json
   test:
     runs-on: ubuntu-latest
+    env:
+      BATON_GLOBAL_AWS_SSO_ENABLED: true
+      BATON_GLOBAL_AWS_ORGS_ENABLED: true
+      BATON_GLOBAL_AWS_SSO_REGION: us-east-1
+      BATON_GLOBAL_REGION: us-east-1
     steps:
       - name: Install Go
         uses: actions/setup-go@v4
         with:
           go-version: 1.21.x
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Build baton-aws
         run: go build ./cmd/baton-aws
       - name: Run baton-aws
@@ -53,7 +58,7 @@ jobs:
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: ./baton-aws
       - name: Checkout baton
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: ConductorOne/baton
           ref: main
@@ -65,29 +70,29 @@ jobs:
         env:
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws --grant-entitlement 'group:arn:aws:iam::425848093043:group/ci-test-group:member' --grant-principal 'arn:aws:iam::425848093043:user/ci-test-user' --grant-principal-type 'iam_user'
+        run: ./baton-aws --grant-entitlement 'group:arn:aws:iam::737118012813:group/ci-test-group:member' --grant-principal 'arn:aws:iam::737118012813:user/ci-test-user' --grant-principal-type 'iam_user'
       - name: Check for grant before revoking
         env:
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws && ./baton/baton grants --entitlement='group:arn:aws:iam::425848093043:group/ci-test-group:member' --output-format=json | jq --exit-status '.grants[].principal.id.resource == "arn:aws:iam::425848093043:user/ci-test-user"'
+        run: ./baton-aws && ./baton/baton grants --entitlement='group:arn:aws:iam::737118012813:group/ci-test-group:member' --output-format=json | jq --exit-status '.grants[].principal.id.resource == "arn:aws:iam::737118012813:user/ci-test-user"'
       - name: Revoke grants
         env:
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws --revoke-grant 'group:arn:aws:iam::425848093043:group/ci-test-group:member:iam_user:arn:aws:iam::425848093043:user/ci-test-user'
+        run: ./baton-aws --revoke-grant 'group:arn:aws:iam::737118012813:group/ci-test-group:member:iam_user:arn:aws:iam::737118012813:user/ci-test-user'
       - name: Check grant was revoked
         env:
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws && ./baton/baton grants --entitlement='group:arn:aws:iam::425848093043:group/ci-test-group:member' --output-format=json | jq --exit-status 'if .grants then .grants[]?.principal.id.resource != "arn:aws:iam::425848093043:user/ci-test-user" else . end'
+        run: ./baton-aws && ./baton/baton grants --entitlement='group:arn:aws:iam::737118012813:group/ci-test-group:member' --output-format=json | jq --exit-status 'if .grants then .grants[]?.principal.id.resource != "arn:aws:iam::737118012813:user/ci-test-user" else . end'
       - name: Grant entitlements
         env:
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws --grant-entitlement 'group:arn:aws:iam::425848093043:group/ci-test-group:member' --grant-principal 'arn:aws:iam::425848093043:user/ci-test-user' --grant-principal-type 'iam_user'
+        run: ./baton-aws --grant-entitlement 'group:arn:aws:iam::737118012813:group/ci-test-group:member' --grant-principal 'arn:aws:iam::737118012813:user/ci-test-user' --grant-principal-type 'iam_user'
       - name: Check grant was re-granted
         env:
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws && ./baton/baton grants --entitlement='group:arn:aws:iam::425848093043:group/ci-test-group:member' --output-format=json | jq --exit-status '.grants[].principal.id.resource == "arn:aws:iam::425848093043:user/ci-test-user"'
+        run: ./baton-aws && ./baton/baton grants --entitlement='group:arn:aws:iam::737118012813:group/ci-test-group:member' --output-format=json | jq --exit-status '.grants[].principal.id.resource == "arn:aws:iam::737118012813:user/ci-test-user"'
