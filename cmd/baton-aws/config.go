@@ -9,6 +9,12 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	ExternalIDLengthMaximum = 65 // TODO(marcos): this might be a bug.
+	ExternalIDLengthMinimum = 32
+	RegionDefault           = "us-east-1"
+)
+
 var (
 	ExternalIdField = field.StringField(
 		"external-id",
@@ -29,7 +35,7 @@ var (
 	GlobalAwsSsoRegionField = field.StringField(
 		"global-aws-sso-region",
 		field.WithDescription("The region for the sso identities"),
-		field.WithDefaultValue("us-east-1"),
+		field.WithDefaultValue(RegionDefault),
 	)
 	GlobalBindingExternalIdField = field.StringField(
 		"global-binding-external-id",
@@ -103,7 +109,7 @@ func ValidateExternalId(input string) error {
 		return fmt.Errorf("external id is missing")
 	}
 
-	if fieldLength < 32 || fieldLength > 65 {
+	if fieldLength < ExternalIDLengthMinimum || fieldLength > ExternalIDLengthMaximum {
 		return fmt.Errorf("aws_external_id must be between 32 and 64 bytes")
 	}
 	return nil
