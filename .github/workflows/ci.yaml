@@ -66,10 +66,25 @@ jobs:
       - name: Build baton
         working-directory: ./baton
         run: go build ./cmd/baton
-      - name: Test grant/revoking entitlements
+      - name: Test grant/revoking IAM entitlements
         env:
           BATON: ./baton/baton
           BATON_AWS: ./baton-aws
           BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./test/iam-grant-revoke.sh
+          BATON_ENTITLEMENT: "group:arn:aws:iam::737118012813:group/ci-test-group:member"
+          BATON_PRINCIPAL: "arn:aws:iam::737118012813:user/ci-test-user"
+          BATON_PRINCIPAL_TYPE: "iam_user"
+          BATON_GRANT: "group:arn:aws:iam::737118012813:group/ci-test-group:member:iam_user:arn:aws:iam::737118012813:user/ci-test-user"
+        run: ./test/grant-revoke.sh
+      - name: Test grant/revoking SSO entitlements
+        env:
+          BATON: ./baton/baton
+          BATON_AWS: ./baton-aws
+          BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          BATON_ENTITLEMENT: "sso_group:arn:aws:identitystore:us-east-1::d-90679d1878/group/9458d408-40b1-709f-4f45-92be754928e5:member"
+          BATON_PRINCIPAL: "arn:aws:identitystore:us-east-1::d-90679d1878/user/54982488-f0d1-70c1-1dd5-6db47f7add45"
+          BATON_PRINCIPAL_TYPE: "sso_user"
+          BATON_GRANT: "8418c428-1061-70cc-01da-b38b652ab0e6"
+        run: ./test/grant-revoke.sh
