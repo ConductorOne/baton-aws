@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -232,10 +231,10 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 			ResultMetadata: createdMembership.ResultMetadata,
 		}, nil, nil
 	}
-	if !strings.Contains(
-		err.Error(),
-		"ConflictException: Member and Group relationship already exists",
-	) {
+
+	// Forward along the error if it is an unknown type.
+	var conflictException *awsIdentityStoreTypes.ConflictException
+	if !errors.As(err, &conflictException) {
 		return nil, nil, err
 	}
 
@@ -250,10 +249,8 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	if err != nil {
 		// If we lack permission for the `GetGroupMembershipId` operation, fail
 		// more gracefully by returning nil.
-		if strings.Contains(
-			err.Error(),
-			"is not authorized to perform: identitystore:GetGroupMembershipId",
-		) {
+		var accessDeniedException *awsIdentityStoreTypes.AccessDeniedException
+		if errors.As(err, &accessDeniedException) {
 			logger.Info("Not authorized to perform `GetGroupMembershipId`, falling back to empty membership")
 			// TODO(marcos): Create an annotation that marks this grant as "already exists".
 			return nil, nil, nil
