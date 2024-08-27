@@ -196,7 +196,11 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	ctx context.Context,
 	groupID string,
 	userID string,
-) (*GroupMembershipOutput, error) {
+) (
+	*GroupMembershipOutput,
+	*annotations.Annotations,
+	error,
+) {
 	logger := ctxzap.Extract(ctx).With(
 		zap.String("group_id", groupID),
 		zap.String("user_id", userID),
@@ -217,14 +221,13 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 		return &GroupMembershipOutput{
 			MembershipId:   createdMembership.MembershipId,
 			ResultMetadata: createdMembership.ResultMetadata,
-		}, nil
+		}, nil, nil
 	}
-
 	if !strings.Contains(
 		err.Error(),
 		"ConflictException: Member and Group relationship already exists",
 	) {
-		return nil, err
+		return nil, nil, err
 	}
 
 	logger.Info("ConflictException when creating group, falling back to GET")
@@ -236,12 +239,23 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	}
 	foundMembership, err := g.identityStoreClient.GetGroupMembershipId(ctx, &getInput)
 	if err != nil {
-		return nil, err
+		// If we lack permission for the `GetGroupMembershipId` operation, fail
+		// more gracefully by returning nil.
+		if strings.Contains(
+			err.Error(),
+			"is not authorized to perform: identitystore:GetGroupMembershipId",
+		) {
+			logger.Info("Not authorized to perform `GetGroupMembershipId`, falling back to empty membership")
+			// TODO(marcos): Create an annotation that marks this grant as "already exists".
+			return nil, nil, nil
+		}
+
+		return nil, nil, err
 	}
 
 	return &GroupMembershipOutput{
 		MembershipId: foundMembership.MembershipId,
-	}, nil
+	}, nil, nil
 }
 
 func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
@@ -265,10 +279,16 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		zap.String("identity_store_id", awsSdk.ToString(g.identityInstance.IdentityStoreId)),
 	)
 
-	membership, err := g.createOrGetMembership(ctx, groupID, userID)
+	// TODO(marcos): If we get a nil membership and an annotation, return that annotation.
+	membership, _, err := g.createOrGetMembership(ctx, groupID, userID)
 	if err != nil {
 		l.Error("aws-connector: Failed to create group membership", zap.Error(err))
 		return nil, nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
+	}
+
+	annos := annotations.New()
+	if membership == nil {
+		return []*v2.Grant{}, annos, nil
 	}
 
 	grant, err := createUserSSOGroupMembershipGrant(
@@ -283,7 +303,6 @@ func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		return nil, nil, err
 	}
 
-	annos := annotations.New()
 	if reqId := extractRequestID(&membership.ResultMetadata); reqId != nil {
 		annos.Append(reqId)
 	}
