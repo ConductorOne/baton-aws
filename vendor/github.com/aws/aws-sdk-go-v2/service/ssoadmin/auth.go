@@ -12,7 +12,7 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-func bindAuthParamsRegion(params *AuthResolverParameters, _ interface{}, options Options) {
+func bindAuthParamsRegion(_ interface{}, params *AuthResolverParameters, _ interface{}, options Options) {
 	params.Region = options.Region
 }
 
@@ -52,6 +52,34 @@ func addSetLegacyContextSigningOptionsMiddleware(stack *middleware.Stack) error 
 	return stack.Finalize.Insert(&setLegacyContextSigningOptionsMiddleware{}, "Signing", middleware.Before)
 }
 
+type withAnonymous struct {
+	resolver AuthSchemeResolver
+}
+
+var _ AuthSchemeResolver = (*withAnonymous)(nil)
+
+func (v *withAnonymous) ResolveAuthSchemes(ctx context.Context, params *AuthResolverParameters) ([]*smithyauth.Option, error) {
+	opts, err := v.resolver.ResolveAuthSchemes(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+
+	opts = append(opts, &smithyauth.Option{
+		SchemeID: smithyauth.SchemeIDAnonymous,
+	})
+	return opts, nil
+}
+
+func wrapWithAnonymousAuth(options *Options) {
+	if _, ok := options.AuthSchemeResolver.(*defaultAuthSchemeResolver); !ok {
+		return
+	}
+
+	options.AuthSchemeResolver = &withAnonymous{
+		resolver: options.AuthSchemeResolver,
+	}
+}
+
 // AuthResolverParameters contains the set of inputs necessary for auth scheme
 // resolution.
 type AuthResolverParameters struct {
@@ -62,12 +90,12 @@ type AuthResolverParameters struct {
 	Region string
 }
 
-func bindAuthResolverParams(operation string, input interface{}, options Options) *AuthResolverParameters {
+func bindAuthResolverParams(ctx context.Context, operation string, input interface{}, options Options) *AuthResolverParameters {
 	params := &AuthResolverParameters{
 		Operation: operation,
 	}
 
-	bindAuthParamsRegion(params, input, options)
+	bindAuthParamsRegion(ctx, params, input, options)
 
 	return params
 }
@@ -117,10 +145,10 @@ func (*resolveAuthSchemeMiddleware) ID() string {
 func (m *resolveAuthSchemeMiddleware) HandleFinalize(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
 	out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
 ) {
-	params := bindAuthResolverParams(m.operation, getOperationInput(ctx), m.options)
+	params := bindAuthResolverParams(ctx, m.operation, getOperationInput(ctx), m.options)
 	options, err := m.options.AuthSchemeResolver.ResolveAuthSchemes(ctx, params)
 	if err != nil {
-		return out, metadata, fmt.Errorf("resolve auth scheme: %v", err)
+		return out, metadata, fmt.Errorf("resolve auth scheme: %w", err)
 	}
 
 	scheme, ok := m.selectScheme(options)
@@ -200,7 +228,7 @@ func (m *getIdentityMiddleware) HandleFinalize(ctx context.Context, in middlewar
 
 	identity, err := resolver.GetIdentity(ctx, rscheme.IdentityProperties)
 	if err != nil {
-		return out, metadata, fmt.Errorf("get identity: %v", err)
+		return out, metadata, fmt.Errorf("get identity: %w", err)
 	}
 
 	ctx = setIdentity(ctx, identity)
@@ -249,7 +277,7 @@ func (m *signRequestMiddleware) HandleFinalize(ctx context.Context, in middlewar
 	}
 
 	if err := signer.SignRequest(ctx, req, identity, rscheme.SignerProperties); err != nil {
-		return out, metadata, fmt.Errorf("sign request: %v", err)
+		return out, metadata, fmt.Errorf("sign request: %w", err)
 	}
 
 	return next.HandleFinalize(ctx, in)

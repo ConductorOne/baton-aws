@@ -11,8 +11,9 @@ const (
 
 // Values returns all known values for AccessDeniedForDependencyExceptionReason.
 // Note that this can be expanded in the future, and so it is only as up to date as
-// the client. The ordering of this slice is not guaranteed to be stable across
-// updates.
+// the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (AccessDeniedForDependencyExceptionReason) Values() []AccessDeniedForDependencyExceptionReason {
 	return []AccessDeniedForDependencyExceptionReason{
 		"ACCESS_DENIED_DURING_CREATE_SERVICE_LINKED_ROLE",
@@ -28,8 +29,9 @@ const (
 )
 
 // Values returns all known values for AccountJoinedMethod. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (AccountJoinedMethod) Values() []AccountJoinedMethod {
 	return []AccountJoinedMethod{
 		"INVITED",
@@ -47,8 +49,9 @@ const (
 )
 
 // Values returns all known values for AccountStatus. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (AccountStatus) Values() []AccountStatus {
 	return []AccountStatus{
 		"ACTIVE",
@@ -68,8 +71,9 @@ const (
 )
 
 // Values returns all known values for ActionType. Note that this can be expanded
-// in the future, and so it is only as up to date as the client. The ordering of
-// this slice is not guaranteed to be stable across updates.
+// in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (ActionType) Values() []ActionType {
 	return []ActionType{
 		"INVITE",
@@ -88,8 +92,9 @@ const (
 )
 
 // Values returns all known values for ChildType. Note that this can be expanded
-// in the future, and so it is only as up to date as the client. The ordering of
-// this slice is not guaranteed to be stable across updates.
+// in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (ChildType) Values() []ChildType {
 	return []ChildType{
 		"ACCOUNT",
@@ -101,46 +106,48 @@ type ConstraintViolationExceptionReason string
 
 // Enum values for ConstraintViolationExceptionReason
 const (
-	ConstraintViolationExceptionReasonAccountNumberLimitExceeded                        ConstraintViolationExceptionReason = "ACCOUNT_NUMBER_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonHandshakeRateLimitExceeded                        ConstraintViolationExceptionReason = "HANDSHAKE_RATE_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonOuNumberLimitExceeded                             ConstraintViolationExceptionReason = "OU_NUMBER_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonOuDepthLimitExceeded                              ConstraintViolationExceptionReason = "OU_DEPTH_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonPolicyNumberLimitExceeded                         ConstraintViolationExceptionReason = "POLICY_NUMBER_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonPolicyContentLimitExceeded                        ConstraintViolationExceptionReason = "POLICY_CONTENT_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonMaxPolicyTypeAttachmentLimitExceeded              ConstraintViolationExceptionReason = "MAX_POLICY_TYPE_ATTACHMENT_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonMinPolicyTypeAttachmentLimitExceeded              ConstraintViolationExceptionReason = "MIN_POLICY_TYPE_ATTACHMENT_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonAccountCannotLeaveOrganization                    ConstraintViolationExceptionReason = "ACCOUNT_CANNOT_LEAVE_ORGANIZATION"
-	ConstraintViolationExceptionReasonAccountCannotLeaveWithoutEula                     ConstraintViolationExceptionReason = "ACCOUNT_CANNOT_LEAVE_WITHOUT_EULA"
-	ConstraintViolationExceptionReasonAccountCannotLeaveWithoutPhoneVerification        ConstraintViolationExceptionReason = "ACCOUNT_CANNOT_LEAVE_WITHOUT_PHONE_VERIFICATION"
-	ConstraintViolationExceptionReasonMasterAccountPaymentInstrumentRequired            ConstraintViolationExceptionReason = "MASTER_ACCOUNT_PAYMENT_INSTRUMENT_REQUIRED"
-	ConstraintViolationExceptionReasonMemberAccountPaymentInstrumentRequired            ConstraintViolationExceptionReason = "MEMBER_ACCOUNT_PAYMENT_INSTRUMENT_REQUIRED"
-	ConstraintViolationExceptionReasonAccountCreationRateLimitExceeded                  ConstraintViolationExceptionReason = "ACCOUNT_CREATION_RATE_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonMasterAccountAddressDoesNotMatchMarketplace       ConstraintViolationExceptionReason = "MASTER_ACCOUNT_ADDRESS_DOES_NOT_MATCH_MARKETPLACE"
-	ConstraintViolationExceptionReasonMasterAccountMissingContactInfo                   ConstraintViolationExceptionReason = "MASTER_ACCOUNT_MISSING_CONTACT_INFO"
-	ConstraintViolationExceptionReasonMasterAccountNotGovcloudEnabled                   ConstraintViolationExceptionReason = "MASTER_ACCOUNT_NOT_GOVCLOUD_ENABLED"
-	ConstraintViolationExceptionReasonOrganizationNotInAllFeaturesMode                  ConstraintViolationExceptionReason = "ORGANIZATION_NOT_IN_ALL_FEATURES_MODE"
-	ConstraintViolationExceptionReasonCreateOrganizationInBillingModeUnsupportedRegion  ConstraintViolationExceptionReason = "CREATE_ORGANIZATION_IN_BILLING_MODE_UNSUPPORTED_REGION"
-	ConstraintViolationExceptionReasonEmailVerificationCodeExpired                      ConstraintViolationExceptionReason = "EMAIL_VERIFICATION_CODE_EXPIRED"
-	ConstraintViolationExceptionReasonWaitPeriodActive                                  ConstraintViolationExceptionReason = "WAIT_PERIOD_ACTIVE"
-	ConstraintViolationExceptionReasonMaxTagLimitExceeded                               ConstraintViolationExceptionReason = "MAX_TAG_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonTagPolicyViolation                                ConstraintViolationExceptionReason = "TAG_POLICY_VIOLATION"
-	ConstraintViolationExceptionReasonMaxDelegatedAdministratorsForServiceLimitExceeded ConstraintViolationExceptionReason = "MAX_DELEGATED_ADMINISTRATORS_FOR_SERVICE_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonCannotRegisterMasterAsDelegatedAdministrator      ConstraintViolationExceptionReason = "CANNOT_REGISTER_MASTER_AS_DELEGATED_ADMINISTRATOR"
-	ConstraintViolationExceptionReasonCannotRemoveDelegatedAdministratorFromOrg         ConstraintViolationExceptionReason = "CANNOT_REMOVE_DELEGATED_ADMINISTRATOR_FROM_ORG"
-	ConstraintViolationExceptionReasonDelegatedAdministratorExistsForThisService        ConstraintViolationExceptionReason = "DELEGATED_ADMINISTRATOR_EXISTS_FOR_THIS_SERVICE"
-	ConstraintViolationExceptionReasonMasterAccountMissingBusinessLicense               ConstraintViolationExceptionReason = "MASTER_ACCOUNT_MISSING_BUSINESS_LICENSE"
-	ConstraintViolationExceptionReasonCannotCloseManagementAccount                      ConstraintViolationExceptionReason = "CANNOT_CLOSE_MANAGEMENT_ACCOUNT"
-	ConstraintViolationExceptionReasonCloseAccountQuotaExceeded                         ConstraintViolationExceptionReason = "CLOSE_ACCOUNT_QUOTA_EXCEEDED"
-	ConstraintViolationExceptionReasonCloseAccountRequestsLimitExceeded                 ConstraintViolationExceptionReason = "CLOSE_ACCOUNT_REQUESTS_LIMIT_EXCEEDED"
-	ConstraintViolationExceptionReasonServiceAccessNotEnabled                           ConstraintViolationExceptionReason = "SERVICE_ACCESS_NOT_ENABLED"
-	ConstraintViolationExceptionReasonInvalidPaymentInstrument                          ConstraintViolationExceptionReason = "INVALID_PAYMENT_INSTRUMENT"
-	ConstraintViolationExceptionReasonAccountCreationNotComplete                        ConstraintViolationExceptionReason = "ACCOUNT_CREATION_NOT_COMPLETE"
+	ConstraintViolationExceptionReasonAccountNumberLimitExceeded                             ConstraintViolationExceptionReason = "ACCOUNT_NUMBER_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonHandshakeRateLimitExceeded                             ConstraintViolationExceptionReason = "HANDSHAKE_RATE_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonOuNumberLimitExceeded                                  ConstraintViolationExceptionReason = "OU_NUMBER_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonOuDepthLimitExceeded                                   ConstraintViolationExceptionReason = "OU_DEPTH_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonPolicyNumberLimitExceeded                              ConstraintViolationExceptionReason = "POLICY_NUMBER_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonPolicyContentLimitExceeded                             ConstraintViolationExceptionReason = "POLICY_CONTENT_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonMaxPolicyTypeAttachmentLimitExceeded                   ConstraintViolationExceptionReason = "MAX_POLICY_TYPE_ATTACHMENT_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonMinPolicyTypeAttachmentLimitExceeded                   ConstraintViolationExceptionReason = "MIN_POLICY_TYPE_ATTACHMENT_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonAccountCannotLeaveOrganization                         ConstraintViolationExceptionReason = "ACCOUNT_CANNOT_LEAVE_ORGANIZATION"
+	ConstraintViolationExceptionReasonAccountCannotLeaveWithoutEula                          ConstraintViolationExceptionReason = "ACCOUNT_CANNOT_LEAVE_WITHOUT_EULA"
+	ConstraintViolationExceptionReasonAccountCannotLeaveWithoutPhoneVerification             ConstraintViolationExceptionReason = "ACCOUNT_CANNOT_LEAVE_WITHOUT_PHONE_VERIFICATION"
+	ConstraintViolationExceptionReasonMasterAccountPaymentInstrumentRequired                 ConstraintViolationExceptionReason = "MASTER_ACCOUNT_PAYMENT_INSTRUMENT_REQUIRED"
+	ConstraintViolationExceptionReasonMemberAccountPaymentInstrumentRequired                 ConstraintViolationExceptionReason = "MEMBER_ACCOUNT_PAYMENT_INSTRUMENT_REQUIRED"
+	ConstraintViolationExceptionReasonAccountCreationRateLimitExceeded                       ConstraintViolationExceptionReason = "ACCOUNT_CREATION_RATE_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonMasterAccountAddressDoesNotMatchMarketplace            ConstraintViolationExceptionReason = "MASTER_ACCOUNT_ADDRESS_DOES_NOT_MATCH_MARKETPLACE"
+	ConstraintViolationExceptionReasonMasterAccountMissingContactInfo                        ConstraintViolationExceptionReason = "MASTER_ACCOUNT_MISSING_CONTACT_INFO"
+	ConstraintViolationExceptionReasonMasterAccountNotGovcloudEnabled                        ConstraintViolationExceptionReason = "MASTER_ACCOUNT_NOT_GOVCLOUD_ENABLED"
+	ConstraintViolationExceptionReasonOrganizationNotInAllFeaturesMode                       ConstraintViolationExceptionReason = "ORGANIZATION_NOT_IN_ALL_FEATURES_MODE"
+	ConstraintViolationExceptionReasonCreateOrganizationInBillingModeUnsupportedRegion       ConstraintViolationExceptionReason = "CREATE_ORGANIZATION_IN_BILLING_MODE_UNSUPPORTED_REGION"
+	ConstraintViolationExceptionReasonEmailVerificationCodeExpired                           ConstraintViolationExceptionReason = "EMAIL_VERIFICATION_CODE_EXPIRED"
+	ConstraintViolationExceptionReasonWaitPeriodActive                                       ConstraintViolationExceptionReason = "WAIT_PERIOD_ACTIVE"
+	ConstraintViolationExceptionReasonMaxTagLimitExceeded                                    ConstraintViolationExceptionReason = "MAX_TAG_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonTagPolicyViolation                                     ConstraintViolationExceptionReason = "TAG_POLICY_VIOLATION"
+	ConstraintViolationExceptionReasonMaxDelegatedAdministratorsForServiceLimitExceeded      ConstraintViolationExceptionReason = "MAX_DELEGATED_ADMINISTRATORS_FOR_SERVICE_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonCannotRegisterMasterAsDelegatedAdministrator           ConstraintViolationExceptionReason = "CANNOT_REGISTER_MASTER_AS_DELEGATED_ADMINISTRATOR"
+	ConstraintViolationExceptionReasonCannotRemoveDelegatedAdministratorFromOrg              ConstraintViolationExceptionReason = "CANNOT_REMOVE_DELEGATED_ADMINISTRATOR_FROM_ORG"
+	ConstraintViolationExceptionReasonDelegatedAdministratorExistsForThisService             ConstraintViolationExceptionReason = "DELEGATED_ADMINISTRATOR_EXISTS_FOR_THIS_SERVICE"
+	ConstraintViolationExceptionReasonMasterAccountMissingBusinessLicense                    ConstraintViolationExceptionReason = "MASTER_ACCOUNT_MISSING_BUSINESS_LICENSE"
+	ConstraintViolationExceptionReasonCannotCloseManagementAccount                           ConstraintViolationExceptionReason = "CANNOT_CLOSE_MANAGEMENT_ACCOUNT"
+	ConstraintViolationExceptionReasonCloseAccountQuotaExceeded                              ConstraintViolationExceptionReason = "CLOSE_ACCOUNT_QUOTA_EXCEEDED"
+	ConstraintViolationExceptionReasonCloseAccountRequestsLimitExceeded                      ConstraintViolationExceptionReason = "CLOSE_ACCOUNT_REQUESTS_LIMIT_EXCEEDED"
+	ConstraintViolationExceptionReasonServiceAccessNotEnabled                                ConstraintViolationExceptionReason = "SERVICE_ACCESS_NOT_ENABLED"
+	ConstraintViolationExceptionReasonInvalidPaymentInstrument                               ConstraintViolationExceptionReason = "INVALID_PAYMENT_INSTRUMENT"
+	ConstraintViolationExceptionReasonAccountCreationNotComplete                             ConstraintViolationExceptionReason = "ACCOUNT_CREATION_NOT_COMPLETE"
+	ConstraintViolationExceptionReasonCannotRegisterSuspendedAccountAsDelegatedAdministrator ConstraintViolationExceptionReason = "CANNOT_REGISTER_SUSPENDED_ACCOUNT_AS_DELEGATED_ADMINISTRATOR"
 )
 
 // Values returns all known values for ConstraintViolationExceptionReason. Note
 // that this can be expanded in the future, and so it is only as up to date as the
-// client. The ordering of this slice is not guaranteed to be stable across
-// updates.
+// client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (ConstraintViolationExceptionReason) Values() []ConstraintViolationExceptionReason {
 	return []ConstraintViolationExceptionReason{
 		"ACCOUNT_NUMBER_LIMIT_EXCEEDED",
@@ -177,6 +184,7 @@ func (ConstraintViolationExceptionReason) Values() []ConstraintViolationExceptio
 		"SERVICE_ACCESS_NOT_ENABLED",
 		"INVALID_PAYMENT_INSTRUMENT",
 		"ACCOUNT_CREATION_NOT_COMPLETE",
+		"CANNOT_REGISTER_SUSPENDED_ACCOUNT_AS_DELEGATED_ADMINISTRATOR",
 	}
 }
 
@@ -203,6 +211,7 @@ const (
 
 // Values returns all known values for CreateAccountFailureReason. Note that this
 // can be expanded in the future, and so it is only as up to date as the client.
+//
 // The ordering of this slice is not guaranteed to be stable across updates.
 func (CreateAccountFailureReason) Values() []CreateAccountFailureReason {
 	return []CreateAccountFailureReason{
@@ -234,8 +243,9 @@ const (
 )
 
 // Values returns all known values for CreateAccountState. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (CreateAccountState) Values() []CreateAccountState {
 	return []CreateAccountState{
 		"IN_PROGRESS",
@@ -254,8 +264,9 @@ const (
 )
 
 // Values returns all known values for EffectivePolicyType. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (EffectivePolicyType) Values() []EffectivePolicyType {
 	return []EffectivePolicyType{
 		"TAG_POLICY",
@@ -282,8 +293,9 @@ const (
 
 // Values returns all known values for
 // HandshakeConstraintViolationExceptionReason. Note that this can be expanded in
-// the future, and so it is only as up to date as the client. The ordering of this
-// slice is not guaranteed to be stable across updates.
+// the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (HandshakeConstraintViolationExceptionReason) Values() []HandshakeConstraintViolationExceptionReason {
 	return []HandshakeConstraintViolationExceptionReason{
 		"ACCOUNT_NUMBER_LIMIT_EXCEEDED",
@@ -309,8 +321,9 @@ const (
 )
 
 // Values returns all known values for HandshakePartyType. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (HandshakePartyType) Values() []HandshakePartyType {
 	return []HandshakePartyType{
 		"ACCOUNT",
@@ -334,8 +347,9 @@ const (
 )
 
 // Values returns all known values for HandshakeResourceType. Note that this can
-// be expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// be expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (HandshakeResourceType) Values() []HandshakeResourceType {
 	return []HandshakeResourceType{
 		"ACCOUNT",
@@ -362,8 +376,9 @@ const (
 )
 
 // Values returns all known values for HandshakeState. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (HandshakeState) Values() []HandshakeState {
 	return []HandshakeState{
 		"REQUESTED",
@@ -384,8 +399,9 @@ const (
 )
 
 // Values returns all known values for IAMUserAccessToBilling. Note that this can
-// be expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// be expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (IAMUserAccessToBilling) Values() []IAMUserAccessToBilling {
 	return []IAMUserAccessToBilling{
 		"ALLOW",
@@ -429,6 +445,7 @@ const (
 
 // Values returns all known values for InvalidInputExceptionReason. Note that this
 // can be expanded in the future, and so it is only as up to date as the client.
+//
 // The ordering of this slice is not guaranteed to be stable across updates.
 func (InvalidInputExceptionReason) Values() []InvalidInputExceptionReason {
 	return []InvalidInputExceptionReason{
@@ -472,8 +489,9 @@ const (
 )
 
 // Values returns all known values for OrganizationFeatureSet. Note that this can
-// be expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// be expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (OrganizationFeatureSet) Values() []OrganizationFeatureSet {
 	return []OrganizationFeatureSet{
 		"ALL",
@@ -490,8 +508,9 @@ const (
 )
 
 // Values returns all known values for ParentType. Note that this can be expanded
-// in the future, and so it is only as up to date as the client. The ordering of
-// this slice is not guaranteed to be stable across updates.
+// in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (ParentType) Values() []ParentType {
 	return []ParentType{
 		"ROOT",
@@ -510,8 +529,9 @@ const (
 )
 
 // Values returns all known values for PolicyType. Note that this can be expanded
-// in the future, and so it is only as up to date as the client. The ordering of
-// this slice is not guaranteed to be stable across updates.
+// in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (PolicyType) Values() []PolicyType {
 	return []PolicyType{
 		"SERVICE_CONTROL_POLICY",
@@ -531,8 +551,9 @@ const (
 )
 
 // Values returns all known values for PolicyTypeStatus. Note that this can be
-// expanded in the future, and so it is only as up to date as the client. The
-// ordering of this slice is not guaranteed to be stable across updates.
+// expanded in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (PolicyTypeStatus) Values() []PolicyTypeStatus {
 	return []PolicyTypeStatus{
 		"ENABLED",
@@ -551,8 +572,9 @@ const (
 )
 
 // Values returns all known values for TargetType. Note that this can be expanded
-// in the future, and so it is only as up to date as the client. The ordering of
-// this slice is not guaranteed to be stable across updates.
+// in the future, and so it is only as up to date as the client.
+//
+// The ordering of this slice is not guaranteed to be stable across updates.
 func (TargetType) Values() []TargetType {
 	return []TargetType{
 		"ACCOUNT",

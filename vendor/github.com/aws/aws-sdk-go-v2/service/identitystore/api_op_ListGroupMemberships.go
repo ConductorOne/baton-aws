@@ -6,17 +6,18 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
-	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 // For the specified group in the specified identity store, returns the list of
-// all GroupMembership objects and returns results in paginated form. If you have
-// administrator access to a member account, you can use this API from the member
-// account. Read about member accounts (https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html)
-// in the Organizations User Guide.
+// all GroupMembership objects and returns results in paginated form.
+//
+// If you have administrator access to a member account, you can use this API from
+// the member account. Read about [member accounts]in the Organizations User Guide.
+//
+// [member accounts]: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html
 func (c *Client) ListGroupMemberships(ctx context.Context, params *ListGroupMembershipsInput, optFns ...func(*Options)) (*ListGroupMembershipsOutput, error) {
 	if params == nil {
 		params = &ListGroupMembershipsInput{}
@@ -100,25 +101,25 @@ func (c *Client) addOperationListGroupMembershipsMiddlewares(stack *middleware.S
 	if err = addSetLoggerMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddClientRequestIDMiddleware(stack); err != nil {
+	if err = addClientRequestID(stack); err != nil {
 		return err
 	}
-	if err = smithyhttp.AddComputeContentLengthMiddleware(stack); err != nil {
+	if err = addComputeContentLength(stack); err != nil {
 		return err
 	}
 	if err = addResolveEndpointMiddleware(stack, options); err != nil {
 		return err
 	}
-	if err = v4.AddComputePayloadSHA256Middleware(stack); err != nil {
+	if err = addComputePayloadSHA256(stack); err != nil {
 		return err
 	}
-	if err = addRetryMiddlewares(stack, options); err != nil {
+	if err = addRetry(stack, options); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRawResponseToMetadata(stack); err != nil {
+	if err = addRawResponseToMetadata(stack); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecordResponseTiming(stack); err != nil {
+	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
 	if err = addClientUserAgent(stack, options); err != nil {
@@ -133,13 +134,19 @@ func (c *Client) addOperationListGroupMembershipsMiddlewares(stack *middleware.S
 	if err = addSetLegacyContextSigningOptionsMiddleware(stack); err != nil {
 		return err
 	}
+	if err = addTimeOffsetBuild(stack, c); err != nil {
+		return err
+	}
+	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
 	if err = addOpListGroupMembershipsValidationMiddleware(stack); err != nil {
 		return err
 	}
 	if err = stack.Initialize.Add(newServiceMetadataMiddleware_opListGroupMemberships(options.Region), middleware.Before); err != nil {
 		return err
 	}
-	if err = awsmiddleware.AddRecursionDetection(stack); err != nil {
+	if err = addRecursionDetection(stack); err != nil {
 		return err
 	}
 	if err = addRequestIDRetrieverMiddleware(stack); err != nil {
@@ -156,14 +163,6 @@ func (c *Client) addOperationListGroupMembershipsMiddlewares(stack *middleware.S
 	}
 	return nil
 }
-
-// ListGroupMembershipsAPIClient is a client that implements the
-// ListGroupMemberships operation.
-type ListGroupMembershipsAPIClient interface {
-	ListGroupMemberships(context.Context, *ListGroupMembershipsInput, ...func(*Options)) (*ListGroupMembershipsOutput, error)
-}
-
-var _ ListGroupMembershipsAPIClient = (*Client)(nil)
 
 // ListGroupMembershipsPaginatorOptions is the paginator options for
 // ListGroupMemberships
@@ -230,6 +229,9 @@ func (p *ListGroupMembershipsPaginator) NextPage(ctx context.Context, optFns ...
 	}
 	params.MaxResults = limit
 
+	optFns = append([]func(*Options){
+		addIsPaginatorUserAgent,
+	}, optFns...)
 	result, err := p.client.ListGroupMemberships(ctx, &params, optFns...)
 	if err != nil {
 		return nil, err
@@ -248,6 +250,14 @@ func (p *ListGroupMembershipsPaginator) NextPage(ctx context.Context, optFns ...
 
 	return result, nil
 }
+
+// ListGroupMembershipsAPIClient is a client that implements the
+// ListGroupMemberships operation.
+type ListGroupMembershipsAPIClient interface {
+	ListGroupMemberships(context.Context, *ListGroupMembershipsInput, ...func(*Options)) (*ListGroupMembershipsOutput, error)
+}
+
+var _ ListGroupMembershipsAPIClient = (*Client)(nil)
 
 func newServiceMetadataMiddleware_opListGroupMemberships(region string) *awsmiddleware.RegisterServiceMetadata {
 	return &awsmiddleware.RegisterServiceMetadata{
