@@ -126,6 +126,7 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
+        "identitystore:GetGroupMembershipId",
         "identitystore:ListUsers",
         "identitystore:ListGroups",
         "identitystore:ListGroupMemberships",
@@ -173,6 +174,7 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
+        "identitystore:GetGroupMembershipId",
         "identitystore:ListUsers",
         "identitystore:ListGroups",
         "identitystore:ListGroupMemberships",
