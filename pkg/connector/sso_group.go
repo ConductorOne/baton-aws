@@ -95,13 +95,22 @@ func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Reso
 	return []*v2.Entitlement{member}, "", nil, nil
 }
 
-func createUserSSOGroupMembershipGrant(region string, identityStoreID string, memberID string, membershipID *string, groupResource *v2.Resource) (*v2.Grant, error) {
+func createUserSSOGroupMembershipGrant(
+	region string,
+	identityStoreID string,
+	memberID string,
+	membershipID *string,
+	groupResource *v2.Resource,
+) (*v2.Grant, error) {
 	userARN := ssoUserToARN(region, identityStoreID, memberID)
 	uID, err := resourceSdk.NewResourceID(resourceTypeSSOUser, userARN)
 	if err != nil {
 		return nil, err
 	}
-	grant := grantSdk.NewGrant(groupResource, groupMemberEntitlement, uID,
+	grant := grantSdk.NewGrant(
+		groupResource,
+		groupMemberEntitlement,
+		uID,
 		grantSdk.WithAnnotation(
 			&v2.V1Identifier{
 				Id: V1GrantID(V1MembershipEntitlementID(groupResource.Id), userARN),
@@ -258,7 +267,15 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	}, nil, nil
 }
 
-func (g *ssoGroupResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
+func (g *ssoGroupResourceType) Grant(
+	ctx context.Context,
+	principal *v2.Resource,
+	entitlement *v2.Entitlement,
+) (
+	[]*v2.Grant,
+	annotations.Annotations,
+	error,
+) {
 	if principal.Id.ResourceType != resourceTypeSSOUser.Id {
 		return nil, nil, errors.New("baton-aws: only sso users can be added to a sso group")
 	}
@@ -319,10 +336,13 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		zap.String("identity_store_id", awsSdk.ToString(g.identityInstance.IdentityStoreId)),
 	)
 
-	resp, err := g.identityStoreClient.DeleteGroupMembership(ctx, &awsIdentityStore.DeleteGroupMembershipInput{
-		IdentityStoreId: g.identityInstance.IdentityStoreId,
-		MembershipId:    awsSdk.String(grant.Id),
-	})
+	resp, err := g.identityStoreClient.DeleteGroupMembership(
+		ctx,
+		&awsIdentityStore.DeleteGroupMembershipInput{
+			IdentityStoreId: g.identityInstance.IdentityStoreId,
+			MembershipId:    awsSdk.String(grant.Id),
+		},
+	)
 	if err != nil {
 		l.Error("aws-connector: Failed to delete group membership", zap.Error(err))
 		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w", err)
