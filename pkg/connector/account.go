@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
+	"github.com/conductorone/baton-aws/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 
@@ -36,7 +37,7 @@ type accountResourceType struct {
 	ssoAdminClient   *awsSsoAdmin.Client
 	roleArn          string
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
-	identityClient   *awsIdentityStore.Client
+	identityClient   client.IdentityStoreClient
 	region           string
 
 	_permissionSetsCacheMtx    sync.Mutex
@@ -496,7 +497,7 @@ func accountBuilder(
 	ssoAdminClient *awsSsoAdmin.Client,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
-	identityClient *awsIdentityStore.Client,
+	identityClient client.IdentityStoreClient,
 ) *accountResourceType {
 	return &accountResourceType{
 		resourceType:     resourceTypeAccount,
