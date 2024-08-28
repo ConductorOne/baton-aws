@@ -11,6 +11,7 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go/middleware"
+	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -24,7 +25,7 @@ import (
 type ssoGroupResourceType struct {
 	resourceType        *v2.ResourceType
 	ssoClient           *awsSsoAdmin.Client
-	identityStoreClient *awsIdentityStore.Client
+	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	region              string
 }
@@ -184,7 +185,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 func ssoGroupBuilder(
 	region string,
 	ssoClient *awsSsoAdmin.Client,
-	identityStoreClient *awsIdentityStore.Client,
+	identityStoreClient client.IdentityStoreClient,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 ) *ssoGroupResourceType {
 	return &ssoGroupResourceType{

@@ -19,6 +19,7 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/conductorone/baton-aws/pkg/connector/client"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
@@ -75,7 +76,7 @@ type AWS struct {
 	orgClient           *awsOrgs.Client
 	ssoAdminClient      *awsSsoAdmin.Client
 	ssoSCIMClient       *awsIdentityCenterSCIMClient
-	identityStoreClient *awsIdentityStore.Client
+	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 }
 

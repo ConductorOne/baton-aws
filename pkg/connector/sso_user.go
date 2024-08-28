@@ -10,6 +10,7 @@ import (
 	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
+	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -19,7 +20,7 @@ import (
 type ssoUserResourceType struct {
 	resourceType        *v2.ResourceType
 	ssoClient           *awsSsoAdmin.Client
-	identityStoreClient *awsIdentityStore.Client
+	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	scimClient          *awsIdentityCenterSCIMClient
 	region              string
@@ -114,7 +115,7 @@ func (o *ssoUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagin
 func ssoUserBuilder(
 	region string,
 	ssoClient *awsSsoAdmin.Client,
-	identityStoreClient *awsIdentityStore.Client,
+	identityStoreClient client.IdentityStoreClient,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	scimClient *awsIdentityCenterSCIMClient,
 ) *ssoUserResourceType {
