@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/sync/semaphore"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
@@ -30,9 +32,10 @@ const (
 )
 
 type connectorRunner struct {
-	cw      types.ClientWrapper
-	oneShot bool
-	tasks   tasks.Manager
+	cw        types.ClientWrapper
+	oneShot   bool
+	tasks     tasks.Manager
+	debugFile *os.File
 }
 
 var ErrSigTerm = errors.New("context cancelled by process shutdown")
@@ -41,6 +44,28 @@ var ErrSigTerm = errors.New("context cancelled by process shutdown")
 func (c *connectorRunner) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(ErrSigTerm)
+
+	if c.tasks.ShouldDebug() && c.debugFile == nil {
+		var err error
+		c.debugFile, err = os.Create(filepath.Join(c.tasks.GetTempDir(), "debug.log"))
+		if err != nil {
+			return err
+		}
+	}
+
+	// modify the context to insert a logger directed to a file
+	if c.debugFile != nil {
+		l := ctxzap.Extract(ctx)
+		writeSyncer := zapcore.AddSync(c.debugFile)
+		encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
+		core := zapcore.NewCore(encoder, writeSyncer, zapcore.DebugLevel)
+
+		l = l.WithOptions(zap.WrapCore(func(c zapcore.Core) zapcore.Core {
+			return zapcore.NewTee(c, core)
+		}))
+
+		ctx = ctxzap.ToContext(ctx, l)
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt)
@@ -186,10 +211,27 @@ func (c *connectorRunner) Close(ctx context.Context) error {
 		retErr = errors.Join(retErr, err)
 	}
 
+	if c.debugFile != nil {
+		if err := c.debugFile.Close(); err != nil {
+			retErr = errors.Join(retErr, err)
+		}
+		c.debugFile = nil
+	}
+
 	return retErr
 }
 
 type Option func(ctx context.Context, cfg *runnerConfig) error
+
+type getTicketConfig struct {
+	ticketID string
+}
+
+type listTicketSchemasConfig struct{}
+
+type createTicketConfig struct {
+	templatePath string
+}
 
 type grantConfig struct {
 	entitlementID string
@@ -228,6 +270,7 @@ type runnerConfig struct {
 	clientID                string
 	clientSecret            string
 	provisioningEnabled     bool
+	ticketingEnabled        bool
 	grantConfig             *grantConfig
 	revokeConfig            *revokeConfig
 	eventFeedConfig         *eventStreamConfig
@@ -235,6 +278,10 @@ type runnerConfig struct {
 	createAccountConfig     *createAccountConfig
 	deleteResourceConfig    *deleteResourceConfig
 	rotateCredentialsConfig *rotateCredentialsConfig
+	createTicketConfig      *createTicketConfig
+	listTicketSchemasConfig *listTicketSchemasConfig
+	getTicketConfig         *getTicketConfig
+	skipFullSync            bool
 }
 
 // WithRateLimiterConfig sets the RateLimiterConfig for a runner.
@@ -402,6 +449,48 @@ func WithProvisioningEnabled() Option {
 	}
 }
 
+func WithFullSyncDisabled() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.skipFullSync = true
+		return nil
+	}
+}
+
+func WithTicketingEnabled() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.ticketingEnabled = true
+		return nil
+	}
+}
+
+func WithCreateTicket(templatePath string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.createTicketConfig = &createTicketConfig{
+			templatePath: templatePath,
+		}
+		return nil
+	}
+}
+
+func WithListTicketSchemas() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.listTicketSchemasConfig = &listTicketSchemasConfig{}
+		return nil
+	}
+}
+
+func WithGetTicket(ticketID string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.onDemand = true
+		cfg.getTicketConfig = &getTicketConfig{
+			ticketID: ticketID,
+		}
+		return nil
+	}
+}
+
 func WithTempDir(tempDir string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.tempDir = tempDir
@@ -432,6 +521,14 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		wrapperOpts = append(wrapperOpts, connector.WithProvisioningEnabled())
 	}
 
+	if cfg.ticketingEnabled {
+		wrapperOpts = append(wrapperOpts, connector.WithTicketingEnabled())
+	}
+
+	if cfg.skipFullSync {
+		wrapperOpts = append(wrapperOpts, connector.WithFullSyncDisabled())
+	}
+
 	cw, err := connector.NewWrapper(ctx, c, wrapperOpts...)
 	if err != nil {
 		return nil, err
@@ -440,7 +537,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 	runner.cw = cw
 
 	if cfg.onDemand {
-		if cfg.c1zPath == "" && cfg.eventFeedConfig == nil {
+		if cfg.c1zPath == "" && cfg.eventFeedConfig == nil && cfg.createTicketConfig == nil && cfg.listTicketSchemasConfig == nil && cfg.getTicketConfig == nil {
 			return nil, errors.New("c1zPath must be set when in on-demand mode")
 		}
 
@@ -469,7 +566,12 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 
 		case cfg.eventFeedConfig != nil:
 			tm = local.NewEventFeed(ctx)
-
+		case cfg.createTicketConfig != nil:
+			tm = local.NewTicket(ctx, cfg.createTicketConfig.templatePath)
+		case cfg.listTicketSchemasConfig != nil:
+			tm = local.NewListTicketSchema(ctx)
+		case cfg.getTicketConfig != nil:
+			tm = local.NewGetTicket(ctx, cfg.getTicketConfig.ticketID)
 		default:
 			tm, err = local.NewSyncer(ctx, cfg.c1zPath, local.WithTmpDir(cfg.tempDir))
 			if err != nil {
@@ -483,7 +585,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		return runner, nil
 	}
 
-	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir)
+	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir, cfg.skipFullSync)
 	if err != nil {
 		return nil, err
 	}

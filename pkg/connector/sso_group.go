@@ -11,6 +11,7 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go/middleware"
+	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -24,7 +25,7 @@ import (
 type ssoGroupResourceType struct {
 	resourceType        *v2.ResourceType
 	ssoClient           *awsSsoAdmin.Client
-	identityStoreClient *awsIdentityStore.Client
+	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	region              string
 }
@@ -181,7 +182,12 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	return rv, nextPage, anno, nil
 }
 
-func ssoGroupBuilder(region string, ssoClient *awsSsoAdmin.Client, identityStoreClient *awsIdentityStore.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata) *ssoGroupResourceType {
+func ssoGroupBuilder(
+	region string,
+	ssoClient *awsSsoAdmin.Client,
+	identityStoreClient client.IdentityStoreClient,
+	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+) *ssoGroupResourceType {
 	return &ssoGroupResourceType{
 		resourceType:        resourceTypeSSOGroup,
 		region:              region,
@@ -206,7 +212,7 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	userID string,
 ) (
 	*GroupMembershipOutput,
-	*annotations.Annotations,
+	annotations.Annotations,
 	error,
 ) {
 	logger := ctxzap.Extract(ctx).With(
@@ -217,6 +223,7 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 			awsSdk.ToString(g.identityInstance.IdentityStoreId),
 		),
 	)
+	outputAnnotations := annotations.New()
 	groupIdString := awsSdk.String(groupID)
 	memberId := awsIdentityStoreTypes.MemberIdMemberUserId{Value: userID}
 	createInput := &awsIdentityStore.CreateGroupMembershipInput{
@@ -229,7 +236,7 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 		return &GroupMembershipOutput{
 			MembershipId:   createdMembership.MembershipId,
 			ResultMetadata: createdMembership.ResultMetadata,
-		}, nil, nil
+		}, outputAnnotations, nil
 	}
 
 	// Forward along the error if it is an unknown type.
@@ -237,6 +244,8 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	if !errors.As(err, &conflictException) {
 		return nil, nil, err
 	}
+
+	outputAnnotations.Append(&v2.GrantAlreadyExists{})
 
 	logger.Info("ConflictException when creating group, falling back to GET")
 
@@ -252,16 +261,15 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 		var accessDeniedException *awsIdentityStoreTypes.AccessDeniedException
 		if errors.As(err, &accessDeniedException) {
 			logger.Info("Not authorized to perform `GetGroupMembershipId`, falling back to empty membership")
-			// TODO(marcos): Create an annotation that marks this grant as "already exists".
-			return nil, nil, nil
+			return nil, outputAnnotations, nil
 		}
 
-		return nil, nil, err
+		return nil, outputAnnotations, err
 	}
 
 	return &GroupMembershipOutput{
 		MembershipId: foundMembership.MembershipId,
-	}, nil, nil
+	}, outputAnnotations, nil
 }
 
 func (g *ssoGroupResourceType) Grant(
@@ -293,35 +301,41 @@ func (g *ssoGroupResourceType) Grant(
 		zap.String("identity_store_id", awsSdk.ToString(g.identityInstance.IdentityStoreId)),
 	)
 
-	// TODO(marcos): If we get a nil membership and an annotation, return that annotation.
-	membership, _, err := g.createOrGetMembership(ctx, groupID, userID)
+	annos := annotations.New()
+	outputGrants := make([]*v2.Grant, 0)
+
+	membership, annotationsFromGet, err := g.createOrGetMembership(ctx, groupID, userID)
 	if err != nil {
 		l.Error("aws-connector: Failed to create group membership", zap.Error(err))
 		return nil, nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
 	}
 
-	annos := annotations.New()
-	if membership == nil {
-		return []*v2.Grant{}, annos, nil
+	annos.Merge(annotationsFromGet...)
+
+	if membership != nil {
+		grant, err := createUserSSOGroupMembershipGrant(
+			g.region,
+			awsSdk.ToString(g.identityInstance.IdentityStoreId),
+			userID,
+			membership.MembershipId,
+			entitlement.Resource,
+		)
+		if err != nil {
+			l.Error(
+				"aws-connector: Failed to create grant",
+				zap.Error(err),
+				zap.String("membership_id", awsSdk.ToString(membership.MembershipId)),
+			)
+			return nil, nil, err
+		}
+
+		if reqId := extractRequestID(&membership.ResultMetadata); reqId != nil {
+			annos.Append(reqId)
+		}
+		outputGrants = append(outputGrants, grant)
 	}
 
-	grant, err := createUserSSOGroupMembershipGrant(
-		g.region,
-		awsSdk.ToString(g.identityInstance.IdentityStoreId),
-		userID,
-		membership.MembershipId,
-		entitlement.Resource,
-	)
-	if err != nil {
-		l.Error("aws-connector: Failed to create grant", zap.Error(err), zap.String("membership_id", awsSdk.ToString(membership.MembershipId)))
-		return nil, nil, err
-	}
-
-	if reqId := extractRequestID(&membership.ResultMetadata); reqId != nil {
-		annos.Append(reqId)
-	}
-
-	return []*v2.Grant{grant}, annos, nil
+	return outputGrants, annos, nil
 }
 func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	if grant.Principal.Id.ResourceType != resourceTypeSSOUser.Id {

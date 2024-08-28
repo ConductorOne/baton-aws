@@ -19,6 +19,7 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/conductorone/baton-aws/pkg/connector/client"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
@@ -27,51 +28,6 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-)
-
-var (
-	resourceTypeRole = &v2.ResourceType{
-		Id:          "role",
-		DisplayName: "IAM Role",
-		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
-		Annotations: v1AnnotationsForResourceType("role"),
-	}
-	resourceTypeIAMGroup = &v2.ResourceType{
-		Id:          "group",
-		DisplayName: "Group",
-		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_GROUP},
-		Annotations: v1AnnotationsForResourceType("group"),
-	}
-	resourceTypeSSOGroup = &v2.ResourceType{
-		Id:          "sso_group",
-		DisplayName: "SSO Group",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_GROUP,
-		},
-		Annotations: v1AnnotationsForResourceType("sso_group"),
-	}
-	resourceTypeAccount = &v2.ResourceType{
-		Id:          "account", // this is "application" in c1
-		DisplayName: "Account",
-		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
-		Annotations: v1AnnotationsForResourceType("account"),
-	}
-	resourceTypeSSOUser = &v2.ResourceType{
-		Id:          "sso_user",
-		DisplayName: "SSO User",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_USER,
-		},
-		Annotations: v1AnnotationsForResourceType("sso_user"),
-	}
-	resourceTypeIAMUser = &v2.ResourceType{
-		Id:          "iam_user",
-		DisplayName: "IAM User",
-		Traits: []v2.ResourceType_Trait{
-			v2.ResourceType_TRAIT_USER,
-		},
-		Annotations: v1AnnotationsForResourceType("iam_user"),
-	}
 )
 
 type Config struct {
@@ -120,7 +76,7 @@ type AWS struct {
 	orgClient           *awsOrgs.Client
 	ssoAdminClient      *awsSsoAdmin.Client
 	ssoSCIMClient       *awsIdentityCenterSCIMClient
-	identityStoreClient *awsIdentityStore.Client
+	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 }
 
@@ -231,10 +187,17 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		awsConfig.WithRegion(config.GlobalRegion),
 		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
 	}
-	// either we have a access key directly into our binding account, or we use instance identity to swap into that role
+	// Either we have an access key directly into our binding account, or we use
+	// instance identity to swap into that role.
 	if config.GlobalAccessKeyID != "" && config.GlobalSecretAccessKey != "" {
 		opts = append(opts,
-			awsConfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(config.GlobalAccessKeyID, config.GlobalSecretAccessKey, "")),
+			awsConfig.WithCredentialsProvider(
+				credentials.NewStaticCredentialsProvider(
+					config.GlobalAccessKeyID,
+					config.GlobalSecretAccessKey,
+					"",
+				),
+			),
 		)
 	}
 
