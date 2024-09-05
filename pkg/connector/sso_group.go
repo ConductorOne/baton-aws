@@ -202,6 +202,23 @@ type GroupMembershipOutput struct {
 	ResultMetadata middleware.Metadata
 }
 
+func (g *ssoGroupResourceType) getGroupMembership(ctx context.Context, groupId string, userId string) (*awsIdentityStore.GetGroupMembershipIdOutput, error) {
+	groupIdString := awsSdk.String(groupId)
+	memberId := awsIdentityStoreTypes.MemberIdMemberUserId{Value: userId}
+
+	getInput := awsIdentityStore.GetGroupMembershipIdInput{
+		GroupId:         groupIdString,
+		IdentityStoreId: g.identityInstance.IdentityStoreId,
+		MemberId:        &memberId,
+	}
+	foundMembership, err := g.identityStoreClient.GetGroupMembershipId(ctx, &getInput)
+	if err != nil {
+		return nil, err
+	}
+
+	return foundMembership, nil
+}
+
 // createOrGetMembership the `CreateGroupMembership()` method errors when a
 // group membership already exists. Instead of passing along the
 // `ConflictError`, attempt to get the group membership with a call to
@@ -249,12 +266,7 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 
 	logger.Info("ConflictException when creating group, falling back to GET")
 
-	getInput := awsIdentityStore.GetGroupMembershipIdInput{
-		GroupId:         groupIdString,
-		IdentityStoreId: g.identityInstance.IdentityStoreId,
-		MemberId:        &memberId,
-	}
-	foundMembership, err := g.identityStoreClient.GetGroupMembershipId(ctx, &getInput)
+	foundMembership, err := g.getGroupMembership(ctx, groupID, userID)
 	if err != nil {
 		// If we lack permission for the `GetGroupMembershipId` operation, fail
 		// more gracefully by returning nil.
@@ -339,7 +351,7 @@ func (g *ssoGroupResourceType) Grant(
 }
 func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	if grant.Principal.Id.ResourceType != resourceTypeSSOUser.Id {
-		return nil, errors.New("baton-aws: only sso users can be removed from sso group")
+		return nil, errors.New("baton-aws: only sso users can be removed from sso groups")
 	}
 
 	l := ctxzap.Extract(ctx).With(
@@ -347,19 +359,46 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		zap.String("identity_store_id", awsSdk.ToString(g.identityInstance.IdentityStoreId)),
 	)
 
+	annos := annotations.New()
+	membershipId := grant.Id
+
 	resp, err := g.identityStoreClient.DeleteGroupMembership(
 		ctx,
 		&awsIdentityStore.DeleteGroupMembershipInput{
 			IdentityStoreId: g.identityInstance.IdentityStoreId,
-			MembershipId:    awsSdk.String(grant.Id),
+			MembershipId:    awsSdk.String(membershipId),
+		},
+	)
+	if err == nil {
+		l.Debug("revoked grant", zap.String("membership_id", membershipId))
+		if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
+			annos.Append(reqId)
+		}
+
+		return annos, nil
+	}
+
+	l.Error("aws-connector: Failed to delete group membership. Trying to fetch group membership in case grant ID is incorrect", zap.Error(err))
+	foundMembership, getErr := g.getGroupMembership(ctx, grant.Entitlement.Id, grant.Principal.Id.Resource)
+	if getErr != nil {
+		l.Error("aws-connector: Failed to get group membership", zap.Error(getErr))
+		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w %w", err, getErr)
+	}
+
+	membershipId = *foundMembership.MembershipId
+	resp, err = g.identityStoreClient.DeleteGroupMembership(
+		ctx,
+		&awsIdentityStore.DeleteGroupMembershipInput{
+			IdentityStoreId: g.identityInstance.IdentityStoreId,
+			MembershipId:    awsSdk.String(membershipId),
 		},
 	)
 	if err != nil {
-		l.Error("aws-connector: Failed to delete group membership", zap.Error(err))
-		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w", err)
+		l.Error("aws-connector: Failed to delete group membership", zap.Error(err), zap.String("membership_id", membershipId))
+		return nil, err
 	}
 
-	annos := annotations.New()
+	l.Debug("revoked grant", zap.String("membership_id", membershipId))
 	if reqId := extractRequestID(&resp.ResultMetadata); reqId != nil {
 		annos.Append(reqId)
 	}
