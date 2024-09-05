@@ -31,7 +31,10 @@ $BATON_AWS --grant-entitlement="$BATON_ENTITLEMENT" --grant-principal="$BATON_PR
 # Get grant ID
 BATON_GRANT=$($BATON grants --entitlement="$BATON_ENTITLEMENT" --output-format=json | jq --raw-output --exit-status ".grants[] | select( .principal.id.resource == \"$BATON_PRINCIPAL\" ).grant.id")
 
-# Revoke grants
+# Revoke grant
+$BATON_AWS --revoke-grant="$BATON_GRANT"
+
+# Revoke already-revoked grant
 $BATON_AWS --revoke-grant="$BATON_GRANT"
 
 # Check grant was revoked
