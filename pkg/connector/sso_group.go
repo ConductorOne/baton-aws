@@ -379,8 +379,25 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 	}
 
 	l.Error("aws-connector: Failed to delete group membership. Trying to fetch group membership in case grant ID is incorrect", zap.Error(err))
-	foundMembership, getErr := g.getGroupMembership(ctx, grant.Entitlement.Id, grant.Principal.Id.Resource)
+	groupId, err := ssoGroupIdFromARN(grant.Entitlement.Resource.Id.Resource)
+	if err != nil {
+		return annos, err
+	}
+
+	userId, err := ssoUserIdFromARN(grant.Principal.Id.Resource)
+	if err != nil {
+		return annos, err
+	}
+
+	foundMembership, getErr := g.getGroupMembership(ctx, groupId, userId)
 	if getErr != nil {
+		var notFoundException *awsIdentityStoreTypes.ResourceNotFoundException
+		if errors.As(getErr, &notFoundException) {
+			l.Debug("group membership already deleted", zap.String("group_id", groupId), zap.String("user_id", userId))
+			annos.Append(&v2.GrantAlreadyRevoked{})
+			return annos, nil
+		}
+
 		l.Error("aws-connector: Failed to get group membership", zap.Error(getErr))
 		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w %w", err, getErr)
 	}
