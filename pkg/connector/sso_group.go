@@ -378,7 +378,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		return annos, nil
 	}
 
-	l.Error("aws-connector: Failed to delete group membership. Trying to fetch group membership in case grant ID is incorrect", zap.Error(err))
+	l.Info("aws-connector: Failed to delete group membership. Trying to fetch group membership in case grant ID is incorrect", zap.Error(err))
 	groupId, err := ssoGroupIdFromARN(grant.Entitlement.Resource.Id.Resource)
 	if err != nil {
 		return annos, err
