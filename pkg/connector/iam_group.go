@@ -73,7 +73,19 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		rv = append(rv, groupResource)
 	}
 
-	return paginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
+	if !resp.IsTruncated {
+		return rv, "", nil, nil
+	}
+
+	if resp.Marker != nil {
+		token, err := bag.NextToken(*resp.Marker)
+		if err != nil {
+			return rv, "", nil, err
+		}
+		return rv, token, nil, nil
+	}
+
+	return rv, "", nil, nil
 }
 
 func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
@@ -123,7 +135,19 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	return paginateTruncation(rv, bag, resp.Marker, resp.IsTruncated)
+	if !resp.IsTruncated {
+		return rv, "", nil, nil
+	}
+
+	if resp.Marker != nil {
+		token, err := bag.NextToken(*resp.Marker)
+		if err != nil {
+			return rv, "", nil, err
+		}
+		return rv, token, nil, nil
+	}
+
+	return rv, "", nil, nil
 }
 
 func iamGroupBuilder(iamClient *iam.Client) *iamGroupResourceType {
