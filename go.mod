@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.27.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.5
 	github.com/aws/smithy-go v1.20.4
-	github.com/conductorone/baton-sdk v0.2.24
+	github.com/conductorone/baton-sdk v0.2.35
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/spf13/viper v1.18.2
 	go.uber.org/zap v1.27.0
