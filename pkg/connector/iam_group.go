@@ -20,8 +20,6 @@ const (
 	groupMemberEntitlement = "member"
 )
 
-var max int32 = 2
-
 type iamGroupResourceType struct {
 	resourceType *v2.ResourceType
 	iamClient    *iam.Client
@@ -111,7 +109,6 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	input := &iam.GetGroupInput{
 		GroupName: awsSdk.String(resource.DisplayName),
-		MaxItems:  &max,
 	}
 	if bag.PageToken() != "" {
 		input.Marker = awsSdk.String(bag.PageToken())
