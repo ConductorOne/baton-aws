@@ -92,7 +92,15 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		rv = append(rv, userResource)
 	}
 
-	return paginate(rv, bag, resp.NextToken)
+	if resp.NextToken != nil {
+		token, err := bag.NextToken(*resp.NextToken)
+		if err != nil {
+			return rv, "", nil, err
+		}
+		return rv, token, nil, nil
+	}
+
+	return rv, "", nil, nil
 }
 
 func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {

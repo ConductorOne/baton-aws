@@ -80,7 +80,15 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		rv = append(rv, groupResource)
 	}
 
-	return paginate(rv, bag, resp.NextToken)
+	if resp.NextToken != nil {
+		token, err := bag.NextToken(*resp.NextToken)
+		if err != nil {
+			return rv, "", nil, err
+		}
+		return rv, token, nil, nil
+	}
+
+	return rv, "", nil, nil
 }
 
 func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
@@ -175,11 +183,15 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	rv, nextPage, anno, err := paginate(rv, bag, resp.NextToken)
-	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
+	if resp.NextToken != nil {
+		token, err := bag.NextToken(*resp.NextToken)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
+		}
+		return rv, token, nil, nil
 	}
-	return rv, nextPage, anno, nil
+
+	return rv, "", nil, nil
 }
 
 func ssoGroupBuilder(
@@ -349,6 +361,7 @@ func (g *ssoGroupResourceType) Grant(
 
 	return outputGrants, annos, nil
 }
+
 func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
 	if grant.Principal.Id.ResourceType != resourceTypeSSOUser.Id {
 		return nil, errors.New("baton-aws: only sso users can be removed from sso groups")
