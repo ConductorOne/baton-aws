@@ -12,9 +12,10 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.27.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.30.5
 	github.com/aws/smithy-go v1.20.4
-	github.com/conductorone/baton-sdk v0.2.24
+	github.com/conductorone/baton-sdk v0.2.36
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/spf13/viper v1.18.2
+	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0
 	google.golang.org/protobuf v1.34.2
 )
@@ -72,7 +73,6 @@ require (
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/cobra v1.8.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.14 // indirect
 	github.com/tklauser/numcpus v0.8.0 // indirect
