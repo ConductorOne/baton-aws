@@ -1,6 +1,9 @@
 package connector
 
-import v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+import (
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
+)
 
 var (
 	resourceTypeRole = &v2.ResourceType{
@@ -35,7 +38,7 @@ var (
 		Traits: []v2.ResourceType_Trait{
 			v2.ResourceType_TRAIT_USER,
 		},
-		Annotations: v1AnnotationsForResourceType("sso_user"),
+		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}, &v2.V1Identifier{Id: "sso_user"}),
 	}
 	resourceTypeIAMUser = &v2.ResourceType{
 		Id:          "iam_user",
@@ -43,6 +46,6 @@ var (
 		Traits: []v2.ResourceType_Trait{
 			v2.ResourceType_TRAIT_USER,
 		},
-		Annotations: v1AnnotationsForResourceType("iam_user"),
+		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}, &v2.V1Identifier{Id: "iam_user"}),
 	}
 )
