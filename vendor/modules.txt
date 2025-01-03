@@ -9,10 +9,6 @@ filippo.io/age/internal/stream
 ## explicit; go 1.20
 filippo.io/edwards25519
 filippo.io/edwards25519/field
-# github.com/allegro/bigcache/v3 v3.1.0
-## explicit; go 1.16
-github.com/allegro/bigcache/v3
-github.com/allegro/bigcache/v3/queue
 # github.com/aws/aws-sdk-go-v2 v1.30.4
 ## explicit; go 1.21
 github.com/aws/aws-sdk-go-v2/aws
@@ -171,7 +167,7 @@ github.com/aws/smithy-go/waiter
 # github.com/benbjohnson/clock v1.3.5
 ## explicit; go 1.15
 github.com/benbjohnson/clock
-# github.com/conductorone/baton-sdk v0.2.36
+# github.com/conductorone/baton-sdk v0.2.61
 ## explicit; go 1.21
 github.com/conductorone/baton-sdk/internal/connector
 github.com/conductorone/baton-sdk/pb/c1/c1z/v1
@@ -224,6 +220,9 @@ github.com/davecgh/go-spew/spew
 # github.com/deckarep/golang-set/v2 v2.6.0
 ## explicit; go 1.18
 github.com/deckarep/golang-set/v2
+# github.com/dolthub/maphash v0.1.0
+## explicit; go 1.18
+github.com/dolthub/maphash
 # github.com/doug-martin/goqu/v9 v9.19.0
 ## explicit; go 1.12
 github.com/doug-martin/goqu/v9
@@ -244,6 +243,9 @@ github.com/envoyproxy/protoc-gen-validate/validate
 # github.com/fsnotify/fsnotify v1.7.0
 ## explicit; go 1.17
 github.com/fsnotify/fsnotify
+# github.com/gammazero/deque v0.2.1
+## explicit; go 1.18
+github.com/gammazero/deque
 # github.com/glebarez/go-sqlite v1.22.0
 ## explicit; go 1.17
 github.com/glebarez/go-sqlite
@@ -307,6 +309,20 @@ github.com/magiconair/properties
 # github.com/mattn/go-isatty v0.0.20
 ## explicit; go 1.15
 github.com/mattn/go-isatty
+# github.com/maypok86/otter v1.2.4
+## explicit; go 1.19
+github.com/maypok86/otter
+github.com/maypok86/otter/internal/core
+github.com/maypok86/otter/internal/expiry
+github.com/maypok86/otter/internal/generated/node
+github.com/maypok86/otter/internal/hashtable
+github.com/maypok86/otter/internal/lossy
+github.com/maypok86/otter/internal/queue
+github.com/maypok86/otter/internal/s3fifo
+github.com/maypok86/otter/internal/stats
+github.com/maypok86/otter/internal/unixtime
+github.com/maypok86/otter/internal/xmath
+github.com/maypok86/otter/internal/xruntime
 # github.com/mitchellh/mapstructure v1.5.0
 ## explicit; go 1.14
 github.com/mitchellh/mapstructure

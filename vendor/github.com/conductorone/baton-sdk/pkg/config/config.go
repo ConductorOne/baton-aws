@@ -43,13 +43,24 @@ func DefineConfiguration(
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	v.AutomaticEnv()
 
+	confschema := schema
+	confschema.Fields = append(field.DefaultFields, confschema.Fields...)
+	// Ensure unique fields
+	uniqueFields := make(map[string]field.SchemaField)
+	for _, f := range confschema.Fields {
+		uniqueFields[f.FieldName] = f
+	}
+	confschema.Fields = make([]field.SchemaField, 0, len(uniqueFields))
+	for _, f := range uniqueFields {
+		confschema.Fields = append(confschema.Fields, f)
+	}
 	// setup CLI with cobra
 	mainCMD := &cobra.Command{
 		Use:           connectorName,
 		Short:         connectorName,
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		RunE:          cli.MakeMainCommand(ctx, connectorName, v, schema, connector, options...),
+		RunE:          cli.MakeMainCommand(ctx, connectorName, v, confschema, connector, options...),
 	}
 	// set persistent flags only on the main subcommand
 	err = setFlagsAndConstraints(mainCMD, field.NewConfiguration(field.DefaultFields, field.DefaultRelationships...))
@@ -67,7 +78,7 @@ func DefineConfiguration(
 		Use:    "_connector-service",
 		Short:  "Start the connector service",
 		Hidden: true,
-		RunE:   cli.MakeGRPCServerCommand(ctx, connectorName, v, schema, connector),
+		RunE:   cli.MakeGRPCServerCommand(ctx, connectorName, v, confschema, connector),
 	}
 	err = setFlagsAndConstraints(grpcServerCmd, schema)
 	if err != nil {
@@ -78,7 +89,7 @@ func DefineConfiguration(
 	capabilitiesCmd := &cobra.Command{
 		Use:   "capabilities",
 		Short: "Get connector capabilities",
-		RunE:  cli.MakeCapabilitiesCommand(ctx, connectorName, v, schema, connector),
+		RunE:  cli.MakeCapabilitiesCommand(ctx, connectorName, v, confschema, connector),
 	}
 	err = setFlagsAndConstraints(capabilitiesCmd, schema)
 	if err != nil {
