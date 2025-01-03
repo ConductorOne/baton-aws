@@ -140,6 +140,10 @@ func MakeMainCommand(
 				opts = append(opts,
 					connectorrunner.WithTicketingEnabled(),
 					connectorrunner.WithCreateTicket(v.GetString("ticket-template-path")))
+			case v.GetBool("bulk-create-ticket"):
+				opts = append(opts,
+					connectorrunner.WithTicketingEnabled(),
+					connectorrunner.WithBulkCreateTicket(v.GetString("bulk-ticket-template-path")))
 			case v.GetBool("list-ticket-schemas"):
 				opts = append(opts,
 					connectorrunner.WithTicketingEnabled(),
@@ -243,6 +247,8 @@ func MakeGRPCServerCommand(
 			copts = append(copts, connector.WithProvisioningEnabled())
 		case v.GetBool("create-ticket"):
 			copts = append(copts, connector.WithTicketingEnabled())
+		case v.GetBool("bulk-create-ticket"):
+			copts = append(copts, connector.WithTicketingEnabled())
 		case v.GetBool("list-ticket-schemas"):
 			copts = append(copts, connector.WithTicketingEnabled())
 		case v.GetBool("get-ticket"):
@@ -265,7 +271,9 @@ func MakeGRPCServerCommand(
 			return err
 		}
 
-		// NOTE (shackra): I don't understand this goroutine
+		// Avoid zombie processes. If the parent dies, this
+		// will cause Stdin on the child to close, and then
+		// the child will exit itself.
 		go func() {
 			in := make([]byte, 1)
 			_, err := os.Stdin.Read(in)
