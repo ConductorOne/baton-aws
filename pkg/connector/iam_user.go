@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -12,6 +13,8 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 type iamUserResourceType struct {
@@ -52,10 +55,21 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
-		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName), resourceTypeIAMUser, awsSdk.ToString(user.Arn), []resourceSdk.UserTraitOption{
+		lastLogin := getLastLogin(ctx, o.iamClient, user)
+		options := []resourceSdk.UserTraitOption{
 			resourceSdk.WithEmail(getUserEmail(user), true),
 			resourceSdk.WithUserProfile(profile),
-		}, resourceSdk.WithAnnotation(annos))
+		}
+		if lastLogin != nil {
+			options = append(options, resourceSdk.WithLastLogin(*lastLogin))
+		}
+
+		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName),
+			resourceTypeIAMUser,
+			awsSdk.ToString(user.Arn),
+			options,
+			resourceSdk.WithAnnotation(annos),
+		)
 		if err != nil {
 			return nil, "", nil, err
 		}
@@ -101,6 +115,7 @@ func userTagsToMap(u iamTypes.User) map[string]interface{} {
 }
 
 func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interface{} {
+
 	profile := make(map[string]interface{})
 	profile["aws_arn"] = awsSdk.ToString(user.Arn)
 	profile["aws_path"] = awsSdk.ToString(user.Path)
@@ -109,6 +124,63 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
 	return profile
+}
+
+func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *time.Time {
+	logger := ctxzap.Extract(ctx).With(
+		zap.String("user_id", *user.UserId),
+	)
+
+	out, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
+	if err != nil {
+		logger.Error("Error listing access keys", zap.Error(err))
+		return nil
+	}
+
+	accessKeyIDs := []string{}
+	for _, accessKey := range out.AccessKeyMetadata {
+		accessKeyIDs = append(accessKeyIDs, awsSdk.ToString(accessKey.AccessKeyId))
+	}
+
+	lastUsedDates := make([]time.Time, 0, len(accessKeyIDs))
+	for _, accessKeyId := range accessKeyIDs {
+		accessKeyLastUsed, err := client.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
+			AccessKeyId: awsSdk.String(accessKeyId),
+		})
+		if err != nil {
+			logger.Error("Error getting access key last used", zap.String("access_key_id", accessKeyId), zap.Error(err))
+			return nil
+		}
+		if accessKeyLastUsed.AccessKeyLastUsed == nil ||
+			accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate == nil ||
+			accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate.IsZero() {
+			continue
+		}
+
+		lastUsedDates = append(lastUsedDates, *accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate)
+	}
+
+	// check if access key was the last one to be used
+	var lastLoginDate time.Time
+	if len(lastUsedDates) > 0 {
+		lastLoginDate = lastUsedDates[0]
+	}
+	for _, lastUsedDate := range lastUsedDates {
+		if lastUsedDate.Before(lastLoginDate) {
+			lastLoginDate = lastUsedDate
+		}
+	}
+
+	// check if password was the last one to be used
+	if user.PasswordLastUsed != nil && user.PasswordLastUsed.Before(lastLoginDate) {
+		lastLoginDate = *user.PasswordLastUsed
+	}
+
+	if lastLoginDate.IsZero() {
+		return nil
+	}
+
+	return &lastLoginDate
 }
 
 func getUserEmail(user iamTypes.User) string {
