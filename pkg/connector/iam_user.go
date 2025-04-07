@@ -131,18 +131,18 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 		zap.String("user_id", *user.UserId),
 	)
 
-	out, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
+	res, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 	if err != nil {
 		logger.Error("Error listing access keys", zap.Error(err))
 		return nil
 	}
 
 	accessKeyIDs := []string{}
-	for _, accessKey := range out.AccessKeyMetadata {
+	for _, accessKey := range res.AccessKeyMetadata {
 		accessKeyIDs = append(accessKeyIDs, awsSdk.ToString(accessKey.AccessKeyId))
 	}
 
-	lastUsedDates := make([]time.Time, 0, len(accessKeyIDs))
+	accessKeyLastUsedDates := make([]time.Time, 0, len(accessKeyIDs))
 	for _, accessKeyId := range accessKeyIDs {
 		accessKeyLastUsed, err := client.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
 			AccessKeyId: awsSdk.String(accessKeyId),
@@ -157,30 +157,30 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 			continue
 		}
 
-		lastUsedDates = append(lastUsedDates, *accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate)
+		accessKeyLastUsedDates = append(accessKeyLastUsedDates, *accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate)
 	}
 
 	// check if access key was the last one to be used
-	var lastLoginDate time.Time
-	if len(lastUsedDates) > 0 {
-		lastLoginDate = lastUsedDates[0]
+	var out time.Time
+	if len(accessKeyLastUsedDates) > 0 {
+		out = accessKeyLastUsedDates[0]
 	}
-	for _, lastUsedDate := range lastUsedDates {
-		if lastUsedDate.Before(lastLoginDate) {
-			lastLoginDate = lastUsedDate
+	for _, lastUsed := range accessKeyLastUsedDates {
+		if lastUsed.Before(out) {
+			out = lastUsed
 		}
 	}
 
 	// check if password was the last one to be used
-	if user.PasswordLastUsed != nil && user.PasswordLastUsed.Before(lastLoginDate) {
-		lastLoginDate = *user.PasswordLastUsed
+	if user.PasswordLastUsed != nil && user.PasswordLastUsed.Before(out) {
+		out = *user.PasswordLastUsed
 	}
 
-	if lastLoginDate.IsZero() {
+	if out.IsZero() {
 		return nil
 	}
 
-	return &lastLoginDate
+	return &out
 }
 
 func getUserEmail(user iamTypes.User) string {
