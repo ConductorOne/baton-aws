@@ -678,6 +678,170 @@ func (m *Task) validate(all bool) error {
 			}
 		}
 
+	case *Task_ActionListSchemas:
+		if v == nil {
+			err := TaskValidationError{
+				field:  "TaskType",
+				reason: "oneof value cannot be a typed-nil",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+		if all {
+			switch v := interface{}(m.GetActionListSchemas()).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionListSchemas",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionListSchemas",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(m.GetActionListSchemas()).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TaskValidationError{
+					field:  "ActionListSchemas",
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	case *Task_ActionGetSchema:
+		if v == nil {
+			err := TaskValidationError{
+				field:  "TaskType",
+				reason: "oneof value cannot be a typed-nil",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+		if all {
+			switch v := interface{}(m.GetActionGetSchema()).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionGetSchema",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionGetSchema",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(m.GetActionGetSchema()).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TaskValidationError{
+					field:  "ActionGetSchema",
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	case *Task_ActionInvoke:
+		if v == nil {
+			err := TaskValidationError{
+				field:  "TaskType",
+				reason: "oneof value cannot be a typed-nil",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+		if all {
+			switch v := interface{}(m.GetActionInvoke()).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionInvoke",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionInvoke",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(m.GetActionInvoke()).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TaskValidationError{
+					field:  "ActionInvoke",
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	case *Task_ActionStatus:
+		if v == nil {
+			err := TaskValidationError{
+				field:  "TaskType",
+				reason: "oneof value cannot be a typed-nil",
+			}
+			if !all {
+				return err
+			}
+			errors = append(errors, err)
+		}
+
+		if all {
+			switch v := interface{}(m.GetActionStatus()).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionStatus",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, TaskValidationError{
+						field:  "ActionStatus",
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(m.GetActionStatus()).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return TaskValidationError{
+					field:  "ActionStatus",
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
 	default:
 		_ = v // ensures v is used
 	}
@@ -695,7 +859,7 @@ type TaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m TaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -982,7 +1146,7 @@ type BatonServiceHelloRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceHelloRequestMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -1120,7 +1284,7 @@ type BatonServiceHelloResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceHelloResponseMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -1233,7 +1397,7 @@ type BatonServiceGetTaskRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceGetTaskRequestMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -1456,7 +1620,7 @@ type BatonServiceGetTaskResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceGetTaskResponseMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -1626,7 +1790,7 @@ type BatonServiceHeartbeatRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceHeartbeatRequestMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -1796,7 +1960,7 @@ type BatonServiceHeartbeatResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceHeartbeatResponseMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2041,7 +2205,7 @@ type BatonServiceUploadAssetRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceUploadAssetRequestMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2178,7 +2342,7 @@ type BatonServiceUploadAssetResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceUploadAssetResponseMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2432,7 +2596,7 @@ type BatonServiceFinishTaskRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceFinishTaskRequestMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2571,7 +2735,7 @@ type BatonServiceFinishTaskResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceFinishTaskResponseMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2674,7 +2838,7 @@ type StartDebuggingRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m StartDebuggingRequestMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2778,7 +2942,7 @@ type StartDebuggingResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m StartDebuggingResponseMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -2914,7 +3078,7 @@ type Task_NoneTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_NoneTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -3048,7 +3212,7 @@ type Task_HelloTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_HelloTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -3182,7 +3346,7 @@ type Task_SyncFullTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_SyncFullTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -3347,7 +3511,7 @@ type Task_EventFeedTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_EventFeedTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -3570,7 +3734,7 @@ type Task_GrantTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_GrantTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -3733,7 +3897,7 @@ type Task_RevokeTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_RevokeTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -3925,7 +4089,7 @@ type Task_CreateAccountTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_CreateAccountTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4056,7 +4220,7 @@ type Task_CreateResourceTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_CreateResourceTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4187,7 +4351,7 @@ type Task_DeleteResourceTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_DeleteResourceTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4381,7 +4545,7 @@ type Task_RotateCredentialsTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_RotateCredentialsTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4575,7 +4739,7 @@ type Task_CreateTicketTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_CreateTicketTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4711,7 +4875,7 @@ type Task_BulkCreateTicketsTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_BulkCreateTicketsTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4847,7 +5011,7 @@ type Task_BulkGetTicketsTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_BulkGetTicketsTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -4983,7 +5147,7 @@ type Task_ListTicketSchemasTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_ListTicketSchemasTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -5121,7 +5285,7 @@ type Task_GetTicketTaskMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m Task_GetTicketTaskMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -5186,6 +5350,587 @@ var _ interface {
 	Cause() error
 	ErrorName() string
 } = Task_GetTicketTaskValidationError{}
+
+// Validate checks the field values on Task_ActionListSchemasTask with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *Task_ActionListSchemasTask) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on Task_ActionListSchemasTask with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the result is a list of violation errors wrapped in
+// Task_ActionListSchemasTaskMultiError, or nil if none found.
+func (m *Task_ActionListSchemasTask) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *Task_ActionListSchemasTask) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	for idx, item := range m.GetAnnotations() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, Task_ActionListSchemasTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, Task_ActionListSchemasTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return Task_ActionListSchemasTaskValidationError{
+					field:  fmt.Sprintf("Annotations[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
+	if len(errors) > 0 {
+		return Task_ActionListSchemasTaskMultiError(errors)
+	}
+
+	return nil
+}
+
+// Task_ActionListSchemasTaskMultiError is an error wrapping multiple
+// validation errors returned by Task_ActionListSchemasTask.ValidateAll() if
+// the designated constraints aren't met.
+type Task_ActionListSchemasTaskMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m Task_ActionListSchemasTaskMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m Task_ActionListSchemasTaskMultiError) AllErrors() []error { return m }
+
+// Task_ActionListSchemasTaskValidationError is the validation error returned
+// by Task_ActionListSchemasTask.Validate if the designated constraints aren't met.
+type Task_ActionListSchemasTaskValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e Task_ActionListSchemasTaskValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e Task_ActionListSchemasTaskValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e Task_ActionListSchemasTaskValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e Task_ActionListSchemasTaskValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e Task_ActionListSchemasTaskValidationError) ErrorName() string {
+	return "Task_ActionListSchemasTaskValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e Task_ActionListSchemasTaskValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sTask_ActionListSchemasTask.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = Task_ActionListSchemasTaskValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = Task_ActionListSchemasTaskValidationError{}
+
+// Validate checks the field values on Task_ActionGetSchemaTask with the rules
+// defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *Task_ActionGetSchemaTask) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on Task_ActionGetSchemaTask with the
+// rules defined in the proto definition for this message. If any rules are
+// violated, the result is a list of violation errors wrapped in
+// Task_ActionGetSchemaTaskMultiError, or nil if none found.
+func (m *Task_ActionGetSchemaTask) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *Task_ActionGetSchemaTask) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	// no validation rules for Name
+
+	for idx, item := range m.GetAnnotations() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, Task_ActionGetSchemaTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, Task_ActionGetSchemaTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return Task_ActionGetSchemaTaskValidationError{
+					field:  fmt.Sprintf("Annotations[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
+	if len(errors) > 0 {
+		return Task_ActionGetSchemaTaskMultiError(errors)
+	}
+
+	return nil
+}
+
+// Task_ActionGetSchemaTaskMultiError is an error wrapping multiple validation
+// errors returned by Task_ActionGetSchemaTask.ValidateAll() if the designated
+// constraints aren't met.
+type Task_ActionGetSchemaTaskMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m Task_ActionGetSchemaTaskMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m Task_ActionGetSchemaTaskMultiError) AllErrors() []error { return m }
+
+// Task_ActionGetSchemaTaskValidationError is the validation error returned by
+// Task_ActionGetSchemaTask.Validate if the designated constraints aren't met.
+type Task_ActionGetSchemaTaskValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e Task_ActionGetSchemaTaskValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e Task_ActionGetSchemaTaskValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e Task_ActionGetSchemaTaskValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e Task_ActionGetSchemaTaskValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e Task_ActionGetSchemaTaskValidationError) ErrorName() string {
+	return "Task_ActionGetSchemaTaskValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e Task_ActionGetSchemaTaskValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sTask_ActionGetSchemaTask.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = Task_ActionGetSchemaTaskValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = Task_ActionGetSchemaTaskValidationError{}
+
+// Validate checks the field values on Task_ActionInvokeTask with the rules
+// defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *Task_ActionInvokeTask) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on Task_ActionInvokeTask with the rules
+// defined in the proto definition for this message. If any rules are
+// violated, the result is a list of violation errors wrapped in
+// Task_ActionInvokeTaskMultiError, or nil if none found.
+func (m *Task_ActionInvokeTask) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *Task_ActionInvokeTask) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	// no validation rules for Name
+
+	if all {
+		switch v := interface{}(m.GetArgs()).(type) {
+		case interface{ ValidateAll() error }:
+			if err := v.ValidateAll(); err != nil {
+				errors = append(errors, Task_ActionInvokeTaskValidationError{
+					field:  "Args",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		case interface{ Validate() error }:
+			if err := v.Validate(); err != nil {
+				errors = append(errors, Task_ActionInvokeTaskValidationError{
+					field:  "Args",
+					reason: "embedded message failed validation",
+					cause:  err,
+				})
+			}
+		}
+	} else if v, ok := interface{}(m.GetArgs()).(interface{ Validate() error }); ok {
+		if err := v.Validate(); err != nil {
+			return Task_ActionInvokeTaskValidationError{
+				field:  "Args",
+				reason: "embedded message failed validation",
+				cause:  err,
+			}
+		}
+	}
+
+	for idx, item := range m.GetAnnotations() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, Task_ActionInvokeTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, Task_ActionInvokeTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return Task_ActionInvokeTaskValidationError{
+					field:  fmt.Sprintf("Annotations[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
+	if len(errors) > 0 {
+		return Task_ActionInvokeTaskMultiError(errors)
+	}
+
+	return nil
+}
+
+// Task_ActionInvokeTaskMultiError is an error wrapping multiple validation
+// errors returned by Task_ActionInvokeTask.ValidateAll() if the designated
+// constraints aren't met.
+type Task_ActionInvokeTaskMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m Task_ActionInvokeTaskMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m Task_ActionInvokeTaskMultiError) AllErrors() []error { return m }
+
+// Task_ActionInvokeTaskValidationError is the validation error returned by
+// Task_ActionInvokeTask.Validate if the designated constraints aren't met.
+type Task_ActionInvokeTaskValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e Task_ActionInvokeTaskValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e Task_ActionInvokeTaskValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e Task_ActionInvokeTaskValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e Task_ActionInvokeTaskValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e Task_ActionInvokeTaskValidationError) ErrorName() string {
+	return "Task_ActionInvokeTaskValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e Task_ActionInvokeTaskValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sTask_ActionInvokeTask.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = Task_ActionInvokeTaskValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = Task_ActionInvokeTaskValidationError{}
+
+// Validate checks the field values on Task_ActionStatusTask with the rules
+// defined in the proto definition for this message. If any rules are
+// violated, the first error encountered is returned, or nil if there are no violations.
+func (m *Task_ActionStatusTask) Validate() error {
+	return m.validate(false)
+}
+
+// ValidateAll checks the field values on Task_ActionStatusTask with the rules
+// defined in the proto definition for this message. If any rules are
+// violated, the result is a list of violation errors wrapped in
+// Task_ActionStatusTaskMultiError, or nil if none found.
+func (m *Task_ActionStatusTask) ValidateAll() error {
+	return m.validate(true)
+}
+
+func (m *Task_ActionStatusTask) validate(all bool) error {
+	if m == nil {
+		return nil
+	}
+
+	var errors []error
+
+	// no validation rules for Name
+
+	// no validation rules for Id
+
+	for idx, item := range m.GetAnnotations() {
+		_, _ = idx, item
+
+		if all {
+			switch v := interface{}(item).(type) {
+			case interface{ ValidateAll() error }:
+				if err := v.ValidateAll(); err != nil {
+					errors = append(errors, Task_ActionStatusTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			case interface{ Validate() error }:
+				if err := v.Validate(); err != nil {
+					errors = append(errors, Task_ActionStatusTaskValidationError{
+						field:  fmt.Sprintf("Annotations[%v]", idx),
+						reason: "embedded message failed validation",
+						cause:  err,
+					})
+				}
+			}
+		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
+			if err := v.Validate(); err != nil {
+				return Task_ActionStatusTaskValidationError{
+					field:  fmt.Sprintf("Annotations[%v]", idx),
+					reason: "embedded message failed validation",
+					cause:  err,
+				}
+			}
+		}
+
+	}
+
+	if len(errors) > 0 {
+		return Task_ActionStatusTaskMultiError(errors)
+	}
+
+	return nil
+}
+
+// Task_ActionStatusTaskMultiError is an error wrapping multiple validation
+// errors returned by Task_ActionStatusTask.ValidateAll() if the designated
+// constraints aren't met.
+type Task_ActionStatusTaskMultiError []error
+
+// Error returns a concatenation of all the error messages it wraps.
+func (m Task_ActionStatusTaskMultiError) Error() string {
+	msgs := make([]string, 0, len(m))
+	for _, err := range m {
+		msgs = append(msgs, err.Error())
+	}
+	return strings.Join(msgs, "; ")
+}
+
+// AllErrors returns a list of validation violation errors.
+func (m Task_ActionStatusTaskMultiError) AllErrors() []error { return m }
+
+// Task_ActionStatusTaskValidationError is the validation error returned by
+// Task_ActionStatusTask.Validate if the designated constraints aren't met.
+type Task_ActionStatusTaskValidationError struct {
+	field  string
+	reason string
+	cause  error
+	key    bool
+}
+
+// Field function returns field value.
+func (e Task_ActionStatusTaskValidationError) Field() string { return e.field }
+
+// Reason function returns reason value.
+func (e Task_ActionStatusTaskValidationError) Reason() string { return e.reason }
+
+// Cause function returns cause value.
+func (e Task_ActionStatusTaskValidationError) Cause() error { return e.cause }
+
+// Key function returns key value.
+func (e Task_ActionStatusTaskValidationError) Key() bool { return e.key }
+
+// ErrorName returns error name.
+func (e Task_ActionStatusTaskValidationError) ErrorName() string {
+	return "Task_ActionStatusTaskValidationError"
+}
+
+// Error satisfies the builtin error interface
+func (e Task_ActionStatusTaskValidationError) Error() string {
+	cause := ""
+	if e.cause != nil {
+		cause = fmt.Sprintf(" | caused by: %v", e.cause)
+	}
+
+	key := ""
+	if e.key {
+		key = "key for "
+	}
+
+	return fmt.Sprintf(
+		"invalid %sTask_ActionStatusTask.%s: %s%s",
+		key,
+		e.field,
+		e.reason,
+		cause)
+}
+
+var _ error = Task_ActionStatusTaskValidationError{}
+
+var _ interface {
+	Field() string
+	Reason() string
+	Key() bool
+	Cause() error
+	ErrorName() string
+} = Task_ActionStatusTaskValidationError{}
 
 // Validate checks the field values on BatonServiceHelloRequest_BuildInfo with
 // the rules defined in the proto definition for this message. If any rules
@@ -5258,7 +6003,7 @@ type BatonServiceHelloRequest_BuildInfoMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceHelloRequest_BuildInfoMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -5449,7 +6194,7 @@ type BatonServiceHelloRequest_OSInfoMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceHelloRequest_OSInfoMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -5622,7 +6367,7 @@ type BatonServiceUploadAssetRequest_UploadMetadataMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceUploadAssetRequest_UploadMetadataMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -5744,7 +6489,7 @@ type BatonServiceUploadAssetRequest_UploadDataMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceUploadAssetRequest_UploadDataMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -5906,7 +6651,7 @@ type BatonServiceUploadAssetRequest_UploadEOFMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceUploadAssetRequest_UploadEOFMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -6087,7 +6832,7 @@ type BatonServiceFinishTaskRequest_ErrorMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceFinishTaskRequest_ErrorMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -6266,7 +7011,7 @@ type BatonServiceFinishTaskRequest_SuccessMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m BatonServiceFinishTaskRequest_SuccessMultiError) Error() string {
-	var msgs []string
+	msgs := make([]string, 0, len(m))
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}

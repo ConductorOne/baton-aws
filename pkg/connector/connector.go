@@ -45,6 +45,7 @@ type Config struct {
 	SCIMToken               string
 	SCIMEndpoint            string
 	SCIMEnabled             bool
+	SyncSecrets             bool
 }
 
 type AWS struct {
@@ -78,6 +79,8 @@ type AWS struct {
 	ssoSCIMClient       *awsIdentityCenterSCIMClient
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
+
+	syncSecrets bool
 }
 
 func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
@@ -226,6 +229,7 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		_onceCallingConfig:      map[string]*sync.Once{},
 		_callingConfig:          map[string]awsSdk.Config{},
 		_callingConfigError:     map[string]error{},
+		syncSecrets:             config.SyncSecrets,
 	}
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
@@ -356,6 +360,11 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.orgsEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
 		rs = append(rs, accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient))
+	}
+
+	if c.syncSecrets {
+		l.Debug("syncSecrets. creating secretBuilder")
+		rs = append(rs, secretBuilder(c.iamClient))
 	}
 	return rs
 }

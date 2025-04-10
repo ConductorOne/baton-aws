@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"golang.org/x/sync/semaphore"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -140,8 +141,11 @@ func (c *connectorRunner) run(ctx context.Context) error {
 			// Acquire a worker slot before we call Next() so we don't claim a task before we can actually process it.
 			err = sem.Acquire(ctx, 1)
 			if err != nil {
-				// Any error returned from Acquire() is due to the context being cancelled.
-				sem.Release(1)
+				if errors.Is(err, context.Canceled) {
+					// Any error returned from Acquire() is due to the context being cancelled.
+					// Except for some tests where error is context deadline exceeded
+					sem.Release(1)
+				}
 				return c.handleContextCancel(ctx)
 			}
 			l.Debug("runner: worker claimed, checking for next task")
@@ -260,8 +264,9 @@ type revokeConfig struct {
 }
 
 type createAccountConfig struct {
-	login string
-	email string
+	login   string
+	email   string
+	profile *structpb.Struct
 }
 
 type deleteResourceConfig struct {
@@ -278,27 +283,29 @@ type eventStreamConfig struct {
 }
 
 type runnerConfig struct {
-	rlCfg                   *ratelimitV1.RateLimiterConfig
-	rlDescriptors           []*ratelimitV1.RateLimitDescriptors_Entry
-	onDemand                bool
-	c1zPath                 string
-	clientAuth              bool
-	clientID                string
-	clientSecret            string
-	provisioningEnabled     bool
-	ticketingEnabled        bool
-	grantConfig             *grantConfig
-	revokeConfig            *revokeConfig
-	eventFeedConfig         *eventStreamConfig
-	tempDir                 string
-	createAccountConfig     *createAccountConfig
-	deleteResourceConfig    *deleteResourceConfig
-	rotateCredentialsConfig *rotateCredentialsConfig
-	createTicketConfig      *createTicketConfig
-	bulkCreateTicketConfig  *bulkCreateTicketConfig
-	listTicketSchemasConfig *listTicketSchemasConfig
-	getTicketConfig         *getTicketConfig
-	skipFullSync            bool
+	rlCfg                               *ratelimitV1.RateLimiterConfig
+	rlDescriptors                       []*ratelimitV1.RateLimitDescriptors_Entry
+	onDemand                            bool
+	c1zPath                             string
+	clientAuth                          bool
+	clientID                            string
+	clientSecret                        string
+	provisioningEnabled                 bool
+	ticketingEnabled                    bool
+	grantConfig                         *grantConfig
+	revokeConfig                        *revokeConfig
+	eventFeedConfig                     *eventStreamConfig
+	tempDir                             string
+	createAccountConfig                 *createAccountConfig
+	deleteResourceConfig                *deleteResourceConfig
+	rotateCredentialsConfig             *rotateCredentialsConfig
+	createTicketConfig                  *createTicketConfig
+	bulkCreateTicketConfig              *bulkCreateTicketConfig
+	listTicketSchemasConfig             *listTicketSchemasConfig
+	getTicketConfig                     *getTicketConfig
+	skipFullSync                        bool
+	externalResourceC1Z                 string
+	externalResourceEntitlementIdFilter string
 }
 
 // WithRateLimiterConfig sets the RateLimiterConfig for a runner.
@@ -408,13 +415,14 @@ func WithOnDemandRevoke(c1zPath string, grantID string) Option {
 	}
 }
 
-func WithOnDemandCreateAccount(c1zPath string, login string, email string) Option {
+func WithOnDemandCreateAccount(c1zPath string, login string, email string, profile *structpb.Struct) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.onDemand = true
 		cfg.c1zPath = c1zPath
 		cfg.createAccountConfig = &createAccountConfig{
-			login: login,
-			email: email,
+			login:   login,
+			email:   email,
+			profile: profile,
 		}
 		return nil
 	}
@@ -525,6 +533,20 @@ func WithTempDir(tempDir string) Option {
 	}
 }
 
+func WithExternalResourceC1Z(externalResourceC1Z string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.externalResourceC1Z = externalResourceC1Z
+		return nil
+	}
+}
+
+func WithExternalResourceEntitlementFilter(entitlementId string) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.externalResourceEntitlementIdFilter = entitlementId
+		return nil
+	}
+}
+
 // NewConnectorRunner creates a new connector runner.
 func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Option) (*connectorRunner, error) {
 	runner := &connectorRunner{}
@@ -583,7 +605,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 			tm = local.NewRevoker(ctx, cfg.c1zPath, cfg.revokeConfig.grantID)
 
 		case cfg.createAccountConfig != nil:
-			tm = local.NewCreateAccountManager(ctx, cfg.c1zPath, cfg.createAccountConfig.login, cfg.createAccountConfig.email)
+			tm = local.NewCreateAccountManager(ctx, cfg.c1zPath, cfg.createAccountConfig.login, cfg.createAccountConfig.email, cfg.createAccountConfig.profile)
 
 		case cfg.deleteResourceConfig != nil:
 			tm = local.NewResourceDeleter(ctx, cfg.c1zPath, cfg.deleteResourceConfig.resourceId, cfg.deleteResourceConfig.resourceType)
@@ -602,7 +624,10 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		case cfg.bulkCreateTicketConfig != nil:
 			tm = local.NewBulkTicket(ctx, cfg.bulkCreateTicketConfig.templatePath)
 		default:
-			tm, err = local.NewSyncer(ctx, cfg.c1zPath, local.WithTmpDir(cfg.tempDir))
+			tm, err = local.NewSyncer(ctx, cfg.c1zPath,
+				local.WithTmpDir(cfg.tempDir),
+				local.WithExternalResourceC1Z(cfg.externalResourceC1Z),
+				local.WithExternalResourceEntitlementIdFilter(cfg.externalResourceEntitlementIdFilter))
 			if err != nil {
 				return nil, err
 			}
@@ -614,7 +639,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		return runner, nil
 	}
 
-	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir, cfg.skipFullSync)
+	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir, cfg.skipFullSync, cfg.externalResourceC1Z, cfg.externalResourceEntitlementIdFilter)
 	if err != nil {
 		return nil, err
 	}
