@@ -133,7 +133,7 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 	res, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 	if err != nil {
 		logger.Error("Error listing access keys", zap.Error(err))
-		return nil
+		return user.PasswordLastUsed
 	}
 
 	accessKeyIDs := []string{}
@@ -148,7 +148,7 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 		})
 		if err != nil {
 			logger.Error("Error getting access key last used", zap.String("access_key_id", accessKeyId), zap.Error(err))
-			return nil
+			continue
 		}
 		if accessKeyLastUsed.AccessKeyLastUsed == nil ||
 			accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate == nil ||
