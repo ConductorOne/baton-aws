@@ -136,27 +136,14 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 		return user.PasswordLastUsed
 	}
 
-	accessKeyIDs := []string{}
-	for _, accessKey := range res.AccessKeyMetadata {
-		accessKeyIDs = append(accessKeyIDs, awsSdk.ToString(accessKey.AccessKeyId))
-	}
-
-	accessKeyLastUsedDates := make([]time.Time, 0, len(accessKeyIDs))
-	for _, accessKeyId := range accessKeyIDs {
-		accessKeyLastUsed, err := client.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
-			AccessKeyId: awsSdk.String(accessKeyId),
-		})
+	accessKeyLastUsedDates := make([]time.Time, 0, len(res.AccessKeyMetadata))
+	for _, key := range res.AccessKeyMetadata {
+		accessKeyLastUsed, err := getAccessKeyLastUsedDate(ctx, client, *key.AccessKeyId)
 		if err != nil {
-			logger.Error("Error getting access key last used", zap.String("access_key_id", accessKeyId), zap.Error(err))
+			logger.Error("Error getting access key last used", zap.String("access_key_id", *key.AccessKeyId), zap.Error(err))
 			continue
 		}
-		if accessKeyLastUsed.AccessKeyLastUsed == nil ||
-			accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate == nil ||
-			accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate.IsZero() {
-			continue
-		}
-
-		accessKeyLastUsedDates = append(accessKeyLastUsedDates, *accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate)
+		accessKeyLastUsedDates = append(accessKeyLastUsedDates, *accessKeyLastUsed)
 	}
 
 	// check if access key was the last one to be used
