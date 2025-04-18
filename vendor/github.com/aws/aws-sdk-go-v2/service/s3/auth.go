@@ -8,18 +8,16 @@ import (
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	smithy "github.com/aws/smithy-go"
 	smithyauth "github.com/aws/smithy-go/auth"
-	"github.com/aws/smithy-go/metrics"
 	"github.com/aws/smithy-go/middleware"
-	"github.com/aws/smithy-go/tracing"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-func bindAuthParamsRegion(_ interface{}, params *AuthResolverParameters, _ interface{}, options Options) {
+func bindAuthParamsRegion(params *AuthResolverParameters, _ interface{}, options Options) {
 	params.Region = options.Region
 }
 
-func bindAuthEndpointParams(ctx context.Context, params *AuthResolverParameters, input interface{}, options Options) {
-	params.endpointParams = bindEndpointParams(ctx, input, options)
+func bindAuthEndpointParams(params *AuthResolverParameters, input interface{}, options Options) {
+	params.endpointParams = bindEndpointParams(input, options)
 }
 
 type setLegacyContextSigningOptionsMiddleware struct {
@@ -100,13 +98,13 @@ type AuthResolverParameters struct {
 	Region string
 }
 
-func bindAuthResolverParams(ctx context.Context, operation string, input interface{}, options Options) *AuthResolverParameters {
+func bindAuthResolverParams(operation string, input interface{}, options Options) *AuthResolverParameters {
 	params := &AuthResolverParameters{
 		Operation: operation,
 	}
 
-	bindAuthEndpointParams(ctx, params, input, options)
-	bindAuthParamsRegion(ctx, params, input, options)
+	bindAuthEndpointParams(params, input, options)
+	bindAuthParamsRegion(params, input, options)
 
 	return params
 }
@@ -181,10 +179,7 @@ func (*resolveAuthSchemeMiddleware) ID() string {
 func (m *resolveAuthSchemeMiddleware) HandleFinalize(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
 	out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
 ) {
-	_, span := tracing.StartSpan(ctx, "ResolveAuthScheme")
-	defer span.End()
-
-	params := bindAuthResolverParams(ctx, m.operation, getOperationInput(ctx), m.options)
+	params := bindAuthResolverParams(m.operation, getOperationInput(ctx), m.options)
 	options, err := m.options.AuthSchemeResolver.ResolveAuthSchemes(ctx, params)
 	if err != nil {
 		return out, metadata, fmt.Errorf("resolve auth scheme: %w", err)
@@ -196,9 +191,6 @@ func (m *resolveAuthSchemeMiddleware) HandleFinalize(ctx context.Context, in mid
 	}
 
 	ctx = setResolvedAuthScheme(ctx, scheme)
-
-	span.SetProperty("auth.scheme_id", scheme.Scheme.SchemeID())
-	span.End()
 	return next.HandleFinalize(ctx, in)
 }
 
@@ -258,10 +250,7 @@ func (*getIdentityMiddleware) ID() string {
 func (m *getIdentityMiddleware) HandleFinalize(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
 	out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
 ) {
-	innerCtx, span := tracing.StartSpan(ctx, "GetIdentity")
-	defer span.End()
-
-	rscheme := getResolvedAuthScheme(innerCtx)
+	rscheme := getResolvedAuthScheme(ctx)
 	if rscheme == nil {
 		return out, metadata, fmt.Errorf("no resolved auth scheme")
 	}
@@ -271,20 +260,12 @@ func (m *getIdentityMiddleware) HandleFinalize(ctx context.Context, in middlewar
 		return out, metadata, fmt.Errorf("no identity resolver")
 	}
 
-	identity, err := timeOperationMetric(ctx, "client.call.resolve_identity_duration",
-		func() (smithyauth.Identity, error) {
-			return resolver.GetIdentity(innerCtx, rscheme.IdentityProperties)
-		},
-		func(o *metrics.RecordMetricOptions) {
-			o.Properties.Set("auth.scheme_id", rscheme.Scheme.SchemeID())
-		})
+	identity, err := resolver.GetIdentity(ctx, rscheme.IdentityProperties)
 	if err != nil {
 		return out, metadata, fmt.Errorf("get identity: %w", err)
 	}
 
 	ctx = setIdentity(ctx, identity)
-
-	span.End()
 	return next.HandleFinalize(ctx, in)
 }
 
@@ -300,7 +281,6 @@ func getIdentity(ctx context.Context) smithyauth.Identity {
 }
 
 type signRequestMiddleware struct {
-	options Options
 }
 
 func (*signRequestMiddleware) ID() string {
@@ -310,9 +290,6 @@ func (*signRequestMiddleware) ID() string {
 func (m *signRequestMiddleware) HandleFinalize(ctx context.Context, in middleware.FinalizeInput, next middleware.FinalizeHandler) (
 	out middleware.FinalizeOutput, metadata middleware.Metadata, err error,
 ) {
-	_, span := tracing.StartSpan(ctx, "SignRequest")
-	defer span.End()
-
 	req, ok := in.Request.(*smithyhttp.Request)
 	if !ok {
 		return out, metadata, fmt.Errorf("unexpected transport type %T", in.Request)
@@ -333,15 +310,9 @@ func (m *signRequestMiddleware) HandleFinalize(ctx context.Context, in middlewar
 		return out, metadata, fmt.Errorf("no signer")
 	}
 
-	_, err = timeOperationMetric(ctx, "client.call.signing_duration", func() (any, error) {
-		return nil, signer.SignRequest(ctx, req, identity, rscheme.SignerProperties)
-	}, func(o *metrics.RecordMetricOptions) {
-		o.Properties.Set("auth.scheme_id", rscheme.Scheme.SchemeID())
-	})
-	if err != nil {
+	if err := signer.SignRequest(ctx, req, identity, rscheme.SignerProperties); err != nil {
 		return out, metadata, fmt.Errorf("sign request: %w", err)
 	}
 
-	span.End()
 	return next.HandleFinalize(ctx, in)
 }

@@ -6,7 +6,6 @@ package libc // import "modernc.org/libc"
 
 import (
 	"strings"
-	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -242,11 +241,12 @@ func Xtime(t *TLS, tloc uintptr) types.Time_t {
 	if __ccgo_strace {
 		trc("t=%v tloc=%v, (%v:)", t, tloc, origin(2))
 	}
-	n := time.Now().UTC().Unix()
-	if tloc != 0 {
-		*(*types.Time_t)(unsafe.Pointer(tloc)) = types.Time_t(n)
-	}
-	return types.Time_t(n)
+	panic(todo(""))
+	// n := time.Now().UTC().Unix()
+	// if tloc != 0 {
+	// 	*(*types.Time_t)(unsafe.Pointer(tloc)) = types.Time_t(n)
+	// }
+	// return types.Time_t(n)
 }
 
 // // int getrlimit(int resource, struct rlimit *rlim);

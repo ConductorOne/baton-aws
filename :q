@@ -1,0 +1,28 @@
+[BB-546] Add account provisioning capabilities to AWS connector
+
+Add support for creating AWS SSO users via the AccountManager interface
+
+- Implement CreateAccount method to provision users via SCIM API
+- Implement CreateAccountCapabilityDetails method to specify supported options
+- Use NO_PASSWORD option for AWS SSO which sends welcome emails by default
+- Add proper name extraction from email or profile data
+
+🤖 Generated with [Claude Code](https://claude.ai/code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+
+# Please enter the commit message for your changes. Lines starting
+# with '#' will be ignored, and an empty message aborts the commit.
+#
+# Author:    Bjorn Tipling <bjorn.tipling@conductorone.com>
+#
+# interactive rebase in progress; onto 07a1446
+# Last command done (1 command done):
+#    pick df18dc2 [BB-546] Add account provisioning capabilities to AWS connector
+# No commands remaining.
+# You are currently rebasing branch 'BB-546-aws-account-provisioning' on '07a1446'.
+#
+# Changes to be committed:
+#	modified:   go.mod
+#	modified:   pkg/connector/sso_user.go
+#

@@ -49,15 +49,8 @@ func (r *assetsTable) Schema() (string, []interface{}) {
 	}
 }
 
-func (r *assetsTable) Migrations(ctx context.Context, db *goqu.Database) error {
-	return nil
-}
-
 // PutAsset stores the given asset in the database.
 func (c *C1File) PutAsset(ctx context.Context, assetRef *v2.AssetRef, contentType string, data []byte) error {
-	ctx, span := tracer.Start(ctx, "C1File.PutAsset")
-	defer span.End()
-
 	l := ctxzap.Extract(ctx)
 
 	if len(data) == 0 {
@@ -105,9 +98,6 @@ func (c *C1File) PutAsset(ctx context.Context, assetRef *v2.AssetRef, contentTyp
 // GetAsset fetches the specified asset from the database, and returns the content type and an io.Reader for the caller to
 // read the asset from.
 func (c *C1File) GetAsset(ctx context.Context, request *v2.AssetServiceGetAssetRequest) (string, io.Reader, error) {
-	ctx, span := tracer.Start(ctx, "C1File.GetAsset")
-	defer span.End()
-
 	err := c.validateDb(ctx)
 	if err != nil {
 		return "", nil, err

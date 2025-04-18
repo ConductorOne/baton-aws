@@ -3,7 +3,6 @@ package annotations
 import (
 	"fmt"
 
-	c1zpb "github.com/conductorone/baton-sdk/pb/c1/c1z/v1"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
@@ -85,22 +84,6 @@ func (a *Annotations) Contains(msg proto.Message) bool {
 	return false
 }
 
-func (a *Annotations) ContainsAny(msgs ...proto.Message) bool {
-	if len(msgs) == 0 {
-		return false
-	}
-
-	for _, v := range *a {
-		for _, msg := range msgs {
-			if v.MessageIs(msg) {
-				return true
-			}
-		}
-	}
-
-	return false
-}
-
 // Pick checks if the message is in the annotations slice.
 func (a *Annotations) Pick(needle proto.Message) (bool, error) {
 	if needle == nil {
@@ -122,17 +105,4 @@ func (a *Annotations) Pick(needle proto.Message) (bool, error) {
 func (a *Annotations) WithRateLimiting(rateLimit *v2.RateLimitDescription) *Annotations {
 	a.Update(rateLimit)
 	return a
-}
-
-func GetSyncIdFromAnnotations(annos Annotations) (string, error) {
-	syncDetails := &c1zpb.SyncDetails{}
-	ok, err := annos.Pick(syncDetails)
-	if err != nil {
-		return "", err
-	}
-	if ok {
-		return syncDetails.GetId(), nil
-	}
-
-	return "", nil
 }

@@ -69,40 +69,6 @@ func (m *GrantsReaderServiceGetGrantRequest) validate(all bool) error {
 		errors = append(errors, err)
 	}
 
-	for idx, item := range m.GetAnnotations() {
-		_, _ = idx, item
-
-		if all {
-			switch v := interface{}(item).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, GrantsReaderServiceGetGrantRequestValidationError{
-						field:  fmt.Sprintf("Annotations[%v]", idx),
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, GrantsReaderServiceGetGrantRequestValidationError{
-						field:  fmt.Sprintf("Annotations[%v]", idx),
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return GrantsReaderServiceGetGrantRequestValidationError{
-					field:  fmt.Sprintf("Annotations[%v]", idx),
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	}
-
 	if len(errors) > 0 {
 		return GrantsReaderServiceGetGrantRequestMultiError(errors)
 	}
@@ -118,7 +84,7 @@ type GrantsReaderServiceGetGrantRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m GrantsReaderServiceGetGrantRequestMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -252,7 +218,7 @@ type GrantsReaderServiceGetGrantResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m GrantsReaderServiceGetGrantResponseMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -492,7 +458,7 @@ type GrantsReaderServiceListGrantsForEntitlementRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m GrantsReaderServiceListGrantsForEntitlementRequestMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -655,7 +621,7 @@ type GrantsReaderServiceListGrantsForEntitlementResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m GrantsReaderServiceListGrantsForEntitlementResponseMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -848,7 +814,7 @@ type GrantsReaderServiceListGrantsForResourceTypeRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m GrantsReaderServiceListGrantsForResourceTypeRequestMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -1011,7 +977,7 @@ type GrantsReaderServiceListGrantsForResourceTypeResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m GrantsReaderServiceListGrantsForResourceTypeResponseMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}

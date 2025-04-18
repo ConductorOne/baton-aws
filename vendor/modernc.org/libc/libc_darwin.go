@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	gotime "time"
 	"unicode"
 	"unsafe"
@@ -50,14 +51,9 @@ const (
 // )
 
 type (
-	syscallErrno = unix.Errno
-	long         = types.User_long_t
-	ulong        = types.User_ulong_t
+	long  = types.User_long_t
+	ulong = types.User_ulong_t
 )
-
-type pthreadAttr struct {
-	detachState int32
-}
 
 // // Keep these outside of the var block otherwise go generate will miss them.
 var X__stderrp = Xstdout
@@ -456,11 +452,9 @@ func Xsysconf(t *TLS, name int32) long {
 		return long(unix.Getpagesize())
 	case unistd.X_SC_NPROCESSORS_ONLN:
 		return long(runtime.NumCPU())
-	case unistd.X_SC_GETPW_R_SIZE_MAX:
-		return 128
 	}
 
-	panic(todo("", name))
+	panic(todo(""))
 }
 
 // int close(int fd);
@@ -1098,7 +1092,7 @@ func Xfileno(t *TLS, stream uintptr) int32 {
 	return -1
 }
 
-func newFtsent(t *TLS, info int, path string, stat *unix.Stat_t, err syscallErrno) (r *fts.FTSENT) {
+func newFtsent(t *TLS, info int, path string, stat *unix.Stat_t, err syscall.Errno) (r *fts.FTSENT) {
 	var statp uintptr
 	if stat != nil {
 		statp = Xmalloc(t, types.Size_t(unsafe.Sizeof(unix.Stat_t{})))
@@ -1122,7 +1116,7 @@ func newFtsent(t *TLS, info int, path string, stat *unix.Stat_t, err syscallErrn
 	}
 }
 
-func newCFtsent(t *TLS, info int, path string, stat *unix.Stat_t, err syscallErrno) uintptr {
+func newCFtsent(t *TLS, info int, path string, stat *unix.Stat_t, err syscall.Errno) uintptr {
 	p := Xcalloc(t, 1, types.Size_t(unsafe.Sizeof(fts.FTSENT{})))
 	if p == 0 {
 		panic("OOM")
@@ -1513,7 +1507,7 @@ func Xabort(t *TLS) {
 	(*signal.Sigaction)(unsafe.Pointer(p)).F__sigaction_u.F__sa_handler = signal.SIG_DFL
 	Xsigaction(t, signal.SIGABRT, p, 0)
 	Xfree(t, p)
-	unix.Kill(unix.Getpid(), unix.Signal(signal.SIGABRT))
+	unix.Kill(unix.Getpid(), syscall.Signal(signal.SIGABRT))
 	panic(todo("unrechable"))
 }
 
@@ -1765,7 +1759,7 @@ func Xgetservbyname(t *TLS, name, proto uintptr) uintptr {
 // //TODO- 	return Xreaddir(t, dir)
 // //TODO- }
 //
-// func __syscall(r, _ uintptr, errno syscallErrno) long {
+// func __syscall(r, _ uintptr, errno syscall.Errno) long {
 // 	if errno != 0 {
 // 		return long(-errno)
 // 	}
@@ -2055,7 +2049,7 @@ func Xpipe(t *TLS, pipefd uintptr) int32 {
 		trc("t=%v pipefd=%v, (%v:)", t, pipefd, origin(2))
 	}
 	var a [2]int
-	if err := unix.Pipe(a[:]); err != nil {
+	if err := syscall.Pipe(a[:]); err != nil {
 		if dmesgs {
 			dmesg("%v: %v FAIL", origin(1), err)
 		}
@@ -2164,7 +2158,7 @@ func X__ccgo_pthreadAttrGetDetachState(tls *TLS, a uintptr) int32 {
 	if __ccgo_strace {
 		trc("tls=%v a=%v, (%v:)", tls, a, origin(2))
 	}
-	return (*pthreadAttr)(unsafe.Pointer(a)).detachState
+	panic(todo(""))
 }
 
 func Xpthread_attr_getdetachstate(tls *TLS, a uintptr, state uintptr) int32 {
@@ -2234,39 +2228,39 @@ func Xpause(t *TLS) int32 {
 	}
 	c := make(chan os.Signal)
 	gosignal.Notify(c,
-		unix.SIGABRT,
-		unix.SIGALRM,
-		unix.SIGBUS,
-		unix.SIGCHLD,
-		unix.SIGCONT,
-		unix.SIGFPE,
-		unix.SIGHUP,
-		unix.SIGILL,
-		// unix.SIGINT,
-		unix.SIGIO,
-		unix.SIGIOT,
-		unix.SIGKILL,
-		unix.SIGPIPE,
-		unix.SIGPROF,
-		unix.SIGQUIT,
-		unix.SIGSEGV,
-		unix.SIGSTOP,
-		unix.SIGSYS,
-		unix.SIGTERM,
-		unix.SIGTRAP,
-		unix.SIGTSTP,
-		unix.SIGTTIN,
-		unix.SIGTTOU,
-		unix.SIGURG,
-		unix.SIGUSR1,
-		unix.SIGUSR2,
-		unix.SIGVTALRM,
-		unix.SIGWINCH,
-		unix.SIGXCPU,
-		unix.SIGXFSZ,
+		syscall.SIGABRT,
+		syscall.SIGALRM,
+		syscall.SIGBUS,
+		syscall.SIGCHLD,
+		syscall.SIGCONT,
+		syscall.SIGFPE,
+		syscall.SIGHUP,
+		syscall.SIGILL,
+		// syscall.SIGINT,
+		syscall.SIGIO,
+		syscall.SIGIOT,
+		syscall.SIGKILL,
+		syscall.SIGPIPE,
+		syscall.SIGPROF,
+		syscall.SIGQUIT,
+		syscall.SIGSEGV,
+		syscall.SIGSTOP,
+		syscall.SIGSYS,
+		syscall.SIGTERM,
+		syscall.SIGTRAP,
+		syscall.SIGTSTP,
+		syscall.SIGTTIN,
+		syscall.SIGTTOU,
+		syscall.SIGURG,
+		syscall.SIGUSR1,
+		syscall.SIGUSR2,
+		syscall.SIGVTALRM,
+		syscall.SIGWINCH,
+		syscall.SIGXCPU,
+		syscall.SIGXFSZ,
 	)
 	switch <-c {
-	case unix.SIGINT:
+	case syscall.SIGINT:
 		panic(todo(""))
 	default:
 		t.setErrno(errno.EINTR)
@@ -2503,18 +2497,4 @@ func Xsetrlimit(t *TLS, resource int32, rlim uintptr) int32 {
 	}
 
 	return 0
-}
-
-func X__fpclassifyd(tls *TLS, x float64) (r int32) {
-	return X__fpclassify(tls, x)
-}
-
-var Xin6addr_any = in6_addr{}
-
-func X__builtin_lround(tls *TLS, x float64) (r long) {
-	return Xlround(tls, x)
-}
-
-func Xlround(tls *TLS, x float64) (r long) {
-	return long(Xround(tls, x))
 }

@@ -2,7 +2,9 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build unix && !(linux && (amd64 || arm64 || loong64 || ppc64le || s390x || riscv64 || 386 || arm))
+//go:build unix && !(linux && (amd64 || loong64))
+// +build unix
+// +build !linux !amd64,!loong64
 
 package libc // import "modernc.org/libc"
 
@@ -18,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	"unsafe"
 
@@ -55,21 +58,21 @@ func Xsignal(t *TLS, signum int32, handler uintptr) uintptr { //TODO use sigacti
 	signals[signum] = handler
 	switch handler {
 	case signal.SIG_DFL:
-		panic(todo("%v %#x", unix.Signal(signum), handler))
+		panic(todo("%v %#x", syscall.Signal(signum), handler))
 	case signal.SIG_IGN:
 		switch r {
 		case signal.SIG_DFL:
-			gosignal.Ignore(unix.Signal(signum)) //TODO
+			gosignal.Ignore(syscall.Signal(signum)) //TODO
 		case signal.SIG_IGN:
-			gosignal.Ignore(unix.Signal(signum))
+			gosignal.Ignore(syscall.Signal(signum))
 		default:
-			panic(todo("%v %#x", unix.Signal(signum), handler))
+			panic(todo("%v %#x", syscall.Signal(signum), handler))
 		}
 	default:
 		switch r {
 		case signal.SIG_DFL:
 			c := make(chan os.Signal, 1)
-			gosignal.Notify(c, unix.Signal(signum))
+			gosignal.Notify(c, syscall.Signal(signum))
 			go func() { //TODO mechanism to stop/cancel
 				for {
 					<-c
@@ -81,9 +84,9 @@ func Xsignal(t *TLS, signum int32, handler uintptr) uintptr { //TODO use sigacti
 				}
 			}()
 		case signal.SIG_IGN:
-			panic(todo("%v %#x", unix.Signal(signum), handler))
+			panic(todo("%v %#x", syscall.Signal(signum), handler))
 		default:
-			panic(todo("%v %#x", unix.Signal(signum), handler))
+			panic(todo("%v %#x", syscall.Signal(signum), handler))
 		}
 	}
 	return r

@@ -4,11 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	reader_v2 "github.com/conductorone/baton-sdk/pb/c1/reader/v2"
@@ -18,8 +15,6 @@ import (
 	c1zmanager "github.com/conductorone/baton-sdk/pkg/dotc1z/manager"
 	"github.com/conductorone/baton-sdk/pkg/types"
 )
-
-var tracer = otel.Tracer("baton-sdk/pkg.provisioner")
 
 type Provisioner struct {
 	dbPath    string
@@ -34,9 +29,8 @@ type Provisioner struct {
 
 	revokeGrantID string
 
-	createAccountLogin   string
-	createAccountEmail   string
-	createAccountProfile *structpb.Struct
+	createAccountLogin string
+	createAccountEmail string
 
 	deleteResourceID   string
 	deleteResourceType string
@@ -70,9 +64,6 @@ func makeCrypto(ctx context.Context) ([]byte, *v2.CredentialOptions, []*v2.Encry
 }
 
 func (p *Provisioner) Run(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.Run")
-	defer span.End()
-
 	switch {
 	case p.revokeGrantID != "":
 		return p.revoke(ctx)
@@ -90,9 +81,6 @@ func (p *Provisioner) Run(ctx context.Context) error {
 }
 
 func (p *Provisioner) loadStore(ctx context.Context) (connectorstore.Reader, error) {
-	ctx, span := tracer.Start(ctx, "Provisioner.loadStore")
-	defer span.End()
-
 	if p.store != nil {
 		return p.store, nil
 	}
@@ -115,9 +103,6 @@ func (p *Provisioner) loadStore(ctx context.Context) (connectorstore.Reader, err
 }
 
 func (p *Provisioner) Close(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.Close")
-	defer span.End()
-
 	var err error
 	if p.store != nil {
 		storeErr := p.store.Close()
@@ -143,9 +128,6 @@ func (p *Provisioner) Close(ctx context.Context) error {
 }
 
 func (p *Provisioner) grant(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.grant")
-	defer span.End()
-
 	store, err := p.loadStore(ctx)
 	if err != nil {
 		return err
@@ -156,18 +138,6 @@ func (p *Provisioner) grant(ctx context.Context) error {
 	})
 	if err != nil {
 		return err
-	}
-
-	entitlementResource, err := store.GetResource(ctx, &reader_v2.ResourcesReaderServiceGetResourceRequest{
-		ResourceId: entitlement.GetEntitlement().GetResource().GetId(),
-	})
-	if err != nil {
-		return err
-	}
-	entitlementResourceAnnos := entitlementResource.GetResource().GetAnnotations()
-	rAnnos := annotations.Annotations(entitlementResourceAnnos)
-	if rAnnos.Contains(&v2.BatonID{}) {
-		return errors.New("cannot grant entitlement on external resource")
 	}
 
 	principal, err := store.GetResource(ctx, &reader_v2.ResourcesReaderServiceGetResourceRequest{
@@ -202,9 +172,6 @@ func (p *Provisioner) grant(ctx context.Context) error {
 }
 
 func (p *Provisioner) revoke(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.revoke")
-	defer span.End()
-
 	store, err := p.loadStore(ctx)
 	if err != nil {
 		return err
@@ -230,19 +197,6 @@ func (p *Provisioner) revoke(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
-	entitlementResource, err := store.GetResource(ctx, &reader_v2.ResourcesReaderServiceGetResourceRequest{
-		ResourceId: entitlement.GetEntitlement().GetResource().GetId(),
-	})
-	if err != nil {
-		return err
-	}
-	entitlementResourceAnnos := entitlementResource.GetResource().GetAnnotations()
-	rAnnos := annotations.Annotations(entitlementResourceAnnos)
-	if rAnnos.Contains(&v2.BatonID{}) {
-		return errors.New("cannot revoke grant on external resource")
-	}
-
 	resource := &v2.Resource{
 		Id:          principal.Resource.Id,
 		DisplayName: principal.Resource.DisplayName,
@@ -269,9 +223,6 @@ func (p *Provisioner) revoke(ctx context.Context) error {
 }
 
 func (p *Provisioner) createAccount(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.createAccount")
-	defer span.End()
-
 	l := ctxzap.Extract(ctx)
 	var emails []*v2.AccountInfo_Email
 	if p.createAccountEmail != "" {
@@ -288,9 +239,8 @@ func (p *Provisioner) createAccount(ctx context.Context) error {
 
 	_, err = p.connector.CreateAccount(ctx, &v2.CreateAccountRequest{
 		AccountInfo: &v2.AccountInfo{
-			Emails:  emails,
-			Login:   p.createAccountLogin,
-			Profile: p.createAccountProfile,
+			Emails: emails,
+			Login:  p.createAccountLogin,
 		},
 		CredentialOptions: opts,
 		EncryptionConfigs: config,
@@ -305,9 +255,6 @@ func (p *Provisioner) createAccount(ctx context.Context) error {
 }
 
 func (p *Provisioner) deleteResource(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.deleteResource")
-	defer span.End()
-
 	_, err := p.connector.DeleteResource(ctx, &v2.DeleteResourceRequest{
 		ResourceId: &v2.ResourceId{
 			Resource:     p.deleteResourceID,
@@ -321,9 +268,6 @@ func (p *Provisioner) deleteResource(ctx context.Context) error {
 }
 
 func (p *Provisioner) rotateCredentials(ctx context.Context) error {
-	ctx, span := tracer.Start(ctx, "Provisioner.rotateCredentials")
-	defer span.End()
-
 	l := ctxzap.Extract(ctx)
 
 	_, opts, config, err := makeCrypto(ctx)
@@ -375,13 +319,12 @@ func NewResourceDeleter(c types.ConnectorClient, dbPath string, resourceId strin
 	}
 }
 
-func NewCreateAccountManager(c types.ConnectorClient, dbPath string, login string, email string, profile *structpb.Struct) *Provisioner {
+func NewCreateAccountManager(c types.ConnectorClient, dbPath string, login string, email string) *Provisioner {
 	return &Provisioner{
-		dbPath:               dbPath,
-		connector:            c,
-		createAccountLogin:   login,
-		createAccountEmail:   email,
-		createAccountProfile: profile,
+		dbPath:             dbPath,
+		connector:          c,
+		createAccountLogin: login,
+		createAccountEmail: email,
 	}
 }
 

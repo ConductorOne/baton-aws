@@ -10,9 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/conductorone/baton-sdk/pkg/synccompactor"
 	"golang.org/x/sync/semaphore"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -45,36 +43,20 @@ var ErrSigTerm = errors.New("context cancelled by process shutdown")
 
 // Run starts a connector and creates a new C1Z file.
 func (c *connectorRunner) Run(ctx context.Context) error {
-	l := ctxzap.Extract(ctx)
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(ErrSigTerm)
 
 	if c.tasks.ShouldDebug() && c.debugFile == nil {
 		var err error
-		tempDir := c.tasks.GetTempDir()
-		if tempDir == "" {
-			wd, err := os.Getwd()
-			if err != nil {
-				l.Warn("unable to get the current working directory", zap.Error(err))
-			}
-
-			if wd != "" {
-				l.Warn("no temporal folder found on this system according to our task manager,"+
-					" we may create files in the current working directory by mistake as a result",
-					zap.String("current working directory", wd))
-			} else {
-				l.Warn("no temporal folder found on this system according to our task manager")
-			}
-		}
-		debugFile := filepath.Join(tempDir, "debug.log")
-		c.debugFile, err = os.Create(debugFile)
+		c.debugFile, err = os.Create(filepath.Join(c.tasks.GetTempDir(), "debug.log"))
 		if err != nil {
-			l.Warn("cannot create file", zap.String("full file path", debugFile), zap.Error(err))
+			return err
 		}
 	}
 
 	// modify the context to insert a logger directed to a file
 	if c.debugFile != nil {
+		l := ctxzap.Extract(ctx)
 		writeSyncer := zapcore.AddSync(c.debugFile)
 		encoder := zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig())
 		core := zapcore.NewCore(encoder, writeSyncer, zapcore.DebugLevel)
@@ -118,7 +100,6 @@ func (c *connectorRunner) handleContextCancel(ctx context.Context) error {
 	l.Debug("runner: unexpected context cancellation", zap.Error(err))
 	return err
 }
-
 func (c *connectorRunner) processTask(ctx context.Context, task *v1.Task) error {
 	cc, err := c.cw.C(ctx)
 	if err != nil {
@@ -159,11 +140,8 @@ func (c *connectorRunner) run(ctx context.Context) error {
 			// Acquire a worker slot before we call Next() so we don't claim a task before we can actually process it.
 			err = sem.Acquire(ctx, 1)
 			if err != nil {
-				if errors.Is(err, context.Canceled) {
-					// Any error returned from Acquire() is due to the context being cancelled.
-					// Except for some tests where error is context deadline exceeded
-					sem.Release(1)
-				}
+				// Any error returned from Acquire() is due to the context being cancelled.
+				sem.Release(1)
 				return c.handleContextCancel(ctx)
 			}
 			l.Debug("runner: worker claimed, checking for next task")
@@ -282,9 +260,8 @@ type revokeConfig struct {
 }
 
 type createAccountConfig struct {
-	login   string
-	email   string
-	profile *structpb.Struct
+	login string
+	email string
 }
 
 type deleteResourceConfig struct {
@@ -298,48 +275,30 @@ type rotateCredentialsConfig struct {
 }
 
 type eventStreamConfig struct {
-	feedId  string
-	startAt time.Time
-}
-
-type syncDifferConfig struct {
-	baseSyncID    string
-	appliedSyncID string
-}
-
-type syncCompactorConfig struct {
-	filePaths  []string
-	syncIDs    []string
-	outputPath string
 }
 
 type runnerConfig struct {
-	rlCfg                               *ratelimitV1.RateLimiterConfig
-	rlDescriptors                       []*ratelimitV1.RateLimitDescriptors_Entry
-	onDemand                            bool
-	c1zPath                             string
-	clientAuth                          bool
-	clientID                            string
-	clientSecret                        string
-	provisioningEnabled                 bool
-	ticketingEnabled                    bool
-	grantConfig                         *grantConfig
-	revokeConfig                        *revokeConfig
-	eventFeedConfig                     *eventStreamConfig
-	tempDir                             string
-	createAccountConfig                 *createAccountConfig
-	deleteResourceConfig                *deleteResourceConfig
-	rotateCredentialsConfig             *rotateCredentialsConfig
-	createTicketConfig                  *createTicketConfig
-	bulkCreateTicketConfig              *bulkCreateTicketConfig
-	listTicketSchemasConfig             *listTicketSchemasConfig
-	getTicketConfig                     *getTicketConfig
-	syncDifferConfig                    *syncDifferConfig
-	syncCompactorConfig                 *syncCompactorConfig
-	skipFullSync                        bool
-	targetedSyncResourceIDs             []string
-	externalResourceC1Z                 string
-	externalResourceEntitlementIdFilter string
+	rlCfg                   *ratelimitV1.RateLimiterConfig
+	rlDescriptors           []*ratelimitV1.RateLimitDescriptors_Entry
+	onDemand                bool
+	c1zPath                 string
+	clientAuth              bool
+	clientID                string
+	clientSecret            string
+	provisioningEnabled     bool
+	ticketingEnabled        bool
+	grantConfig             *grantConfig
+	revokeConfig            *revokeConfig
+	eventFeedConfig         *eventStreamConfig
+	tempDir                 string
+	createAccountConfig     *createAccountConfig
+	deleteResourceConfig    *deleteResourceConfig
+	rotateCredentialsConfig *rotateCredentialsConfig
+	createTicketConfig      *createTicketConfig
+	bulkCreateTicketConfig  *bulkCreateTicketConfig
+	listTicketSchemasConfig *listTicketSchemasConfig
+	getTicketConfig         *getTicketConfig
+	skipFullSync            bool
 }
 
 // WithRateLimiterConfig sets the RateLimiterConfig for a runner.
@@ -429,7 +388,6 @@ func WithOnDemandGrant(c1zPath string, entitlementID string, principalID string,
 		return nil
 	}
 }
-
 func WithClientCredentials(clientID string, clientSecret string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.clientID = clientID
@@ -450,14 +408,13 @@ func WithOnDemandRevoke(c1zPath string, grantID string) Option {
 	}
 }
 
-func WithOnDemandCreateAccount(c1zPath string, login string, email string, profile *structpb.Struct) Option {
+func WithOnDemandCreateAccount(c1zPath string, login string, email string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.onDemand = true
 		cfg.c1zPath = c1zPath
 		cfg.createAccountConfig = &createAccountConfig{
-			login:   login,
-			email:   email,
-			profile: profile,
+			login: login,
+			email: email,
 		}
 		return nil
 	}
@@ -494,14 +451,10 @@ func WithOnDemandSync(c1zPath string) Option {
 		return nil
 	}
 }
-
-func WithOnDemandEventStream(feedId string, startAt time.Time) Option {
+func WithOnDemandEventStream() Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.onDemand = true
-		cfg.eventFeedConfig = &eventStreamConfig{
-			feedId:  feedId,
-			startAt: startAt,
-		}
+		cfg.eventFeedConfig = &eventStreamConfig{}
 		return nil
 	}
 }
@@ -516,13 +469,6 @@ func WithProvisioningEnabled() Option {
 func WithFullSyncDisabled() Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.skipFullSync = true
-		return nil
-	}
-}
-
-func WithTargetedSyncResourceIDs(resourceIDs []string) Option {
-	return func(ctx context.Context, cfg *runnerConfig) error {
-		cfg.targetedSyncResourceIDs = resourceIDs
 		return nil
 	}
 }
@@ -579,46 +525,6 @@ func WithTempDir(tempDir string) Option {
 	}
 }
 
-func WithExternalResourceC1Z(externalResourceC1Z string) Option {
-	return func(ctx context.Context, cfg *runnerConfig) error {
-		cfg.externalResourceC1Z = externalResourceC1Z
-		return nil
-	}
-}
-
-func WithExternalResourceEntitlementFilter(entitlementId string) Option {
-	return func(ctx context.Context, cfg *runnerConfig) error {
-		cfg.externalResourceEntitlementIdFilter = entitlementId
-		return nil
-	}
-}
-
-func WithDiffSyncs(c1zPath string, baseSyncID string, newSyncID string) Option {
-	return func(ctx context.Context, cfg *runnerConfig) error {
-		cfg.onDemand = true
-		cfg.c1zPath = c1zPath
-		cfg.syncDifferConfig = &syncDifferConfig{
-			baseSyncID:    baseSyncID,
-			appliedSyncID: newSyncID,
-		}
-		return nil
-	}
-}
-
-func WithSyncCompactor(outputPath string, filePaths []string, syncIDs []string) Option {
-	return func(ctx context.Context, cfg *runnerConfig) error {
-		cfg.onDemand = true
-		cfg.c1zPath = "dummy"
-
-		cfg.syncCompactorConfig = &syncCompactorConfig{
-			filePaths:  filePaths,
-			syncIDs:    syncIDs,
-			outputPath: outputPath,
-		}
-		return nil
-	}
-}
-
 // NewConnectorRunner creates a new connector runner.
 func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Option) (*connectorRunner, error) {
 	runner := &connectorRunner{}
@@ -650,10 +556,6 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		wrapperOpts = append(wrapperOpts, connector.WithFullSyncDisabled())
 	}
 
-	if len(cfg.targetedSyncResourceIDs) > 0 {
-		wrapperOpts = append(wrapperOpts, connector.WithTargetedSyncResourceIDs(cfg.targetedSyncResourceIDs))
-	}
-
 	cw, err := connector.NewWrapper(ctx, c, wrapperOpts...)
 	if err != nil {
 		return nil, err
@@ -681,7 +583,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 			tm = local.NewRevoker(ctx, cfg.c1zPath, cfg.revokeConfig.grantID)
 
 		case cfg.createAccountConfig != nil:
-			tm = local.NewCreateAccountManager(ctx, cfg.c1zPath, cfg.createAccountConfig.login, cfg.createAccountConfig.email, cfg.createAccountConfig.profile)
+			tm = local.NewCreateAccountManager(ctx, cfg.c1zPath, cfg.createAccountConfig.login, cfg.createAccountConfig.email)
 
 		case cfg.deleteResourceConfig != nil:
 			tm = local.NewResourceDeleter(ctx, cfg.c1zPath, cfg.deleteResourceConfig.resourceId, cfg.deleteResourceConfig.resourceType)
@@ -690,7 +592,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 			tm = local.NewCredentialRotator(ctx, cfg.c1zPath, cfg.rotateCredentialsConfig.resourceId, cfg.rotateCredentialsConfig.resourceType)
 
 		case cfg.eventFeedConfig != nil:
-			tm = local.NewEventFeed(ctx, cfg.eventFeedConfig.feedId, cfg.eventFeedConfig.startAt)
+			tm = local.NewEventFeed(ctx)
 		case cfg.createTicketConfig != nil:
 			tm = local.NewTicket(ctx, cfg.createTicketConfig.templatePath)
 		case cfg.listTicketSchemasConfig != nil:
@@ -699,28 +601,8 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 			tm = local.NewGetTicket(ctx, cfg.getTicketConfig.ticketID)
 		case cfg.bulkCreateTicketConfig != nil:
 			tm = local.NewBulkTicket(ctx, cfg.bulkCreateTicketConfig.templatePath)
-		case cfg.syncDifferConfig != nil:
-			tm = local.NewDiffer(ctx, cfg.c1zPath, cfg.syncDifferConfig.baseSyncID, cfg.syncDifferConfig.appliedSyncID)
-		case cfg.syncCompactorConfig != nil:
-			c := cfg.syncCompactorConfig
-			if len(c.filePaths) != len(c.syncIDs) {
-				return nil, errors.New("sync-compactor: must include exactly one syncID per file")
-			}
-			configs := make([]*synccompactor.CompactableSync, 0, len(c.filePaths))
-			for i, filePath := range c.filePaths {
-				configs = append(configs, &synccompactor.CompactableSync{
-					FilePath: filePath,
-					SyncID:   c.syncIDs[i],
-				})
-			}
-			tm = local.NewLocalCompactor(ctx, cfg.syncCompactorConfig.outputPath, configs)
 		default:
-			tm, err = local.NewSyncer(ctx, cfg.c1zPath,
-				local.WithTmpDir(cfg.tempDir),
-				local.WithExternalResourceC1Z(cfg.externalResourceC1Z),
-				local.WithExternalResourceEntitlementIdFilter(cfg.externalResourceEntitlementIdFilter),
-				local.WithTargetedSyncResourceIDs(cfg.targetedSyncResourceIDs),
-			)
+			tm, err = local.NewSyncer(ctx, cfg.c1zPath, local.WithTmpDir(cfg.tempDir))
 			if err != nil {
 				return nil, err
 			}
@@ -732,7 +614,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		return runner, nil
 	}
 
-	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir, cfg.skipFullSync, cfg.externalResourceC1Z, cfg.externalResourceEntitlementIdFilter, cfg.targetedSyncResourceIDs)
+	tm, err := c1api.NewC1TaskManager(ctx, cfg.clientID, cfg.clientSecret, cfg.tempDir, cfg.skipFullSync)
 	if err != nil {
 		return nil, err
 	}

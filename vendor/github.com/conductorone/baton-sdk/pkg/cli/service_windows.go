@@ -9,21 +9,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"time"
 
+	"github.com/conductorone/baton-sdk/pkg/field"
+	"github.com/conductorone/baton-sdk/pkg/logging"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"github.com/spf13/cobra"
 	"go.uber.org/zap"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/debug"
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
 	"gopkg.in/yaml.v2"
-
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"github.com/spf13/cobra"
-
-	"github.com/conductorone/baton-sdk/pkg/field"
-	"github.com/conductorone/baton-sdk/pkg/logging"
 )
 
 const (
@@ -63,6 +62,12 @@ var skipServiceSetupFields = map[string]struct{}{
 	"RevokeGrantID":      {},
 }
 
+var (
+	stringReflectType      = reflect.TypeOf("")
+	boolReflectType        = reflect.TypeOf(true)
+	stringSliceReflectType = reflect.TypeOf([]string(nil))
+)
+
 func getExePath() (string, error) {
 	p, err := filepath.Abs(os.Args[0])
 	if err != nil {
@@ -93,12 +98,11 @@ func getExePath() (string, error) {
 
 func initLogger(ctx context.Context, name string, loggingOpts ...logging.Option) (context.Context, error) {
 	if isService() {
-		defaultLoggingOpts := []logging.Option{
+		loggingOpts = []logging.Option{
 			logging.WithLogFormat(logging.LogFormatJSON),
 			logging.WithLogLevel("info"),
 			logging.WithOutputPaths([]string{filepath.Join(getConfigDir(name), "baton.log")}),
 		}
-		loggingOpts = append(defaultLoggingOpts, loggingOpts...)
 	}
 
 	return logging.Init(ctx, loggingOpts...)
@@ -299,18 +303,18 @@ func interactiveSetup(ctx context.Context, outputFilePath string, fields []field
 			continue
 		}
 
-		switch vfield.Variant {
-		case field.BoolVariant:
+		switch vfield.GetType() {
+		case reflect.Bool:
 			b, err := strconv.ParseBool(input)
 			if err != nil {
 				return err
 			}
 			config[vfield.GetName()] = b
 
-		case field.StringVariant:
+		case reflect.String:
 			config[vfield.GetName()] = input
 
-		case field.IntVariant:
+		case reflect.Int:
 			i, err := strconv.Atoi(input)
 			if err != nil {
 				return err
@@ -320,7 +324,7 @@ func interactiveSetup(ctx context.Context, outputFilePath string, fields []field
 
 			// TODO (shackra): add support for []string in SDK
 		default:
-			l.Error("Unsupported type for interactive config.", zap.String("type", string(vfield.Variant)))
+			l.Error("Unsupported type for interactive config.", zap.String("type", vfield.GetType().String()))
 			return errors.New("unsupported type for interactive config")
 		}
 	}

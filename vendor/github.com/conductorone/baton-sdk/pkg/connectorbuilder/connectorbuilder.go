@@ -9,12 +9,10 @@ import (
 	"time"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.opentelemetry.io/otel"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/structpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -22,27 +20,11 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/crypto"
 	"github.com/conductorone/baton-sdk/pkg/metrics"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
-	"github.com/conductorone/baton-sdk/pkg/retry"
 	"github.com/conductorone/baton-sdk/pkg/types"
 	"github.com/conductorone/baton-sdk/pkg/types/tasks"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 )
 
-var tracer = otel.Tracer("baton-sdk/pkg.connectorbuilder")
-
-// ResourceSyncer is the primary interface for connector developers to implement.
-//
-// It defines the core functionality for synchronizing resources, entitlements, and grants
-// from external systems into Baton. Every connector must implement at least this interface
-// for each resource type it supports.
-//
-// Extensions to this interface include:
-// - ResourceProvisioner/ResourceProvisionerV2: For adding/removing access
-// - ResourceManager: For creating and managing resources
-// - ResourceDeleter: For deleting resources
-// - AccountManager: For account provisioning operations
-// - CredentialManager: For credential rotation operations.
-// - ResourceTargetedSyncer: For directly getting a resource supporting targeted sync.
 type ResourceSyncer interface {
 	ResourceType(ctx context.Context) *v2.ResourceType
 	List(ctx context.Context, parentResourceID *v2.ResourceId, pToken *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error)
@@ -50,150 +32,43 @@ type ResourceSyncer interface {
 	Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error)
 }
 
-// ResourceProvisioner extends ResourceSyncer to add capabilities for granting and revoking access.
-//
-// Note: ResourceProvisionerV2 is preferred for new connectors as it provides
-// enhanced grant capabilities.
-//
-// Implementing this interface indicates the connector supports provisioning operations
-// for the associated resource type.
 type ResourceProvisioner interface {
-	ResourceSyncer
 	ResourceType(ctx context.Context) *v2.ResourceType
 	Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error)
 	Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error)
 }
 
-// ResourceProvisionerV2 extends ResourceSyncer to add capabilities for granting and revoking access
-// with enhanced functionality compared to ResourceProvisioner.
-//
-// This is the recommended interface for implementing provisioning operations in new connectors.
-// It differs from ResourceProvisioner by returning a list of grants from the Grant method.
 type ResourceProvisionerV2 interface {
-	ResourceSyncer
 	ResourceType(ctx context.Context) *v2.ResourceType
 	Grant(ctx context.Context, resource *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error)
 	Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error)
 }
 
-// ResourceManager extends ResourceSyncer to add capabilities for creating resources.
-//
-// Implementing this interface indicates the connector supports creating and deleting resources
-// of the associated resource type. A ResourceManager automatically provides ResourceDeleter
-// functionality.
 type ResourceManager interface {
-	ResourceSyncer
 	Create(ctx context.Context, resource *v2.Resource) (*v2.Resource, annotations.Annotations, error)
-	ResourceDeleter
-}
-
-// ResourceDeleter extends ResourceSyncer to add capabilities for deleting resources.
-//
-// Implementing this interface indicates the connector supports deleting resources
-// of the associated resource type.
-type ResourceDeleter interface {
-	ResourceSyncer
 	Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error)
 }
 
-// ResourceTargetedSyncer extends ResourceSyncer to add capabilities for directly syncing an individual resource
-//
-// Implementing this interface indicates the connector supports calling "get" on a resource
-// of the associated resource type.
-type ResourceTargetedSyncer interface {
-	ResourceSyncer
-	Get(ctx context.Context, resourceId *v2.ResourceId, parentResourceId *v2.ResourceId) (*v2.Resource, annotations.Annotations, error)
-}
-
-// CreateAccountResponse is a semi-opaque type returned from CreateAccount operations.
-//
-// This is used to communicate the result of account creation back to Baton.
 type CreateAccountResponse interface {
 	proto.Message
 	GetIsCreateAccountResult() bool
 }
 
-// AccountManager extends ResourceSyncer to add capabilities for managing user accounts.
-//
-// Implementing this interface indicates the connector supports creating accounts
-// in the external system. A resource type should implement this interface if it
-// represents users or accounts that can be provisioned.
 type AccountManager interface {
-	ResourceSyncer
 	CreateAccount(ctx context.Context, accountInfo *v2.AccountInfo, credentialOptions *v2.CredentialOptions) (CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error)
 	CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error)
 }
 
-// CredentialManager extends ResourceSyncer to add capabilities for managing credentials.
-//
-// Implementing this interface indicates the connector supports rotating credentials
-// for resources of the associated type. This is commonly used for user accounts
-// or service accounts that have rotatable credentials.
 type CredentialManager interface {
-	ResourceSyncer
 	Rotate(ctx context.Context, resourceId *v2.ResourceId, credentialOptions *v2.CredentialOptions) ([]*v2.PlaintextData, annotations.Annotations, error)
 	RotateCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsCredentialRotation, annotations.Annotations, error)
 }
 
-// Compatibility interface lets us handle both EventFeed and EventProvider the same.
-type EventLister interface {
+type EventProvider interface {
 	ListEvents(ctx context.Context, earliestEvent *timestamppb.Timestamp, pToken *pagination.StreamToken) ([]*v2.Event, *pagination.StreamState, annotations.Annotations, error)
 }
 
-// Deprecated: This interface is deprecated in favor of EventProviderV2 which supports
-// multiple event feeds. Implementing this interface indicates the connector can provide
-// a single stream of events from the external system, enabling near real-time updates
-// in Baton. New connectors should implement EventProviderV2 instead.
-type EventProvider interface {
-	ConnectorBuilder
-	EventLister
-}
-
-// NewEventProviderV2 is a new interface that allows connectors to provide multiple event feeds.
-//
-// This is the recommended interface for implementing event feed support in new connectors.
-type EventProviderV2 interface {
-	ConnectorBuilder
-	EventFeeds(ctx context.Context) []EventFeed
-}
-
-// EventFeed is a single stream of events from the external system.
-//
-// EventFeedMetadata describes this feed, and a connector can have multiple feeds.
-type EventFeed interface {
-	EventLister
-	EventFeedMetadata(ctx context.Context) *v2.EventFeedMetadata
-}
-
-type oldEventFeedWrapper struct {
-	feed EventLister
-}
-
-const (
-	LegacyBatonFeedId = "baton_feed_event"
-)
-
-func (e *oldEventFeedWrapper) EventFeedMetadata(ctx context.Context) *v2.EventFeedMetadata {
-	return &v2.EventFeedMetadata{
-		Id:                  LegacyBatonFeedId,
-		SupportedEventTypes: []v2.EventType{v2.EventType_EVENT_TYPE_UNSPECIFIED},
-	}
-}
-
-func (e *oldEventFeedWrapper) ListEvents(
-	ctx context.Context,
-	earliestEvent *timestamppb.Timestamp,
-	pToken *pagination.StreamToken,
-) ([]*v2.Event, *pagination.StreamState, annotations.Annotations, error) {
-	return e.feed.ListEvents(ctx, earliestEvent, pToken)
-}
-
-// TicketManager extends ConnectorBuilder to add capabilities for ticket management.
-//
-// Implementing this interface indicates the connector can integrate with an external
-// ticketing system, allowing Baton to create and track tickets in that system.
 type TicketManager interface {
-	ConnectorBuilder
 	GetTicket(ctx context.Context, ticketId string) (*v2.Ticket, annotations.Annotations, error)
 	CreateTicket(ctx context.Context, ticket *v2.Ticket, schema *v2.TicketSchema) (*v2.Ticket, annotations.Annotations, error)
 	GetTicketSchema(ctx context.Context, schemaID string) (*v2.TicketSchema, annotations.Annotations, error)
@@ -202,36 +77,6 @@ type TicketManager interface {
 	BulkGetTickets(context.Context, *v2.TicketsServiceBulkGetTicketsRequest) (*v2.TicketsServiceBulkGetTicketsResponse, error)
 }
 
-// CustomActionManager defines capabilities for handling custom actions.
-//
-// Note: RegisterActionManager is preferred for new connectors.
-//
-// This interface allows connectors to define and execute custom actions
-// that can be triggered from Baton.
-type CustomActionManager interface {
-	ListActionSchemas(ctx context.Context) ([]*v2.BatonActionSchema, annotations.Annotations, error)
-	GetActionSchema(ctx context.Context, name string) (*v2.BatonActionSchema, annotations.Annotations, error)
-	InvokeAction(ctx context.Context, name string, args *structpb.Struct) (string, v2.BatonActionStatus, *structpb.Struct, annotations.Annotations, error)
-	GetActionStatus(ctx context.Context, id string) (v2.BatonActionStatus, string, *structpb.Struct, annotations.Annotations, error)
-}
-
-// RegisterActionManager extends ConnectorBuilder to add capabilities for registering custom actions.
-//
-// This is the recommended interface for implementing custom action support in new connectors.
-// It provides a mechanism to register a CustomActionManager with the connector.
-type RegisterActionManager interface {
-	ConnectorBuilder
-	RegisterActionManager(ctx context.Context) (CustomActionManager, error)
-}
-
-// ConnectorBuilder is the foundational interface for creating Baton connectors.
-//
-// This interface defines the core capabilities required by all connectors, including
-// metadata, validation, and registering resource syncers. Additional functionality
-// can be added by implementing extension interfaces such as:
-// - RegisterActionManager: For custom action support
-// - EventProvider: For event stream support
-// - TicketManager: For ticket management integration.
 type ConnectorBuilder interface {
 	Metadata(ctx context.Context) (*v2.ConnectorMetadata, error)
 	Validate(ctx context.Context) (annotations.Annotations, error)
@@ -239,27 +84,21 @@ type ConnectorBuilder interface {
 }
 
 type builderImpl struct {
-	resourceBuilders        map[string]ResourceSyncer
-	resourceProvisioners    map[string]ResourceProvisioner
-	resourceProvisionersV2  map[string]ResourceProvisionerV2
-	resourceManagers        map[string]ResourceManager
-	resourceDeleters        map[string]ResourceDeleter
-	resourceTargetedSyncers map[string]ResourceTargetedSyncer
-	accountManager          AccountManager
-	actionManager           CustomActionManager
-	credentialManagers      map[string]CredentialManager
-	eventFeeds              map[string]EventFeed
-	cb                      ConnectorBuilder
-	ticketManager           TicketManager
-	ticketingEnabled        bool
-	m                       *metrics.M
-	nowFunc                 func() time.Time
+	resourceBuilders       map[string]ResourceSyncer
+	resourceProvisioners   map[string]ResourceProvisioner
+	resourceProvisionersV2 map[string]ResourceProvisionerV2
+	resourceManagers       map[string]ResourceManager
+	accountManager         AccountManager
+	credentialManagers     map[string]CredentialManager
+	eventFeed              EventProvider
+	cb                     ConnectorBuilder
+	ticketManager          TicketManager
+	ticketingEnabled       bool
+	m                      *metrics.M
+	nowFunc                func() time.Time
 }
 
 func (b *builderImpl) BulkCreateTickets(ctx context.Context, request *v2.TicketsServiceBulkCreateTicketsRequest) (*v2.TicketsServiceBulkCreateTicketsResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.BulkCreateTickets")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.BulkCreateTicketsType
 	if b.ticketManager == nil {
@@ -286,9 +125,6 @@ func (b *builderImpl) BulkCreateTickets(ctx context.Context, request *v2.Tickets
 }
 
 func (b *builderImpl) BulkGetTickets(ctx context.Context, request *v2.TicketsServiceBulkGetTicketsRequest) (*v2.TicketsServiceBulkGetTicketsResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.BulkGetTickets")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.BulkGetTicketsType
 	if b.ticketManager == nil {
@@ -315,9 +151,6 @@ func (b *builderImpl) BulkGetTickets(ctx context.Context, request *v2.TicketsSer
 }
 
 func (b *builderImpl) ListTicketSchemas(ctx context.Context, request *v2.TicketsServiceListTicketSchemasRequest) (*v2.TicketsServiceListTicketSchemasResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListTicketSchemas")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.ListTicketSchemasType
 	if b.ticketManager == nil {
@@ -347,9 +180,6 @@ func (b *builderImpl) ListTicketSchemas(ctx context.Context, request *v2.Tickets
 }
 
 func (b *builderImpl) CreateTicket(ctx context.Context, request *v2.TicketsServiceCreateTicketRequest) (*v2.TicketsServiceCreateTicketResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.CreateTicket")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.CreateTicketType
 	if b.ticketManager == nil {
@@ -392,9 +222,6 @@ func (b *builderImpl) CreateTicket(ctx context.Context, request *v2.TicketsServi
 }
 
 func (b *builderImpl) GetTicket(ctx context.Context, request *v2.TicketsServiceGetTicketRequest) (*v2.TicketsServiceGetTicketResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.GetTicket")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.GetTicketType
 	if b.ticketManager == nil {
@@ -423,9 +250,6 @@ func (b *builderImpl) GetTicket(ctx context.Context, request *v2.TicketsServiceG
 }
 
 func (b *builderImpl) GetTicketSchema(ctx context.Context, request *v2.TicketsServiceGetTicketSchemaRequest) (*v2.TicketsServiceGetTicketSchemaResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.GetTicketSchema")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.GetTicketSchemaType
 	if b.ticketManager == nil {
@@ -451,19 +275,15 @@ func NewConnector(ctx context.Context, in interface{}, opts ...Opt) (types.Conne
 	switch c := in.(type) {
 	case ConnectorBuilder:
 		ret := &builderImpl{
-			resourceBuilders:        make(map[string]ResourceSyncer),
-			resourceProvisioners:    make(map[string]ResourceProvisioner),
-			resourceProvisionersV2:  make(map[string]ResourceProvisionerV2),
-			resourceManagers:        make(map[string]ResourceManager),
-			resourceDeleters:        make(map[string]ResourceDeleter),
-			resourceTargetedSyncers: make(map[string]ResourceTargetedSyncer),
-			accountManager:          nil,
-			actionManager:           nil,
-			credentialManagers:      make(map[string]CredentialManager),
-			eventFeeds:              make(map[string]EventFeed),
-			cb:                      c,
-			ticketManager:           nil,
-			nowFunc:                 time.Now,
+			resourceBuilders:       make(map[string]ResourceSyncer),
+			resourceProvisioners:   make(map[string]ResourceProvisioner),
+			resourceProvisionersV2: make(map[string]ResourceProvisionerV2),
+			resourceManagers:       make(map[string]ResourceManager),
+			accountManager:         nil,
+			credentialManagers:     make(map[string]CredentialManager),
+			cb:                     c,
+			ticketManager:          nil,
+			nowFunc:                time.Now,
 		}
 
 		err := ret.options(opts...)
@@ -475,31 +295,8 @@ func NewConnector(ctx context.Context, in interface{}, opts ...Opt) (types.Conne
 			ret.m = metrics.New(metrics.NewNoOpHandler(ctx))
 		}
 
-		if b, ok := c.(EventProviderV2); ok {
-			for _, ef := range b.EventFeeds(ctx) {
-				feedData := ef.EventFeedMetadata(ctx)
-				if feedData == nil {
-					return nil, fmt.Errorf("error: event feed metadata is nil")
-				}
-				if err := feedData.Validate(); err != nil {
-					return nil, fmt.Errorf("error: event feed metadata for %s is invalid: %w", feedData.Id, err)
-				}
-				if _, ok := ret.eventFeeds[feedData.Id]; ok {
-					return nil, fmt.Errorf("error: duplicate event feed id found: %s", feedData.Id)
-				}
-				ret.eventFeeds[feedData.Id] = ef
-			}
-		}
-
 		if b, ok := c.(EventProvider); ok {
-			// Register the legacy Baton feed as a v2 event feed
-			// implementing both v1 and v2 event feeds is not supported.
-			if len(ret.eventFeeds) != 0 {
-				return nil, fmt.Errorf("error: using legacy event feed is not supported when using EventProviderV2")
-			}
-			ret.eventFeeds[LegacyBatonFeedId] = &oldEventFeedWrapper{
-				feed: b,
-			}
+			ret.eventFeed = b
 		}
 
 		if ticketManager, ok := c.(TicketManager); ok {
@@ -507,27 +304,6 @@ func NewConnector(ctx context.Context, in interface{}, opts ...Opt) (types.Conne
 				return nil, fmt.Errorf("error: cannot set multiple ticket managers")
 			}
 			ret.ticketManager = ticketManager
-		}
-
-		if actionManager, ok := c.(CustomActionManager); ok {
-			if ret.actionManager != nil {
-				return nil, fmt.Errorf("error: cannot set multiple action managers")
-			}
-			ret.actionManager = actionManager
-		}
-
-		if registerActionManager, ok := c.(RegisterActionManager); ok {
-			if ret.actionManager != nil {
-				return nil, fmt.Errorf("error: cannot register multiple action managers")
-			}
-			actionManager, err := registerActionManager.RegisterActionManager(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("error: registering action manager failed: %w", err)
-			}
-			if actionManager == nil {
-				return nil, fmt.Errorf("error: action manager is nil")
-			}
-			ret.actionManager = actionManager
 		}
 
 		for _, rb := range c.ResourceSyncers(ctx) {
@@ -553,31 +329,12 @@ func NewConnector(ctx context.Context, in interface{}, opts ...Opt) (types.Conne
 				}
 				ret.resourceProvisionersV2[rType.Id] = provisioner
 			}
-			if targetedSyncer, ok := rb.(ResourceTargetedSyncer); ok {
-				if _, ok := ret.resourceTargetedSyncers[rType.Id]; ok {
-					return nil, fmt.Errorf("error: duplicate resource type found for resource targeted syncer %s", rType.Id)
-				}
-				ret.resourceTargetedSyncers[rType.Id] = targetedSyncer
-			}
 
-			if resourceManager, ok := rb.(ResourceManager); ok {
+			if resourceManagers, ok := rb.(ResourceManager); ok {
 				if _, ok := ret.resourceManagers[rType.Id]; ok {
 					return nil, fmt.Errorf("error: duplicate resource type found for resource manager %s", rType.Id)
 				}
-				ret.resourceManagers[rType.Id] = resourceManager
-				// Support DeleteResourceV2 if connector implements both Create and Delete
-				if _, ok := ret.resourceDeleters[rType.Id]; ok {
-					// This should never happen
-					return nil, fmt.Errorf("error: duplicate resource type found for resource deleter %s", rType.Id)
-				}
-				ret.resourceDeleters[rType.Id] = resourceManager
-			} else {
-				if resourceDeleter, ok := rb.(ResourceDeleter); ok {
-					if _, ok := ret.resourceDeleters[rType.Id]; ok {
-						return nil, fmt.Errorf("error: duplicate resource type found for resource deleter %s", rType.Id)
-					}
-					ret.resourceDeleters[rType.Id] = resourceDeleter
-				}
+				ret.resourceManagers[rType.Id] = resourceManagers
 			}
 
 			if accountManager, ok := rb.(AccountManager); ok {
@@ -648,25 +405,12 @@ func (b *builderImpl) ListResourceTypes(
 	ctx context.Context,
 	request *v2.ResourceTypesServiceListResourceTypesRequest,
 ) (*v2.ResourceTypesServiceListResourceTypesResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListResourceTypes")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.ListResourceTypesType
 	var out []*v2.ResourceType
 
-	if len(b.resourceBuilders) == 0 {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: no resource builders found")
-	}
-
 	for _, rb := range b.resourceBuilders {
 		out = append(out, rb.ResourceType(ctx))
-	}
-
-	if len(out) == 0 {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: no resource types found")
 	}
 
 	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
@@ -675,9 +419,6 @@ func (b *builderImpl) ListResourceTypes(
 
 // ListResources returns all available resources for a given resource type ID.
 func (b *builderImpl) ListResources(ctx context.Context, request *v2.ResourcesServiceListResourcesRequest) (*v2.ResourcesServiceListResourcesResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListResources")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.ListResourcesType
 	rb, ok := b.resourceBuilders[request.ResourceTypeId]
@@ -708,41 +449,8 @@ func (b *builderImpl) ListResources(ctx context.Context, request *v2.ResourcesSe
 	return resp, nil
 }
 
-func (b *builderImpl) GetResource(ctx context.Context, request *v2.ResourceGetterServiceGetResourceRequest) (*v2.ResourceGetterServiceGetResourceResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.GetResource")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.GetResourceType
-	resourceType := request.GetResourceId().GetResourceType()
-	rb, ok := b.resourceTargetedSyncers[resourceType]
-	if !ok {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, status.Errorf(codes.Unimplemented, "error: get resource with unknown resource type %s", resourceType)
-	}
-
-	resource, annos, err := rb.Get(ctx, request.GetResourceId(), request.GetParentResourceId())
-	if err != nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: get resource failed: %w", err)
-	}
-	if resource == nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, status.Error(codes.NotFound, "error: get resource returned nil")
-	}
-
-	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-	return &v2.ResourceGetterServiceGetResourceResponse{
-		Resource:    resource,
-		Annotations: annos,
-	}, nil
-}
-
 // ListEntitlements returns all the entitlements for a given resource.
 func (b *builderImpl) ListEntitlements(ctx context.Context, request *v2.EntitlementsServiceListEntitlementsRequest) (*v2.EntitlementsServiceListEntitlementsResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListEntitlements")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.ListEntitlementsType
 	rb, ok := b.resourceBuilders[request.Resource.Id.ResourceType]
@@ -775,9 +483,6 @@ func (b *builderImpl) ListEntitlements(ctx context.Context, request *v2.Entitlem
 
 // ListGrants lists all the grants for a given resource.
 func (b *builderImpl) ListGrants(ctx context.Context, request *v2.GrantsServiceListGrantsRequest) (*v2.GrantsServiceListGrantsResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListGrants")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.ListGrantsType
 	rid := request.Resource.Id
@@ -813,9 +518,6 @@ func (b *builderImpl) ListGrants(ctx context.Context, request *v2.GrantsServiceL
 
 // GetMetadata gets all metadata for a connector.
 func (b *builderImpl) GetMetadata(ctx context.Context, request *v2.ConnectorServiceGetMetadataRequest) (*v2.ConnectorServiceGetMetadataResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.GetMetadata")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.GetMetadataType
 	md, err := b.cb.Metadata(ctx)
@@ -906,10 +608,6 @@ func getCapabilities(ctx context.Context, b *builderImpl) (*v2.ConnectorCapabili
 			Capabilities: []v2.Capability{v2.Capability_CAPABILITY_SYNC},
 		}
 		connectorCaps[v2.Capability_CAPABILITY_SYNC] = struct{}{}
-		if _, ok := rb.(ResourceTargetedSyncer); ok {
-			resourceTypeCapability.Capabilities = append(resourceTypeCapability.Capabilities, v2.Capability_CAPABILITY_TARGETED_SYNC)
-			connectorCaps[v2.Capability_CAPABILITY_TARGETED_SYNC] = struct{}{}
-		}
 		if _, ok := rb.(ResourceProvisioner); ok {
 			resourceTypeCapability.Capabilities = append(resourceTypeCapability.Capabilities, v2.Capability_CAPABILITY_PROVISION)
 			connectorCaps[v2.Capability_CAPABILITY_PROVISION] = struct{}{}
@@ -931,27 +629,19 @@ func getCapabilities(ctx context.Context, b *builderImpl) (*v2.ConnectorCapabili
 			resourceTypeCapability.Capabilities = append(resourceTypeCapability.Capabilities, v2.Capability_CAPABILITY_RESOURCE_CREATE, v2.Capability_CAPABILITY_RESOURCE_DELETE)
 			connectorCaps[v2.Capability_CAPABILITY_RESOURCE_CREATE] = struct{}{}
 			connectorCaps[v2.Capability_CAPABILITY_RESOURCE_DELETE] = struct{}{}
-		} else if _, ok := rb.(ResourceDeleter); ok {
-			resourceTypeCapability.Capabilities = append(resourceTypeCapability.Capabilities, v2.Capability_CAPABILITY_RESOURCE_DELETE)
-			connectorCaps[v2.Capability_CAPABILITY_RESOURCE_DELETE] = struct{}{}
 		}
-
 		resourceTypeCapabilities = append(resourceTypeCapabilities, resourceTypeCapability)
 	}
 	sort.Slice(resourceTypeCapabilities, func(i, j int) bool {
 		return resourceTypeCapabilities[i].ResourceType.GetId() < resourceTypeCapabilities[j].ResourceType.GetId()
 	})
 
-	if len(b.eventFeeds) > 0 {
-		connectorCaps[v2.Capability_CAPABILITY_EVENT_FEED_V2] = struct{}{}
+	if b.eventFeed != nil {
+		connectorCaps[v2.Capability_CAPABILITY_EVENT_FEED] = struct{}{}
 	}
 
 	if b.ticketManager != nil {
 		connectorCaps[v2.Capability_CAPABILITY_TICKETING] = struct{}{}
-	}
-
-	if b.actionManager != nil {
-		connectorCaps[v2.Capability_CAPABILITY_ACTIONS] = struct{}{}
 	}
 
 	var caps []v2.Capability
@@ -974,9 +664,6 @@ func getCapabilities(ctx context.Context, b *builderImpl) (*v2.ConnectorCapabili
 
 // Validate validates the connector.
 func (b *builderImpl) Validate(ctx context.Context, request *v2.ConnectorServiceValidateRequest) (*v2.ConnectorServiceValidateResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.Validate")
-	defer span.End()
-
 	annos, err := b.cb.Validate(ctx)
 	if err != nil {
 		return nil, err
@@ -986,153 +673,92 @@ func (b *builderImpl) Validate(ctx context.Context, request *v2.ConnectorService
 }
 
 func (b *builderImpl) Grant(ctx context.Context, request *v2.GrantManagerServiceGrantRequest) (*v2.GrantManagerServiceGrantResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.Grant")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.GrantType
 	l := ctxzap.Extract(ctx)
 
 	rt := request.Entitlement.Resource.Id.ResourceType
-
-	retryer := retry.NewRetryer(ctx, retry.RetryConfig{
-		MaxAttempts:  3,
-		InitialDelay: 15 * time.Second,
-		MaxDelay:     60 * time.Second,
-	})
-
-	var grantFunc func(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error)
 	provisioner, ok := b.resourceProvisioners[rt]
 	if ok {
-		grantFunc = func(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) ([]*v2.Grant, annotations.Annotations, error) {
-			annos, err := provisioner.Grant(ctx, principal, entitlement)
-			if err != nil {
-				return nil, annos, err
-			}
-			return nil, annos, nil
+		annos, err := provisioner.Grant(ctx, request.Principal, request.Entitlement)
+		if err != nil {
+			l.Error("error: grant failed", zap.Error(err))
+			b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+			return nil, fmt.Errorf("error: grant failed: %w", err)
 		}
+
+		b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
+		return &v2.GrantManagerServiceGrantResponse{Annotations: annos}, nil
 	}
+
 	provisionerV2, ok := b.resourceProvisionersV2[rt]
 	if ok {
-		grantFunc = provisionerV2.Grant
+		grants, annos, err := provisionerV2.Grant(ctx, request.Principal, request.Entitlement)
+		if err != nil {
+			l.Error("error: grant failed", zap.Error(err))
+			b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+			return nil, fmt.Errorf("error: grant failed: %w", err)
+		}
+
+		b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
+		return &v2.GrantManagerServiceGrantResponse{Annotations: annos, Grants: grants}, nil
 	}
 
-	if grantFunc == nil {
-		l.Error("error: resource type does not have provisioner configured", zap.String("resource_type", rt))
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: resource type does not have provisioner configured")
-	}
-
-	for {
-		grants, annos, err := grantFunc(ctx, request.Principal, request.Entitlement)
-		if err == nil {
-			b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-			return &v2.GrantManagerServiceGrantResponse{Annotations: annos, Grants: grants}, nil
-		}
-		if retryer.ShouldWaitAndRetry(ctx, err) {
-			continue
-		}
-		l.Error("error: grant failed", zap.Error(err))
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("err: grant failed: %w", err)
-	}
+	l.Error("error: resource type does not have provisioner configured", zap.String("resource_type", rt))
+	b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+	return nil, fmt.Errorf("error: resource type does not have provisioner configured")
 }
 
 func (b *builderImpl) Revoke(ctx context.Context, request *v2.GrantManagerServiceRevokeRequest) (*v2.GrantManagerServiceRevokeResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.Revoke")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.RevokeType
 
 	l := ctxzap.Extract(ctx)
 
 	rt := request.Grant.Entitlement.Resource.Id.ResourceType
-
-	retryer := retry.NewRetryer(ctx, retry.RetryConfig{
-		MaxAttempts:  3,
-		InitialDelay: 15 * time.Second,
-		MaxDelay:     60 * time.Second,
-	})
-
-	var revokeFunc func(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error)
 	provisioner, ok := b.resourceProvisioners[rt]
 	if ok {
-		revokeFunc = provisioner.Revoke
+		annos, err := provisioner.Revoke(ctx, request.Grant)
+		if err != nil {
+			l.Error("error: revoke failed", zap.Error(err))
+			b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+			return nil, fmt.Errorf("error: revoke failed: %w", err)
+		}
+		return &v2.GrantManagerServiceRevokeResponse{Annotations: annos}, nil
 	}
+
 	provisionerV2, ok := b.resourceProvisionersV2[rt]
 	if ok {
-		revokeFunc = provisionerV2.Revoke
+		annos, err := provisionerV2.Revoke(ctx, request.Grant)
+		if err != nil {
+			l.Error("error: revoke failed", zap.Error(err))
+			b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+			return nil, fmt.Errorf("error: revoke failed: %w", err)
+		}
+
+		b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
+		return &v2.GrantManagerServiceRevokeResponse{Annotations: annos}, nil
 	}
 
-	if revokeFunc == nil {
-		l.Error("error: resource type does not have provisioner configured", zap.String("resource_type", rt))
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: resource type does not have provisioner configured")
-	}
-
-	for {
-		annos, err := revokeFunc(ctx, request.Grant)
-		if err == nil {
-			b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-			return &v2.GrantManagerServiceRevokeResponse{Annotations: annos}, nil
-		}
-		if retryer.ShouldWaitAndRetry(ctx, err) {
-			continue
-		}
-		l.Error("error: revoke failed", zap.Error(err))
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: revoke failed: %w", err)
-	}
+	l.Error("error: resource type does not have provisioner configured", zap.String("resource_type", rt))
+	b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+	return nil, status.Error(codes.Unimplemented, "resource type does not have provisioner configured")
 }
 
 // GetAsset streams the asset to the client.
 // FIXME(jirwin): Asset streaming is disabled.
 func (b *builderImpl) GetAsset(request *v2.AssetServiceGetAssetRequest, server v2.AssetService_GetAssetServer) error {
-	_, span := tracer.Start(server.Context(), "builderImpl.GetAsset")
-	defer span.End()
-
 	return nil
 }
 
-func (b *builderImpl) ListEventFeeds(ctx context.Context, request *v2.ListEventFeedsRequest) (*v2.ListEventFeedsResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListEventFeeds")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.ListEventFeedsType
-
-	feeds := make([]*v2.EventFeedMetadata, 0, len(b.eventFeeds))
-
-	for _, feed := range b.eventFeeds {
-		feeds = append(feeds, feed.EventFeedMetadata(ctx))
-	}
-
-	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-	return &v2.ListEventFeedsResponse{
-		List: feeds,
-	}, nil
-}
-
 func (b *builderImpl) ListEvents(ctx context.Context, request *v2.ListEventsRequest) (*v2.ListEventsResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListEvents")
-	defer span.End()
-
 	start := b.nowFunc()
-	feedId := request.GetEventFeedId()
-
-	// If no feedId is provided, use the legacy Baton feed Id
-	if feedId == "" {
-		feedId = LegacyBatonFeedId
-	}
-
-	feed, ok := b.eventFeeds[feedId]
-	if !ok {
-		return nil, status.Errorf(codes.NotFound, "error: event feed not found")
-	}
-
 	tt := tasks.ListEventsType
-	events, streamState, annotations, err := feed.ListEvents(ctx, request.StartAt, &pagination.StreamToken{
+	if b.eventFeed == nil {
+		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
+		return nil, fmt.Errorf("error: event feed not implemented")
+	}
+	events, streamState, annotations, err := b.eventFeed.ListEvents(ctx, request.StartAt, &pagination.StreamToken{
 		Size:   int(request.PageSize),
 		Cursor: request.Cursor,
 	})
@@ -1150,9 +776,6 @@ func (b *builderImpl) ListEvents(ctx context.Context, request *v2.ListEventsRequ
 }
 
 func (b *builderImpl) CreateResource(ctx context.Context, request *v2.CreateResourceRequest) (*v2.CreateResourceResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.CreateResource")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.CreateResourceType
 	l := ctxzap.Extract(ctx)
@@ -1168,26 +791,18 @@ func (b *builderImpl) CreateResource(ctx context.Context, request *v2.CreateReso
 		b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
 		return &v2.CreateResourceResponse{Created: resource, Annotations: annos}, nil
 	}
-	l.Error("error: resource type does not have resource Create() configured", zap.String("resource_type", rt))
+	l.Error("error: resource type does not have resource manager configured", zap.String("resource_type", rt))
 	b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-	return nil, status.Error(codes.Unimplemented, fmt.Sprintf("resource type %s does not have resource Create() configured", rt))
+	return nil, status.Error(codes.Unimplemented, "resource type does not have resource manager configured")
 }
 
 func (b *builderImpl) DeleteResource(ctx context.Context, request *v2.DeleteResourceRequest) (*v2.DeleteResourceResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.DeleteResource")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.DeleteResourceType
 
 	l := ctxzap.Extract(ctx)
 	rt := request.GetResourceId().GetResourceType()
-	var manager ResourceDeleter
-	var ok bool
-	manager, ok = b.resourceManagers[rt]
-	if !ok {
-		manager, ok = b.resourceDeleters[rt]
-	}
+	manager, ok := b.resourceManagers[rt]
 	if ok {
 		annos, err := manager.Delete(ctx, request.GetResourceId())
 		if err != nil {
@@ -1198,45 +813,12 @@ func (b *builderImpl) DeleteResource(ctx context.Context, request *v2.DeleteReso
 		b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
 		return &v2.DeleteResourceResponse{Annotations: annos}, nil
 	}
-	l.Error("error: resource type does not have resource Delete() configured", zap.String("resource_type", rt))
+	l.Error("error: resource type does not have resource manager configured", zap.String("resource_type", rt))
 	b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-	return nil, status.Error(codes.Unimplemented, fmt.Sprintf("resource type %s does not have resource Delete() configured", rt))
-}
-
-func (b *builderImpl) DeleteResourceV2(ctx context.Context, request *v2.DeleteResourceV2Request) (*v2.DeleteResourceV2Response, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.DeleteResourceV2")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.DeleteResourceType
-
-	l := ctxzap.Extract(ctx)
-	rt := request.GetResourceId().GetResourceType()
-	var manager ResourceDeleter
-	var ok bool
-	manager, ok = b.resourceManagers[rt]
-	if !ok {
-		manager, ok = b.resourceDeleters[rt]
-	}
-	if ok {
-		annos, err := manager.Delete(ctx, request.GetResourceId())
-		if err != nil {
-			l.Error("error: delete resource failed", zap.Error(err))
-			b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-			return nil, fmt.Errorf("error: delete resource failed: %w", err)
-		}
-		b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-		return &v2.DeleteResourceV2Response{Annotations: annos}, nil
-	}
-	l.Error("error: resource type does not have resource Delete() configured", zap.String("resource_type", rt))
-	b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-	return nil, status.Error(codes.Unimplemented, fmt.Sprintf("resource type %s does not have resource Delete() configured", rt))
+	return nil, status.Error(codes.Unimplemented, "resource type does not have resource manager configured")
 }
 
 func (b *builderImpl) RotateCredential(ctx context.Context, request *v2.RotateCredentialRequest) (*v2.RotateCredentialResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.RotateCredential")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.RotateCredentialsType
 	l := ctxzap.Extract(ctx)
@@ -1292,9 +874,6 @@ func (b *builderImpl) Cleanup(ctx context.Context, request *v2.ConnectorServiceC
 }
 
 func (b *builderImpl) CreateAccount(ctx context.Context, request *v2.CreateAccountRequest) (*v2.CreateAccountResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.CreateAccount")
-	defer span.End()
-
 	start := b.nowFunc()
 	tt := tasks.CreateAccountType
 	l := ctxzap.Extract(ctx)
@@ -1344,114 +923,4 @@ func (b *builderImpl) CreateAccount(ctx context.Context, request *v2.CreateAccou
 
 	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
 	return rv, nil
-}
-
-func (b *builderImpl) ListActionSchemas(ctx context.Context, request *v2.ListActionSchemasRequest) (*v2.ListActionSchemasResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.ListActionSchemas")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.ActionListSchemasType
-	if b.actionManager == nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: action manager not implemented")
-	}
-
-	actionSchemas, annos, err := b.actionManager.ListActionSchemas(ctx)
-	if err != nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: listing action schemas failed: %w", err)
-	}
-
-	rv := &v2.ListActionSchemasResponse{
-		Schemas:     actionSchemas,
-		Annotations: annos,
-	}
-
-	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-	return rv, nil
-}
-
-func (b *builderImpl) GetActionSchema(ctx context.Context, request *v2.GetActionSchemaRequest) (*v2.GetActionSchemaResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.GetActionSchema")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.ActionGetSchemaType
-	if b.actionManager == nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: action manager not implemented")
-	}
-
-	actionSchema, annos, err := b.actionManager.GetActionSchema(ctx, request.GetName())
-	if err != nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: getting action schema failed: %w", err)
-	}
-
-	rv := &v2.GetActionSchemaResponse{
-		Schema:      actionSchema,
-		Annotations: annos,
-	}
-
-	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-	return rv, nil
-}
-
-func (b *builderImpl) InvokeAction(ctx context.Context, request *v2.InvokeActionRequest) (*v2.InvokeActionResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.InvokeAction")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.ActionInvokeType
-	if b.actionManager == nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: action manager not implemented")
-	}
-
-	id, status, resp, annos, err := b.actionManager.InvokeAction(ctx, request.GetName(), request.GetArgs())
-	if err != nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: invoking action failed: %w", err)
-	}
-
-	rv := &v2.InvokeActionResponse{
-		Id:          id,
-		Name:        request.GetName(),
-		Status:      status,
-		Annotations: annos,
-		Response:    resp,
-	}
-
-	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-	return rv, nil
-}
-
-func (b *builderImpl) GetActionStatus(ctx context.Context, request *v2.GetActionStatusRequest) (*v2.GetActionStatusResponse, error) {
-	ctx, span := tracer.Start(ctx, "builderImpl.GetActionStatus")
-	defer span.End()
-
-	start := b.nowFunc()
-	tt := tasks.ActionStatusType
-	if b.actionManager == nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: action manager not implemented")
-	}
-
-	status, name, rv, annos, err := b.actionManager.GetActionStatus(ctx, request.GetId())
-	if err != nil {
-		b.m.RecordTaskFailure(ctx, tt, b.nowFunc().Sub(start))
-		return nil, fmt.Errorf("error: getting action status failed: %w", err)
-	}
-
-	resp := &v2.GetActionStatusResponse{
-		Id:          request.GetId(),
-		Name:        name,
-		Status:      status,
-		Annotations: annos,
-		Response:    rv,
-	}
-
-	b.m.RecordTaskSuccess(ctx, tt, b.nowFunc().Sub(start))
-	return resp, nil
 }

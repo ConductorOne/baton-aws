@@ -5,9 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/protobuf/types/known/structpb"
-
 	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
 	"github.com/conductorone/baton-sdk/pkg/provisioner"
 	"github.com/conductorone/baton-sdk/pkg/tasks"
@@ -18,9 +15,8 @@ type localAccountManager struct {
 	dbPath string
 	o      sync.Once
 
-	login   string
-	email   string
-	profile *structpb.Struct
+	login string
+	email string
 }
 
 func (m *localAccountManager) GetTempDir() string {
@@ -42,10 +38,7 @@ func (m *localAccountManager) Next(ctx context.Context) (*v1.Task, time.Duration
 }
 
 func (m *localAccountManager) Process(ctx context.Context, task *v1.Task, cc types.ConnectorClient) error {
-	ctx, span := tracer.Start(ctx, "localAccountManager.Process", trace.WithNewRoot())
-	defer span.End()
-
-	accountManager := provisioner.NewCreateAccountManager(cc, m.dbPath, m.login, m.email, m.profile)
+	accountManager := provisioner.NewCreateAccountManager(cc, m.dbPath, m.login, m.email)
 
 	err := accountManager.Run(ctx)
 	if err != nil {
@@ -61,11 +54,10 @@ func (m *localAccountManager) Process(ctx context.Context, task *v1.Task, cc typ
 }
 
 // NewGranter returns a task manager that queues a sync task.
-func NewCreateAccountManager(ctx context.Context, dbPath string, login string, email string, profile *structpb.Struct) tasks.Manager {
+func NewCreateAccountManager(ctx context.Context, dbPath string, login string, email string) tasks.Manager {
 	return &localAccountManager{
-		dbPath:  dbPath,
-		login:   login,
-		email:   email,
-		profile: profile,
+		dbPath: dbPath,
+		login:  login,
+		email:  email,
 	}
 }

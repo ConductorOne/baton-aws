@@ -4,20 +4,8 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
-	"time"
-
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	"go.uber.org/zap"
-	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/conductorone/baton-sdk/internal/connector"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -25,21 +13,24 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/connectorrunner"
 	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/logging"
-	"github.com/conductorone/baton-sdk/pkg/uotel"
+	"github.com/conductorone/baton-sdk/pkg/types"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/anypb"
 )
 
-const (
-	otelShutdownTimeout = 5 * time.Second
-)
+type GetConnectorFunc func(context.Context, *viper.Viper) (types.ConnectorServer, error)
 
-type ContrainstSetter func(*cobra.Command, field.Configuration) error
-
-func MakeMainCommand[T field.Configurable](
+func MakeMainCommand(
 	ctx context.Context,
 	name string,
 	v *viper.Viper,
 	confschema field.Configuration,
-	getconnector GetConnectorFunc[T],
+	getconnector GetConnectorFunc,
 	opts ...connectorrunner.Option,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
@@ -62,23 +53,6 @@ func MakeMainCommand[T field.Configurable](
 			return err
 		}
 
-		runCtx, otelShutdown, err := initOtel(runCtx, name, v, nil)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if otelShutdown == nil {
-				return
-			}
-			shutdownCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(otelShutdownTimeout))
-			defer cancel()
-			err := otelShutdown(shutdownCtx)
-			if err != nil {
-				zap.L().Error("error shutting down otel", zap.Error(err))
-			}
-		}()
-
-		// NOTE: initOtel may do stuff with the logger
 		l := ctxzap.Extract(runCtx)
 
 		if isService() {
@@ -92,6 +66,11 @@ func MakeMainCommand[T field.Configurable](
 
 		// validate required fields and relationship constraints
 		if err := field.Validate(confschema, v); err != nil {
+			return err
+		}
+
+		c, err := getconnector(runCtx, v)
+		if err != nil {
 			return err
 		}
 
@@ -132,61 +111,14 @@ func MakeMainCommand[T field.Configurable](
 						v.GetString("revoke-grant"),
 					))
 			case v.GetBool("event-feed"):
-				opts = append(opts, connectorrunner.WithOnDemandEventStream(v.GetString("event-feed-id"), v.GetTime("event-feed-start-at")))
-			case v.GetString("create-account-profile") != "":
-				profileMap := v.GetStringMap("create-account-profile")
-				if profileMap == nil {
-					return fmt.Errorf("create-account-profile is empty or incorrectly formatted: %v", v.GetString("create-account-profile"))
-				}
-				if v.GetString("create-account-login") != "" {
-					if _, ok := profileMap["login"]; !ok {
-						profileMap["login"] = v.GetString("create-account-login")
-					}
-				}
-				if v.GetString("create-account-email") != "" {
-					if _, ok := profileMap["email"]; !ok {
-						profileMap["email"] = v.GetString("create-account-email")
-					}
-				}
-				login, email := "", ""
-				if l, ok := profileMap["login"]; ok {
-					if l, ok := l.(string); ok {
-						login = l
-					}
-				}
-				if e, ok := profileMap["email"]; ok {
-					if e, ok := e.(string); ok {
-						email = e
-					}
-				}
-				profile, err := structpb.NewStruct(profileMap)
-				if err != nil {
-					return err
-				}
-				opts = append(opts,
-					connectorrunner.WithProvisioningEnabled(),
-					connectorrunner.WithOnDemandCreateAccount(
-						v.GetString("file"),
-						login,
-						email,
-						profile,
-					))
+				opts = append(opts, connectorrunner.WithOnDemandEventStream())
 			case v.GetString("create-account-login") != "":
-				// should only be here if no create-account-profile is provided, so lets make one.
-				profile, err := structpb.NewStruct(map[string]any{
-					"login": v.GetString("create-account-login"),
-					"email": v.GetString("create-account-email"),
-				})
-				if err != nil {
-					return err
-				}
 				opts = append(opts,
 					connectorrunner.WithProvisioningEnabled(),
 					connectorrunner.WithOnDemandCreateAccount(
 						v.GetString("file"),
 						v.GetString("create-account-login"),
 						v.GetString("create-account-email"),
-						profile,
 					))
 			case v.GetString("delete-resource") != "":
 				opts = append(opts,
@@ -220,28 +152,6 @@ func MakeMainCommand[T field.Configurable](
 				opts = append(opts,
 					connectorrunner.WithTicketingEnabled(),
 					connectorrunner.WithGetTicket(v.GetString("ticket-id")))
-			case len(v.GetStringSlice("sync-resources")) > 0:
-				opts = append(opts,
-					connectorrunner.WithTargetedSyncResourceIDs(v.GetStringSlice("sync-resources")),
-					connectorrunner.WithOnDemandSync(v.GetString("file")),
-				)
-			case v.GetBool("diff-syncs"):
-				opts = append(opts,
-					connectorrunner.WithDiffSyncs(
-						v.GetString("file"),
-						v.GetString("base-sync-id"),
-						v.GetString("applied-sync-id"),
-					),
-				)
-			case v.GetBool("compact-syncs"):
-				opts = append(opts,
-					connectorrunner.WithSyncCompactor(
-						v.GetString("compact-output-path"),
-						v.GetStringSlice("compact-file-paths"),
-						v.GetStringSlice("compact-sync-ids"),
-					),
-				)
-
 			default:
 				opts = append(opts, connectorrunner.WithOnDemandSync(v.GetString("file")))
 			}
@@ -253,30 +163,6 @@ func MakeMainCommand[T field.Configurable](
 				return fmt.Errorf("the specified c1z temp dir does not exist: %s", c1zTmpDir)
 			}
 			opts = append(opts, connectorrunner.WithTempDir(v.GetString("c1z-temp-dir")))
-		}
-
-		if v.GetString("external-resource-c1z") != "" {
-			externalResourceC1ZPath := v.GetString("external-resource-c1z")
-			_, err := os.Open(externalResourceC1ZPath)
-			if err != nil {
-				return fmt.Errorf("the specified external resource c1z file does not exist: %s", externalResourceC1ZPath)
-			}
-			opts = append(opts, connectorrunner.WithExternalResourceC1Z(externalResourceC1ZPath))
-		}
-
-		if v.GetString("external-resource-entitlement-id-filter") != "" {
-			externalResourceEntitlementIdFilter := v.GetString("external-resource-entitlement-id-filter")
-			opts = append(opts, connectorrunner.WithExternalResourceEntitlementFilter(externalResourceEntitlementIdFilter))
-		}
-
-		t, err := MakeGenericConfiguration[T](v)
-		if err != nil {
-			return fmt.Errorf("failed to make configuration: %w", err)
-		}
-
-		c, err := getconnector(runCtx, t)
-		if err != nil {
-			return err
 		}
 
 		// NOTE(shackra): top-most in the execution flow for connectors
@@ -297,45 +183,12 @@ func MakeMainCommand[T field.Configurable](
 	}
 }
 
-func initOtel(ctx context.Context, name string, v *viper.Viper, initialLogFields map[string]interface{}) (context.Context, func(context.Context) error, error) {
-	otelEndpoint := v.GetString(field.OtelCollectorEndpointFieldName)
-	if otelEndpoint == "" {
-		return ctx, nil, nil
-	}
-
-	var otelOpts []uotel.Option
-	otelOpts = append(otelOpts, uotel.WithServiceName(fmt.Sprintf("%s-server", name)))
-
-	if len(initialLogFields) > 0 {
-		otelOpts = append(otelOpts, uotel.WithInitialLogFields(initialLogFields))
-	}
-
-	if v.GetBool(field.OtelTracingDisabledFieldName) {
-		otelOpts = append(otelOpts, uotel.WithTracingDisabled())
-	}
-
-	if v.GetBool(field.OtelLoggingDisabledFieldName) {
-		otelOpts = append(otelOpts, uotel.WithLoggingDisabled())
-	}
-
-	otelTLSInsecure := v.GetBool(field.OtelCollectorEndpointTLSInsecureFieldName)
-	if otelTLSInsecure {
-		otelOpts = append(otelOpts, uotel.WithInsecureOtelEndpoint(otelEndpoint))
-	} else {
-		otelTLSCert := v.GetString(field.OtelCollectorEndpointTLSCertFieldName)
-		otelTLSCertPath := v.GetString(field.OtelCollectorEndpointTLSCertPathFieldName)
-		otelOpts = append(otelOpts, uotel.WithOtelEndpoint(otelEndpoint, otelTLSCertPath, otelTLSCert))
-	}
-
-	return uotel.InitOtel(context.Background(), otelOpts...)
-}
-
-func MakeGRPCServerCommand[T field.Configurable](
+func MakeGRPCServerCommand(
 	ctx context.Context,
 	name string,
 	v *viper.Viper,
 	confschema field.Configuration,
-	getconnector GetConnectorFunc[T],
+	getconnector GetConnectorFunc,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		// NOTE(shackra): bind all the flags (persistent and
@@ -357,34 +210,12 @@ func MakeGRPCServerCommand[T field.Configurable](
 			return err
 		}
 
-		runCtx, otelShutdown, err := initOtel(runCtx, name, v, nil)
-		if err != nil {
-			return err
-		}
-		defer func() {
-			if otelShutdown == nil {
-				return
-			}
-			shutdownCtx, cancel := context.WithDeadline(context.Background(), time.Now().Add(otelShutdownTimeout))
-			defer cancel()
-			err := otelShutdown(shutdownCtx)
-			if err != nil {
-				zap.L().Error("error shutting down otel", zap.Error(err))
-			}
-		}()
-
-		l := ctxzap.Extract(runCtx)
-		l.Debug("starting grpc server")
-
 		// validate required fields and relationship constraints
 		if err := field.Validate(confschema, v); err != nil {
 			return err
 		}
-		t, err := MakeGenericConfiguration[T](v)
-		if err != nil {
-			return fmt.Errorf("failed to make configuration: %w", err)
-		}
-		c, err := getconnector(runCtx, t)
+
+		c, err := getconnector(runCtx, v)
 		if err != nil {
 			return err
 		}
@@ -408,8 +239,6 @@ func MakeGRPCServerCommand[T field.Configurable](
 			copts = append(copts, connector.WithProvisioningEnabled())
 		case v.GetString("revoke-grant") != "":
 			copts = append(copts, connector.WithProvisioningEnabled())
-		case v.GetString("create-account-profile") != "":
-			copts = append(copts, connector.WithProvisioningEnabled())
 		case v.GetString("create-account-login") != "" || v.GetString("create-account-email") != "":
 			copts = append(copts, connector.WithProvisioningEnabled())
 		case v.GetString("delete-resource") != "" || v.GetString("delete-resource-type") != "":
@@ -424,8 +253,6 @@ func MakeGRPCServerCommand[T field.Configurable](
 			copts = append(copts, connector.WithTicketingEnabled())
 		case v.GetBool("get-ticket"):
 			copts = append(copts, connector.WithTicketingEnabled())
-		case len(v.GetStringSlice("sync-resources")) > 0:
-			copts = append(copts, connector.WithTargetedSyncResourceIDs(v.GetStringSlice("sync-resources")))
 		}
 
 		cw, err := connector.NewWrapper(runCtx, c, copts...)
@@ -474,12 +301,12 @@ func MakeGRPCServerCommand[T field.Configurable](
 	}
 }
 
-func MakeCapabilitiesCommand[T field.Configurable](
+func MakeCapabilitiesCommand(
 	ctx context.Context,
 	name string,
 	v *viper.Viper,
 	confschema field.Configuration,
-	getconnector GetConnectorFunc[T],
+	getconnector GetConnectorFunc,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {
 		// NOTE(shackra): bind all the flags (persistent and
@@ -505,12 +332,8 @@ func MakeCapabilitiesCommand[T field.Configurable](
 		if err := field.Validate(confschema, v); err != nil {
 			return err
 		}
-		t, err := MakeGenericConfiguration[T](v)
-		if err != nil {
-			return fmt.Errorf("failed to make configuration: %w", err)
-		}
 
-		c, err := getconnector(runCtx, t)
+		c, err := getconnector(runCtx, v)
 		if err != nil {
 			return err
 		}
@@ -545,32 +368,6 @@ func MakeCapabilitiesCommand[T field.Configurable](
 			return err
 		}
 
-		return nil
-	}
-}
-
-func MakeConfigSchemaCommand[T field.Configurable](
-	ctx context.Context,
-	name string,
-	v *viper.Viper,
-	confschema field.Configuration,
-	getconnector GetConnectorFunc[T],
-) func(*cobra.Command, []string) error {
-	return func(cmd *cobra.Command, args []string) error {
-		// Sort fields by FieldName
-		sort.Slice(confschema.Fields, func(i, j int) bool {
-			return confschema.Fields[i].FieldName < confschema.Fields[j].FieldName
-		})
-
-		// Use MarshalIndent for pretty printing
-		pb, err := json.MarshalIndent(&confschema, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = fmt.Fprint(os.Stdout, string(pb))
-		if err != nil {
-			return err
-		}
 		return nil
 	}
 }

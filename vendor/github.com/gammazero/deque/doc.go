@@ -33,6 +33,6 @@ Deque.Len() before reading from the deque.
 
 Deque uses generics to create a Deque that contains items of the type
 specified. To create a Deque that holds a specific type, provide a type
-argument with the Deque variable declaration.
+argument to New or with the variable declaration.
 */
 package deque

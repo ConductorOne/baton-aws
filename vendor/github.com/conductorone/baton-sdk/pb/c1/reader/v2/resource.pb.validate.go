@@ -61,40 +61,6 @@ func (m *ResourceTypesReaderServiceGetResourceTypeRequest) validate(all bool) er
 
 	// no validation rules for ResourceTypeId
 
-	for idx, item := range m.GetAnnotations() {
-		_, _ = idx, item
-
-		if all {
-			switch v := interface{}(item).(type) {
-			case interface{ ValidateAll() error }:
-				if err := v.ValidateAll(); err != nil {
-					errors = append(errors, ResourceTypesReaderServiceGetResourceTypeRequestValidationError{
-						field:  fmt.Sprintf("Annotations[%v]", idx),
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			case interface{ Validate() error }:
-				if err := v.Validate(); err != nil {
-					errors = append(errors, ResourceTypesReaderServiceGetResourceTypeRequestValidationError{
-						field:  fmt.Sprintf("Annotations[%v]", idx),
-						reason: "embedded message failed validation",
-						cause:  err,
-					})
-				}
-			}
-		} else if v, ok := interface{}(item).(interface{ Validate() error }); ok {
-			if err := v.Validate(); err != nil {
-				return ResourceTypesReaderServiceGetResourceTypeRequestValidationError{
-					field:  fmt.Sprintf("Annotations[%v]", idx),
-					reason: "embedded message failed validation",
-					cause:  err,
-				}
-			}
-		}
-
-	}
-
 	if len(errors) > 0 {
 		return ResourceTypesReaderServiceGetResourceTypeRequestMultiError(errors)
 	}
@@ -110,7 +76,7 @@ type ResourceTypesReaderServiceGetResourceTypeRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m ResourceTypesReaderServiceGetResourceTypeRequestMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -252,7 +218,7 @@ type ResourceTypesReaderServiceGetResourceTypeResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m ResourceTypesReaderServiceGetResourceTypeResponseMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -439,7 +405,7 @@ type ResourcesReaderServiceGetResourceRequestMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m ResourcesReaderServiceGetResourceRequestMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}
@@ -574,7 +540,7 @@ type ResourcesReaderServiceGetResourceResponseMultiError []error
 
 // Error returns a concatenation of all the error messages it wraps.
 func (m ResourcesReaderServiceGetResourceResponseMultiError) Error() string {
-	msgs := make([]string, 0, len(m))
+	var msgs []string
 	for _, err := range m {
 		msgs = append(msgs, err.Error())
 	}

@@ -58,13 +58,6 @@ func WithUserLogin(login string, aliases ...string) UserTraitOption {
 	}
 }
 
-func WithEmployeeID(employeeIDs ...string) UserTraitOption {
-	return func(ut *v2.UserTrait) error {
-		ut.EmployeeIds = employeeIDs
-		return nil
-	}
-}
-
 func WithUserIcon(assetRef *v2.AssetRef) UserTraitOption {
 	return func(ut *v2.UserTrait) error {
 		ut.Icon = assetRef
@@ -117,13 +110,6 @@ func WithMFAStatus(mfaStatus *v2.UserTrait_MFAStatus) UserTraitOption {
 func WithSSOStatus(ssoStatus *v2.UserTrait_SSOStatus) UserTraitOption {
 	return func(ut *v2.UserTrait) error {
 		ut.SsoStatus = ssoStatus
-		return nil
-	}
-}
-
-func WithStructuredName(structuredName *v2.UserTrait_StructuredName) UserTraitOption {
-	return func(ut *v2.UserTrait) error {
-		ut.StructuredName = structuredName
 		return nil
 	}
 }

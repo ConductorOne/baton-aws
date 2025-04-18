@@ -1,5 +1,5 @@
-//go:build !darwin && !linux && !freebsd && !openbsd && !netbsd && !solaris && !windows && !aix
-// +build !darwin,!linux,!freebsd,!openbsd,!netbsd,!solaris,!windows,!aix
+//go:build !darwin && !linux && !freebsd && !openbsd && !netbsd && !solaris && !windows
+// +build !darwin,!linux,!freebsd,!openbsd,!netbsd,!solaris,!windows
 
 package host
 
