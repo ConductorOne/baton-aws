@@ -68,6 +68,11 @@ func TestConfigs(t *testing.T) {
 				true,
 				"all",
 			},
+			{
+				"--sync-secrets",
+				true,
+				"empty",
+			},
 		},
 	)
 }

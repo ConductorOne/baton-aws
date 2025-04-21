@@ -79,8 +79,8 @@ func (o *secretResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pag
 				resourceSdk.WithSecretCreatedAt(*key.CreateDate),
 			}
 
-			keyLastUsedDate, err := getAccessKeyLastUsedDate(ctx, o.iamClient, *key.AccessKeyId)
-			if err == nil {
+			keyLastUsedDate := getAccessKeyLastUsedDate(ctx, o.iamClient, *key.AccessKeyId)
+			if keyLastUsedDate != nil {
 				options = append(options, resourceSdk.WithSecretLastUsedAt(*keyLastUsedDate))
 			}
 
@@ -120,17 +120,20 @@ func (o *secretResourceType) Grants(ctx context.Context, resource *v2.Resource, 
 	return nil, "", nil, nil
 }
 
-func getAccessKeyLastUsedDate(ctx context.Context, iamClient *iam.Client, accessKeyId string) (*time.Time, error) {
+func getAccessKeyLastUsedDate(ctx context.Context, iamClient *iam.Client, accessKeyId string) *time.Time {
+	logger := ctxzap.Extract(ctx)
 	accessKeyLastUsed, err := iamClient.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
 		AccessKeyId: awsSdk.String(accessKeyId),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error getting access key last used: %w", err)
+		logger.Error("Error getting access key last used", zap.Error(err))
+		return nil
 	}
 	if accessKeyLastUsed.AccessKeyLastUsed == nil ||
 		accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate == nil ||
 		accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate.IsZero() {
-		return nil, fmt.Errorf("access key last used date is nil or zero")
+		logger.Error("Access key last used date is nil or zero", zap.String("access_key_id", accessKeyId))
+		return nil
 	}
-	return accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate, nil
+	return accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate
 }

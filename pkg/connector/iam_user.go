@@ -138,9 +138,9 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 
 	accessKeyLastUsedDates := make([]time.Time, 0, len(res.AccessKeyMetadata))
 	for _, key := range res.AccessKeyMetadata {
-		accessKeyLastUsed, err := getAccessKeyLastUsedDate(ctx, client, *key.AccessKeyId)
-		if err != nil {
-			logger.Error("Error getting access key last used", zap.String("access_key_id", *key.AccessKeyId), zap.Error(err))
+		accessKeyLastUsed := getAccessKeyLastUsedDate(ctx, client, awsSdk.ToString(key.AccessKeyId))
+		if accessKeyLastUsed == nil {
+			logger.Error("Error getting access key last used", zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)))
 			continue
 		}
 		accessKeyLastUsedDates = append(accessKeyLastUsedDates, *accessKeyLastUsed)
