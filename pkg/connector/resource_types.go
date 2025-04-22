@@ -48,4 +48,10 @@ var (
 		},
 		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}, &v2.V1Identifier{Id: "iam_user"}),
 	}
+	resourceTypeSecret = &v2.ResourceType{
+		Id:          "access-key",
+		DisplayName: "Access Key",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_SECRET},
+		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}),
+	}
 )

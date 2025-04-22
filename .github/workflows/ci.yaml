@@ -43,6 +43,7 @@ jobs:
       BATON_GLOBAL_AWS_ORGS_ENABLED: true
       BATON_GLOBAL_AWS_SSO_REGION: us-east-1
       BATON_GLOBAL_REGION: us-east-1
+      BATON_SYNC_SECRETS: true
     steps:
       - name: Install Go
         uses: actions/setup-go@v4

@@ -68,6 +68,7 @@ func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, e
 		SCIMToken:               v.GetString(ScimTokenField.FieldName),
 		SCIMEnabled:             v.GetBool(ScimEnabledField.FieldName),
 		UseAssumeRole:           v.GetBool(UseAssumeField.FieldName),
+		SyncSecrets:             v.GetBool(SyncSecrets.FieldName),
 	}
 
 	cb, err := connector.New(ctx, config)

@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/trace"
+
 	v1 "github.com/conductorone/baton-sdk/pb/c1/connectorapi/baton/v1"
 	sdkSync "github.com/conductorone/baton-sdk/pkg/sync"
 	"github.com/conductorone/baton-sdk/pkg/tasks"
@@ -13,9 +15,11 @@ import (
 )
 
 type localSyncer struct {
-	dbPath string
-	o      sync.Once
-	tmpDir string
+	dbPath                              string
+	o                                   sync.Once
+	tmpDir                              string
+	externalResourceC1Z                 string
+	externalResourceEntitlementIdFilter string
 }
 
 type Option func(*localSyncer)
@@ -23,6 +27,18 @@ type Option func(*localSyncer)
 func WithTmpDir(tmpDir string) Option {
 	return func(m *localSyncer) {
 		m.tmpDir = tmpDir
+	}
+}
+
+func WithExternalResourceC1Z(externalResourceC1Z string) Option {
+	return func(m *localSyncer) {
+		m.externalResourceC1Z = externalResourceC1Z
+	}
+}
+
+func WithExternalResourceEntitlementIdFilter(entitlementId string) Option {
+	return func(m *localSyncer) {
+		m.externalResourceEntitlementIdFilter = entitlementId
 	}
 }
 
@@ -45,7 +61,14 @@ func (m *localSyncer) Next(ctx context.Context) (*v1.Task, time.Duration, error)
 }
 
 func (m *localSyncer) Process(ctx context.Context, task *v1.Task, cc types.ConnectorClient) error {
-	syncer, err := sdkSync.NewSyncer(ctx, cc, sdkSync.WithC1ZPath(m.dbPath), sdkSync.WithTmpDir(m.tmpDir))
+	ctx, span := tracer.Start(ctx, "localSyncer.Process", trace.WithNewRoot())
+	defer span.End()
+
+	syncer, err := sdkSync.NewSyncer(ctx, cc,
+		sdkSync.WithC1ZPath(m.dbPath),
+		sdkSync.WithTmpDir(m.tmpDir),
+		sdkSync.WithExternalResourceC1ZPath(m.externalResourceC1Z),
+		sdkSync.WithExternalResourceEntitlementIdFilter(m.externalResourceEntitlementIdFilter))
 	if err != nil {
 		return err
 	}

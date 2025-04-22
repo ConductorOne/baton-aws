@@ -73,6 +73,10 @@ var (
 		"use-assume",
 		field.WithDescription("Enable support for assume role"),
 	)
+	SyncSecrets = field.BoolField(
+		"sync-secrets",
+		field.WithDescription("Whether to sync secrets or not"),
+	)
 
 	Configuration = field.NewConfiguration(
 		[]field.SchemaField{
@@ -90,6 +94,7 @@ var (
 			ScimEndpointField,
 			ScimTokenField,
 			UseAssumeField,
+			SyncSecrets,
 		},
 		field.FieldsDependentOn(
 			[]field.SchemaField{
