@@ -96,15 +96,16 @@ var (
 			UseAssumeField,
 			SyncSecrets,
 		},
-		field.FieldsDependentOn(
-			[]field.SchemaField{
-				UseAssumeField,
-			},
-			[]field.SchemaField{
-				ExternalIdField,
-				RoleArnField,
-			},
-		),
+		field.WithConstraints(
+			field.FieldsDependentOn(
+				[]field.SchemaField{
+					UseAssumeField,
+				},
+				[]field.SchemaField{
+					ExternalIdField,
+					RoleArnField,
+				},
+			)),
 	)
 )
 

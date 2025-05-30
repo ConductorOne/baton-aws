@@ -36,6 +36,8 @@ func (tt TaskType) String() string {
 		return "list_resource_types"
 	case ListResourcesType:
 		return "list_resources"
+	case GetResourceType:
+		return "get_resource"
 	case ListEntitlementsType:
 		return "list_entitlements"
 	case ListGrantsType:
@@ -81,10 +83,12 @@ const (
 	GetTicketSchemaType
 	ListResourceTypesType
 	ListResourcesType
+	GetResourceType
 	ListEntitlementsType
 	ListGrantsType
 	GetMetadataType
 	ListEventsType
+	ListEventFeedsType
 	StartDebugging
 	BulkCreateTicketsType
 	BulkGetTicketsType
@@ -92,4 +96,5 @@ const (
 	ActionGetSchemaType
 	ActionInvokeType
 	ActionStatusType
+	CreateSyncDiff
 )
