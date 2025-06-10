@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,7 +11,6 @@ import (
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -59,10 +57,8 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		profile := iamUserProfile(ctx, user)
 		lastLogin := getLastLogin(ctx, o.iamClient, user)
 		options := []resourceSdk.UserTraitOption{
+			resourceSdk.WithEmail(getUserEmail(user), true),
 			resourceSdk.WithUserProfile(profile),
-		}
-		for _, email := range getUserEmails(user) {
-			options = append(options, resourceSdk.WithEmail(email, true))
 		}
 		if lastLogin != nil {
 			options = append(options, resourceSdk.WithLastLogin(*lastLogin))
@@ -173,104 +169,11 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 	return &out
 }
 
-func getUserEmails(user iamTypes.User) []string {
-	emails := make([]string, 0, len(user.Tags))
+func getUserEmail(user iamTypes.User) string {
+	email := ""
 	username := awsSdk.ToString(user.UserName)
 	if strings.Contains(username, "@") {
-		emails = append(emails, username)
+		email = username
 	}
-	for _, tag := range user.Tags {
-		if awsSdk.ToString(tag.Key) == "email" {
-			emails = append(emails, awsSdk.ToString(tag.Value))
-		}
-	}
-	return emails
-}
-
-// CreateAccountCapabilityDetails returns details about the account provisioning capability.
-func (o *iamUserResourceType) CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
-	// Only include NO_PASSWORD option since AWS Identity Center handles password reset emails
-	details := &v2.CredentialDetailsAccountProvisioning{
-		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
-			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
-		},
-		PreferredCredentialOption: v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
-	}
-	return details, nil, nil
-}
-
-func (o *iamUserResourceType) CreateAccount(
-	ctx context.Context,
-	accountInfo *v2.AccountInfo,
-	credentialOptions *v2.CredentialOptions,
-) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
-	profile := accountInfo.Profile.AsMap()
-
-	// Extract required fields
-	email, ok := profile["email"].(string)
-	if !ok || email == "" {
-		return nil, nil, nil, fmt.Errorf("email is required")
-	}
-
-	username, ok := profile["username"].(string)
-	if !ok || username == "" {
-		username = email
-	}
-
-	if result, err := o.iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsSdk.String(username)}); err == nil {
-		var noSuchEntity *iamTypes.NoSuchEntityException
-		if errors.As(err, &noSuchEntity) {
-			return nil, nil, nil, fmt.Errorf("aws-connector: iam.GetUser failed: %w", err)
-		}
-		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(result.User.Arn),
-		}
-		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(result.User.UserName),
-			resourceTypeIAMUser,
-			awsSdk.ToString(result.User.Arn),
-			nil,
-			resourceSdk.WithAnnotation(annos),
-		)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
-		return &v2.CreateAccountResponse_SuccessResult{
-			Resource:              userResource,
-			IsCreateAccountResult: true,
-		}, nil, nil, nil
-	}
-
-	createUserInput := &iam.CreateUserInput{
-		UserName: awsSdk.String(username),
-	}
-	if username != email {
-		createUserInput.Tags = append(createUserInput.Tags, iamTypes.Tag{
-			Key:   awsSdk.String("email"),
-			Value: awsSdk.String(email),
-		})
-	}
-
-	result, err := o.iamClient.CreateUser(ctx, createUserInput)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("aws-connector: iam.CreateUser failed: %w", err)
-	}
-
-	annos := &v2.V1Identifier{
-		Id: awsSdk.ToString(result.User.Arn),
-	}
-	userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(result.User.UserName),
-		resourceTypeIAMUser,
-		awsSdk.ToString(result.User.Arn),
-		nil,
-		resourceSdk.WithAnnotation(annos),
-	)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-
-	return &v2.CreateAccountResponse_SuccessResult{
-		Resource:              userResource,
-		IsCreateAccountResult: true,
-	}, nil, nil, nil
+	return email
 }
