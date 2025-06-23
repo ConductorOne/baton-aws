@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"google.golang.org/protobuf/proto"
+
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -28,8 +31,6 @@ func (o *accountIAMResourceType) ResourceType(_ context.Context) *v2.ResourceTyp
 }
 
 func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
-	l := ctxzap.Extract(ctx)
-
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
 	if err != nil {
@@ -52,8 +53,18 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 		return nil, "", nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
 	}
 
+	identity, err := o.awsClientFactory.CallerIdentity(ctx)
+	if err != nil {
+		return nil, "", nil, err
+	}
+
 	rv := make([]*v2.Resource, 0)
 	for _, account := range resp.Accounts {
+		childForIam, err := o.parseAssumeRole(ctx, identity, account)
+		if err != nil {
+			return nil, "", nil, err
+		}
+
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(account.Id),
 		}
@@ -64,28 +75,10 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 			awsSdk.ToString(account.Id),
 			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childForIam...),
 		)
 		if err != nil {
 			return nil, "", nil, err
-		}
-
-		identity, err := o.awsClientFactory.CallerIdentity(ctx)
-		if err != nil {
-			return nil, "", nil, err
-		}
-
-		if awsSdk.ToString(identity.Account) != awsSdk.ToString(account.Id) {
-			client, err := o.awsClientFactory.GetIAMClient(ctx, awsSdk.ToString(account.Id))
-			if err != nil {
-				return nil, "", nil, err
-			}
-
-			accounts, err := client.ListUsers(ctx, &iam.ListUsersInput{})
-			if err != nil {
-				return nil, "", nil, err
-			}
-
-			l.Info("Found account in Organizations", zap.String("accountId", awsSdk.ToString(account.Id)), zap.Any("accounts", accounts))
 		}
 
 		rv = append(rv, userResource)
@@ -108,6 +101,35 @@ func (o *accountIAMResourceType) Entitlements(ctx context.Context, resource *v2.
 
 func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
 	return nil, "", nil, nil
+}
+
+func (o *accountIAMResourceType) parseAssumeRole(
+	ctx context.Context,
+	identity *sts.GetCallerIdentityOutput,
+	account types.Account,
+) ([]proto.Message, error) {
+	l := ctxzap.Extract(ctx)
+
+	if awsSdk.ToString(identity.Account) != awsSdk.ToString(account.Id) {
+		_, err := o.awsClientFactory.GetIAMClient(ctx, awsSdk.ToString(account.Id))
+		if err != nil {
+			l.Info("Skipping account in Organizations", zap.String("accountId", awsSdk.ToString(account.Id)), zap.Error(err))
+			return nil, nil
+		}
+
+		return []proto.Message{
+			&v2.ChildResourceType{
+				ResourceTypeId: resourceTypeIAMUser.Id,
+			},
+			&v2.ChildResourceType{
+				ResourceTypeId: resourceTypeRole.Id,
+			}, &v2.ChildResourceType{
+				ResourceTypeId: resourceTypeIAMGroup.Id,
+			},
+		}, nil
+	}
+
+	return nil, nil
 }
 
 func accountIAMBuilder(

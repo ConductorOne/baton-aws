@@ -21,15 +21,16 @@ const (
 )
 
 type iamGroupResourceType struct {
-	resourceType *v2.ResourceType
-	iamClient    *iam.Client
+	resourceType     *v2.ResourceType
+	iamClient        *iam.Client
+	awsClientFactory *AWSClientFactory
 }
 
 func (o *iamGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
 	if err != nil {
@@ -47,7 +48,15 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 		listGroupsInput.Marker = awsSdk.String(bag.PageToken())
 	}
 
-	resp, err := o.iamClient.ListGroups(ctx, listGroupsInput)
+	iamClient := o.iamClient
+	if parentId != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+
+	resp, err := iamClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListGroups failed: %w", err)
 	}
@@ -66,6 +75,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 				resourceSdk.WithGroupProfile(profile),
 			},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -114,7 +124,15 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		input.Marker = awsSdk.String(bag.PageToken())
 	}
 
-	resp, err := o.iamClient.GetGroup(ctx, input)
+	iamClient := o.iamClient
+	if resource.ParentResourceId != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+
+	resp, err := iamClient.GetGroup(ctx, input)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err)
 	}
@@ -150,10 +168,11 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	return rv, "", nil, nil
 }
 
-func iamGroupBuilder(iamClient *iam.Client) *iamGroupResourceType {
+func iamGroupBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamGroupResourceType {
 	return &iamGroupResourceType{
-		resourceType: resourceTypeIAMGroup,
-		iamClient:    iamClient,
+		resourceType:     resourceTypeIAMGroup,
+		iamClient:        iamClient,
+		awsClientFactory: awsClientFactory,
 	}
 }
 

@@ -330,9 +330,9 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncer{
-		iamUserBuilder(c.iamClient),
-		iamRoleBuilder(c.iamClient),
-		iamGroupBuilder(c.iamClient),
+		iamUserBuilder(c.iamClient, c.awsClientFactory),
+		iamRoleBuilder(c.iamClient, c.awsClientFactory),
+		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 	}
 
 	if c.ssoEnabled {
