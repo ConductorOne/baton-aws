@@ -352,7 +352,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 
 	if c.syncSecrets {
 		l.Debug("syncSecrets. creating secretBuilder")
-		rs = append(rs, secretBuilder(c.iamClient))
+		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
 	return rs
 }
