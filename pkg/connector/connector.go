@@ -275,10 +275,36 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		return nil, err
 	}
 
+	accountCreationSchema := &v2.ConnectorAccountCreationSchema{
+		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+			"email": {
+				DisplayName: "Email",
+				Required:    true,
+				Description: "User's email address",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "user@example.com",
+				Order:       1,
+			},
+			"username": {
+				DisplayName: "Username",
+				Required:    false,
+				Description: "If set email is added as a tag",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "user",
+				Order:       2,
+			},
+		},
+	}
+
 	return &v2.ConnectorMetadata{
-		DisplayName: displayName,
-		Profile:     profile,
-		Annotations: annos,
+		DisplayName:           displayName,
+		Profile:               profile,
+		Annotations:           annos,
+		AccountCreationSchema: accountCreationSchema,
 	}, nil
 }
 
