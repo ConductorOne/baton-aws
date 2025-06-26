@@ -39,7 +39,7 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 
 	if bag.Current() == nil {
 		bag.Push(pagination.PageState{
-			ResourceTypeID: resourceTypeAccount.Id,
+			ResourceTypeID: resourceTypeAccountIam.Id,
 		})
 	}
 
