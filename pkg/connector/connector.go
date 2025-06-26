@@ -79,6 +79,7 @@ type AWS struct {
 	ssoSCIMClient       *awsIdentityCenterSCIMClient
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
+	awsClientFactory    *AWSClientFactory
 
 	syncSecrets bool
 }
@@ -180,34 +181,19 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 }
 
 func New(ctx context.Context, config Config) (*AWS, error) {
-	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, nil))
+	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, ctxzap.Extract(ctx)))
 	if err != nil {
 		return nil, err
 	}
 
-	opts := []func(*awsConfig.LoadOptions) error{
-		awsConfig.WithHTTPClient(httpClient),
-		awsConfig.WithRegion(config.GlobalRegion),
-		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
-	}
-	// Either we have an access key directly into our binding account, or we use
-	// instance identity to swap into that role.
-	if config.GlobalAccessKeyID != "" && config.GlobalSecretAccessKey != "" {
-		opts = append(opts,
-			awsConfig.WithCredentialsProvider(
-				credentials.NewStaticCredentialsProvider(
-					config.GlobalAccessKeyID,
-					config.GlobalSecretAccessKey,
-					"",
-				),
-			),
-		)
-	}
+	opts := GetAwsConfigOptions(httpClient, config)
 
 	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("aws connector: config load failure: %w", err)
 	}
+
+	awsClientFactory := NewAWSClientFactory(config, baseConfig.Copy(), httpClient)
 
 	rv := &AWS{
 		useAssumeRole:           config.UseAssumeRole,
@@ -230,6 +216,7 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		_callingConfig:          map[string]awsSdk.Config{},
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
+		awsClientFactory:        awsClientFactory,
 	}
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
@@ -337,29 +324,25 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 
 	c.iamClient = iam.NewFromConfig(globalCallingConfig)
 
-	// The other clients are only needed if sso or org syncing is enabled
-	if !c.ssoEnabled && !c.orgsEnabled {
-		return nil
-	}
-
 	if c.orgsEnabled {
 		c.orgClient = awsOrgs.NewFromConfig(globalCallingConfig)
 	}
 
-	ssoCallingConfig, err := c.getCallingConfig(ctx, c.ssoRegion)
-	if err != nil {
-		return err
-	}
-	c.identityStoreClient = awsIdentityStore.NewFromConfig(ssoCallingConfig)
-	c.ssoAdminClient = awsSsoAdmin.NewFromConfig(ssoCallingConfig)
+	// Orgs for Identity server require SSO Admin client, so we need to create it here
+	if c.ssoEnabled && c.orgsEnabled {
+		ssoCallingConfig, err := c.getCallingConfig(ctx, c.ssoRegion)
+		if err != nil {
+			return err
+		}
+		c.identityStoreClient = awsIdentityStore.NewFromConfig(ssoCallingConfig)
+		c.ssoAdminClient = awsSsoAdmin.NewFromConfig(ssoCallingConfig)
 
-	identityInstance, err := c.getIdentityInstance(ctx, c.ssoAdminClient)
-	if err != nil {
-		return err
-	}
-	c.identityInstance = identityInstance
+		identityInstance, err := c.getIdentityInstance(ctx, c.ssoAdminClient)
+		if err != nil {
+			return err
+		}
+		c.identityInstance = identityInstance
 
-	if c.ssoEnabled {
 		scimClient, err := c.getSSOSCIMClient(ctx)
 		if err != nil {
 			return err
@@ -373,9 +356,9 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncer{
-		iamUserBuilder(c.iamClient),
-		iamRoleBuilder(c.iamClient),
-		iamGroupBuilder(c.iamClient),
+		iamUserBuilder(c.iamClient, c.awsClientFactory),
+		iamRoleBuilder(c.iamClient, c.awsClientFactory),
+		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 	}
 
 	if c.ssoEnabled {
@@ -383,14 +366,19 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c.ssoSCIMClient))
 		rs = append(rs, ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
 	}
-	if c.orgsEnabled {
+
+	if c.orgsEnabled && !c.ssoEnabled {
+		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory))
+	}
+
+	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
 		rs = append(rs, accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient))
 	}
 
 	if c.syncSecrets {
 		l.Debug("syncSecrets. creating secretBuilder")
-		rs = append(rs, secretBuilder(c.iamClient))
+		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
 	return rs
 }
@@ -431,4 +419,44 @@ func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Cl
 	}
 
 	return c._identityInstancesCache[0], nil
+}
+
+func GetAwsConfigOptions(httpClient *http.Client, config Config) []func(*awsConfig.LoadOptions) error {
+	opts := []func(*awsConfig.LoadOptions) error{
+		awsConfig.WithHTTPClient(httpClient),
+		awsConfig.WithRegion(config.GlobalRegion),
+		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
+	}
+	// Either we have an access key directly into our binding account, or we use
+	// instance identity to swap into that role.
+	if config.GlobalAccessKeyID != "" && config.GlobalSecretAccessKey != "" {
+		opts = append(opts,
+			awsConfig.WithCredentialsProvider(
+				credentials.NewStaticCredentialsProvider(
+					config.GlobalAccessKeyID,
+					config.GlobalSecretAccessKey,
+					"",
+				),
+			),
+		)
+	}
+
+	return opts
+}
+
+func GetAwsConfigOptionsForAssumeRole(output *sts.AssumeRoleOutput, httpClient *http.Client, config Config) []func(*awsConfig.LoadOptions) error {
+	opts := []func(*awsConfig.LoadOptions) error{
+		awsConfig.WithHTTPClient(httpClient),
+		awsConfig.WithRegion(config.GlobalRegion),
+		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
+		awsConfig.WithCredentialsProvider(
+			credentials.NewStaticCredentialsProvider(
+				*output.Credentials.AccessKeyId,
+				*output.Credentials.SecretAccessKey,
+				*output.Credentials.SessionToken,
+			),
+		),
+	}
+
+	return opts
 }
