@@ -9,8 +9,6 @@ import (
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
-	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
-	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
@@ -43,7 +41,6 @@ type accountResourceType struct {
 	_permissionSetsCacheMtx    sync.Mutex
 	_permissionSetsCache       []*awsSsoAdminTypes.PermissionSet
 	_permissionSetDetailsCache sync.Map
-	_groupMembersCache         sync.Map
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -513,37 +510,6 @@ func (psm *PermissionSetBinding) UnmarshalText(data []byte) error {
 
 func (psm *PermissionSetBinding) String() string {
 	return strings.Join([]string{psm.AccountID, psm.PermissionSetId}, "|")
-}
-
-func (o *accountResourceType) getGroupMembers(ctx context.Context, groupId string) ([]string, error) {
-	if v, ok := o._groupMembersCache.Load(groupId); ok {
-		return v.([]string), nil
-	}
-
-	input := &awsIdentityStore.ListGroupMembershipsInput{
-		IdentityStoreId: o.identityInstance.IdentityStoreId,
-		GroupId:         awsSdk.String(groupId),
-	}
-	userIDs := make([]string, 0, 16)
-	paginator := awsIdentityStore.NewListGroupMembershipsPaginator(o.identityClient, input)
-	for {
-		resp, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, user := range resp.GroupMemberships {
-			member, ok := user.MemberId.(*awsIdentityStoreTypes.MemberIdMemberUserId)
-			if !ok {
-				continue
-			}
-			userIDs = append(userIDs, member.Value)
-		}
-		if !paginator.HasMorePages() {
-			break
-		}
-	}
-	o._groupMembersCache.Store(groupId, userIDs)
-	return userIDs, nil
 }
 
 func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoAdminTypes.PermissionSet, error) {
