@@ -9,8 +9,6 @@ import (
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
-	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
-	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
@@ -43,7 +41,6 @@ type accountResourceType struct {
 	_permissionSetsCacheMtx    sync.Mutex
 	_permissionSetsCache       []*awsSsoAdminTypes.PermissionSet
 	_permissionSetDetailsCache sync.Map
-	_groupMembersCache         sync.Map
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -187,37 +184,15 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 				for _, assignment := range assignmentsResp.AccountAssignments {
 					switch assignment.PrincipalType {
 					case awsSsoAdminTypes.PrincipalTypeGroup:
-						members, err := o.getGroupMembers(ctx, awsSdk.ToString(assignment.PrincipalId))
-						if err != nil {
-							var notFoundException *awsIdentityStoreTypes.ResourceNotFoundException
-							if errors.As(err, &notFoundException) {
-								if notFoundException.ResourceType == awsIdentityStoreTypes.ResourceTypeGroup {
-									// group was deleted but not removed from the permission set, let's skip it
-									continue
-								}
-							}
-							return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(assignment.PrincipalId), err)
-						}
-						for _, member := range members {
-							userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), member)
-							var userAnnos annotations.Annotations
-							userAnnos.Update(&v2.V1Identifier{
-								Id: V1GrantID(entitlement.Id, userARN),
-							})
-							rv = append(rv, &v2.Grant{
-								Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
-								Entitlement: entitlement,
-								Principal: &v2.Resource{
-									Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
-								},
-								Annotations: userAnnos,
-							})
-						}
-
 						groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
 						var groupAnnos annotations.Annotations
 						groupAnnos.Update(&v2.V1Identifier{
 							Id: V1GrantID(entitlement.Id, groupARN),
+						})
+						groupAnnos.Update(&v2.GrantExpandable{
+							EntitlementIds: []string{
+								fmt.Sprintf("%s:%s:%s", resourceTypeSSOGroup.Id, groupARN, groupMemberEntitlement),
+							},
 						})
 						rv = append(rv, &v2.Grant{
 							Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
@@ -535,37 +510,6 @@ func (psm *PermissionSetBinding) UnmarshalText(data []byte) error {
 
 func (psm *PermissionSetBinding) String() string {
 	return strings.Join([]string{psm.AccountID, psm.PermissionSetId}, "|")
-}
-
-func (o *accountResourceType) getGroupMembers(ctx context.Context, groupId string) ([]string, error) {
-	if v, ok := o._groupMembersCache.Load(groupId); ok {
-		return v.([]string), nil
-	}
-
-	input := &awsIdentityStore.ListGroupMembershipsInput{
-		IdentityStoreId: o.identityInstance.IdentityStoreId,
-		GroupId:         awsSdk.String(groupId),
-	}
-	userIDs := make([]string, 0, 16)
-	paginator := awsIdentityStore.NewListGroupMembershipsPaginator(o.identityClient, input)
-	for {
-		resp, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, err
-		}
-		for _, user := range resp.GroupMemberships {
-			member, ok := user.MemberId.(*awsIdentityStoreTypes.MemberIdMemberUserId)
-			if !ok {
-				continue
-			}
-			userIDs = append(userIDs, member.Value)
-		}
-		if !paginator.HasMorePages() {
-			break
-		}
-	}
-	o._groupMembersCache.Store(groupId, userIDs)
-	return userIDs, nil
 }
 
 func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoAdminTypes.PermissionSet, error) {
