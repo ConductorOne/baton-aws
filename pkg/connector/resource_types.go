@@ -32,6 +32,12 @@ var (
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
 		Annotations: v1AnnotationsForResourceType("account"),
 	}
+	resourceTypeAccountIam = &v2.ResourceType{
+		Id:          "account_iam",
+		DisplayName: "Account IAM",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
+		Annotations: v1AnnotationsForResourceType("account"),
+	}
 	resourceTypeSSOUser = &v2.ResourceType{
 		Id:          "sso_user",
 		DisplayName: "SSO User",

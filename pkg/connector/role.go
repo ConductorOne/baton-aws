@@ -19,15 +19,16 @@ const (
 )
 
 type roleResourceType struct {
-	resourceType *v2.ResourceType
-	iamClient    *iam.Client
+	resourceType     *v2.ResourceType
+	iamClient        *iam.Client
+	awsClientFactory *AWSClientFactory
 }
 
 func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
 	if err != nil {
@@ -45,7 +46,15 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 		listRolesInput.Marker = awsSdk.String(bag.PageToken())
 	}
 
-	resp, err := o.iamClient.ListRoles(ctx, listRolesInput)
+	iamClient := o.iamClient
+	if parentId != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+
+	resp, err := iamClient.ListRoles(ctx, listRolesInput)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListRoles failed: %w", err)
 	}
@@ -62,6 +71,7 @@ func (o *roleResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagin
 			awsSdk.ToString(role.Arn),
 			[]resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -100,10 +110,11 @@ func (o *roleResourceType) Grants(_ context.Context, _ *v2.Resource, _ *paginati
 	return nil, "", nil, nil
 }
 
-func iamRoleBuilder(iamClient *iam.Client) *roleResourceType {
+func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *roleResourceType {
 	return &roleResourceType{
-		resourceType: resourceTypeRole,
-		iamClient:    iamClient,
+		resourceType:     resourceTypeRole,
+		iamClient:        iamClient,
+		awsClientFactory: awsClientFactory,
 	}
 }
 

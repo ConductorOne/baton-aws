@@ -7,12 +7,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
-	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -20,15 +21,16 @@ import (
 )
 
 type iamUserResourceType struct {
-	resourceType *v2.ResourceType
-	iamClient    *iam.Client
+	resourceType     *v2.ResourceType
+	iamClient        *iam.Client
+	awsClientFactory *AWSClientFactory
 }
 
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
 	if err != nil {
@@ -46,7 +48,15 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		listUsersInput.Marker = awsSdk.String(bag.PageToken())
 	}
 
-	resp, err := o.iamClient.ListUsers(ctx, listUsersInput)
+	iamClient := o.iamClient
+	if parentId != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+
+	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err)
 	}
@@ -57,7 +67,7 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
-		lastLogin := getLastLogin(ctx, o.iamClient, user)
+		lastLogin := getLastLogin(ctx, iamClient, user)
 		options := []resourceSdk.UserTraitOption{
 			resourceSdk.WithUserProfile(profile),
 		}
@@ -73,6 +83,7 @@ func (o *iamUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			awsSdk.ToString(user.Arn),
 			options,
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
 			return nil, "", nil, err
@@ -103,10 +114,11 @@ func (o *iamUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagin
 	return nil, "", nil, nil
 }
 
-func iamUserBuilder(iamClient *iam.Client) *iamUserResourceType {
+func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamUserResourceType {
 	return &iamUserResourceType{
-		resourceType: resourceTypeIAMUser,
-		iamClient:    iamClient,
+		resourceType:     resourceTypeIAMUser,
+		iamClient:        iamClient,
+		awsClientFactory: awsClientFactory,
 	}
 }
 
