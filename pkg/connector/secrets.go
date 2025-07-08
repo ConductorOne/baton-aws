@@ -16,14 +16,16 @@ import (
 )
 
 type secretResourceType struct {
-	resourceType *v2.ResourceType
-	iamClient    *iam.Client
+	resourceType     *v2.ResourceType
+	iamClient        *iam.Client
+	awsClientFactory *AWSClientFactory
 }
 
-func secretBuilder(iamClient *iam.Client) *secretResourceType {
+func secretBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *secretResourceType {
 	return &secretResourceType{
-		resourceType: resourceTypeSecret,
-		iamClient:    iamClient,
+		resourceType:     resourceTypeSecret,
+		iamClient:        iamClient,
+		awsClientFactory: awsClientFactory,
 	}
 }
 
@@ -31,7 +33,7 @@ func (o *secretResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *secretResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
 	if err != nil {
@@ -49,7 +51,15 @@ func (o *secretResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pag
 		listUsersInput.Marker = awsSdk.String(bag.PageToken())
 	}
 
-	resp, err := o.iamClient.ListUsers(ctx, listUsersInput)
+	iamClient := o.iamClient
+	if parentId != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+
+	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err)
 	}
@@ -61,7 +71,7 @@ func (o *secretResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pag
 			zap.String("username", *user.UserName),
 		)
 
-		res, err := o.iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
+		res, err := iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 		if err != nil {
 			logger.Error("Error listing access keys", zap.Error(err))
 			continue
@@ -79,7 +89,7 @@ func (o *secretResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pag
 				resourceSdk.WithSecretCreatedAt(*key.CreateDate),
 			}
 
-			keyLastUsedDate := getAccessKeyLastUsedDate(ctx, o.iamClient, *key.AccessKeyId)
+			keyLastUsedDate := getAccessKeyLastUsedDate(ctx, iamClient, *key.AccessKeyId)
 			if keyLastUsedDate != nil {
 				options = append(options, resourceSdk.WithSecretLastUsedAt(*keyLastUsedDate))
 			}
