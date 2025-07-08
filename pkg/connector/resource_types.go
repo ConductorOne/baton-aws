@@ -36,7 +36,7 @@ var (
 		Id:          "account_iam",
 		DisplayName: "Account IAM",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
-		Annotations: v1AnnotationsForResourceType("account"),
+		Annotations: annotations.New(&v2.SkipEntitlementsAndGrants{}, &v2.V1Identifier{Id: "account_iam"}),
 	}
 	resourceTypeSSOUser = &v2.ResourceType{
 		Id:          "sso_user",
