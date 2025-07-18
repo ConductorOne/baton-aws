@@ -81,7 +81,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		name := awsSdk.ToString(account.Name)
 		accountId := awsSdk.ToString(account.Id)
 		status := account.Status
-		l.Debug("aws-connector: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("status", string(status)))
+		l.Debug("aws-connector: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
 		userResource, err := resourceSdk.NewAppResource(
