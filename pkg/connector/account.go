@@ -81,6 +81,11 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		name := awsSdk.ToString(account.Name)
 		accountId := awsSdk.ToString(account.Id)
 		status := account.Status
+
+		if status != types.AccountStatusActive {
+			l.Debug("aws-connector: account is not active, skipping", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
+			continue
+		}
 		l.Debug("aws-connector: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
