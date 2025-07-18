@@ -48,6 +48,8 @@ func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 }
 
 func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+	l := ctxzap.Extract(ctx)
+
 	bag := &pagination.Bag{}
 	err := bag.Unmarshal(pt.Token)
 	if err != nil {
@@ -75,11 +77,17 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(account.Id),
 		}
+
+		name := awsSdk.ToString(account.Name)
+		accountId := awsSdk.ToString(account.Id)
+		status := account.Status
+		l.Debug("aws-connector: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("status", string(status)))
+
 		profile := accountProfile(ctx, account)
 		userResource, err := resourceSdk.NewAppResource(
-			awsSdk.ToString(account.Name),
+			name,
 			resourceTypeAccount,
-			awsSdk.ToString(account.Id),
+			accountId,
 			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
 		)
