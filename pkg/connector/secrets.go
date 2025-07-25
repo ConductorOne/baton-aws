@@ -87,6 +87,11 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 					BatonResource: false,
 				}),
 				resourceSdk.WithSecretCreatedAt(*key.CreateDate),
+				resourceSdk.WithSecretIdentityID(&v2.ResourceId{
+					ResourceType:  resourceTypeIAMUser.Id,
+					Resource:      *user.UserId,
+					BatonResource: false,
+				}),
 			}
 
 			keyLastUsedDate := getAccessKeyLastUsedDate(ctx, iamClient, *key.AccessKeyId)
