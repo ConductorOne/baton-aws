@@ -117,7 +117,6 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:GetGroup",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
-        "iam:GetAccessKeyLastUsed"
       ],
       "Effect": "Allow",
       "Resource": "*",
