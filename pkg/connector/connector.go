@@ -242,9 +242,12 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		return nil, fmt.Errorf("aws-connector: failed to validate assume role: %w", err)
 	}
 
-	accountId, err := AccountIdFromARN(c.roleARN)
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to validate ARN: %w", err)
+	var accountId string
+	if c.roleARN != "" {
+		accountId, err = AccountIdFromARN(c.roleARN)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to validate ARN: %w", err)
+		}
 	}
 
 	iamClient, err := c.getIAMClient(ctx)
@@ -253,8 +256,10 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	}
 
 	displayName := "AWS"
-	m := map[string]interface{}{
-		"account_id": accountId,
+	m := map[string]any{}
+
+	if accountId != "" {
+		m["account_id"] = accountId
 	}
 
 	output, err := iamClient.ListAccountAliases(ctx, &iam.ListAccountAliasesInput{})

@@ -44,46 +44,28 @@ jobs:
       BATON_GLOBAL_AWS_SSO_REGION: us-east-1
       BATON_GLOBAL_REGION: us-east-1
       BATON_SYNC_SECRETS: true
+      BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
     steps:
       - name: Install Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version: 1.23.x
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Build baton-aws
         run: go build ./cmd/baton-aws
-      - name: Run baton-aws
-        env:
-          BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: ./baton-aws
-      - name: Checkout baton
-        uses: actions/checkout@v4
-        with:
-          repository: ConductorOne/baton
-          ref: main
-          path: ./baton
-      - name: Build baton
-        working-directory: ./baton
-        run: go build ./cmd/baton
       - name: Test grant/revoking IAM entitlements
-        env:
-          BATON: ./baton/baton
-          BATON_AWS: ./baton-aws
-          BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          BATON_ENTITLEMENT: "group:arn:aws:iam::737118012813:group/ci-test-group:member"
-          BATON_PRINCIPAL: "arn:aws:iam::737118012813:user/ci-test-user"
-          BATON_PRINCIPAL_TYPE: "iam_user"
-        run: ./test/grant-revoke.sh
+        uses: ConductorOne/github-workflows/actions/sync-test@v2
+        with:
+          connector: ./baton-aws
+          baton-entitlement: 'group:arn:aws:iam::737118012813:group/ci-test-group:member'
+          baton-principal: 'arn:aws:iam::737118012813:user/ci-test-user'
+          baton-principal-type: 'iam_user'
       - name: Test grant/revoking SSO entitlements
-        env:
-          BATON: ./baton/baton
-          BATON_AWS: ./baton-aws
-          BATON_GLOBAL_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          BATON_GLOBAL_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          BATON_ENTITLEMENT: "sso_group:arn:aws:identitystore:us-east-1::d-90679d1878/group/9458d408-40b1-709f-4f45-92be754928e5:member"
-          BATON_PRINCIPAL: "arn:aws:identitystore:us-east-1::d-90679d1878/user/54982488-f0d1-70c1-1dd5-6db47f7add45"
-          BATON_PRINCIPAL_TYPE: "sso_user"
-        run: ./test/grant-revoke.sh
+        uses: ConductorOne/github-workflows/actions/sync-test@v2
+        with:
+          connector: ./baton-aws
+          baton-entitlement: 'sso_group:arn:aws:identitystore:us-east-1::d-90679d1878/group/9458d408-40b1-709f-4f45-92be754928e5:member'
+          baton-principal: 'arn:aws:identitystore:us-east-1::d-90679d1878/user/54982488-f0d1-70c1-1dd5-6db47f7add45'
+          baton-principal-type: 'sso_user'
