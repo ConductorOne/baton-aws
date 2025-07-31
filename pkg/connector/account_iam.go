@@ -24,6 +24,7 @@ type accountIAMResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        *awsOrgs.Client
 	awsClientFactory *AWSClientFactory
+	aws              *AWS
 }
 
 func (o *accountIAMResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -53,7 +54,12 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 		return nil, "", nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
 	}
 
-	identity, err := o.awsClientFactory.CallerIdentity(ctx)
+	stsClient, err := o.aws.getSTSClient(ctx)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("aws-connector: getSTSClient failed: %w", err)
+	}
+
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, "", nil, err
 	}
@@ -135,10 +141,12 @@ func (o *accountIAMResourceType) parseAssumeRole(
 func accountIAMBuilder(
 	orgClient *awsOrgs.Client,
 	awsClientFactory *AWSClientFactory,
+	aws *AWS,
 ) *accountIAMResourceType {
 	return &accountIAMResourceType{
 		resourceType:     resourceTypeAccountIam,
 		orgClient:        orgClient,
 		awsClientFactory: awsClientFactory,
+		aws:              aws,
 	}
 }

@@ -20,33 +20,35 @@ type AWSClientFactory struct {
 
 	config     Config
 	baseClient *http.Client
-	stsClient  *sts.Client
+	aws        *AWS
 
 	// Map for accountId
 	iamClientMap map[string]*iam.Client
 	orgClientMap map[string]*awsOrgs.Client
 }
 
-func NewAWSClientFactory(config Config, baseConfig awsSdk.Config, baseClient *http.Client) *AWSClientFactory {
+func NewAWSClientFactory(config Config, aws *AWS, baseClient *http.Client) *AWSClientFactory {
 	return &AWSClientFactory{
 		mutex:        sync.Mutex{},
 		config:       config,
 		baseClient:   baseClient,
-		stsClient:    sts.NewFromConfig(baseConfig),
 		iamClientMap: make(map[string]*iam.Client),
 		orgClientMap: make(map[string]*awsOrgs.Client),
+		aws:          aws,
 	}
 }
 
-func (f *AWSClientFactory) CallerIdentity(ctx context.Context) (*sts.GetCallerIdentityOutput, error) {
-	return f.stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-}
 func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (awsSdk.Config, error) {
 	l := ctxzap.Extract(ctx)
 
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/OrganizationAccountAccessRole", accountId)
 
-	output, err := f.stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
+	stsClient, err := f.aws.getSTSClient(ctx)
+	if err != nil {
+		return awsSdk.Config{}, fmt.Errorf("aws-connector: getSTSClient failed: %w", err)
+	}
+
+	output, err := stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{
 		RoleArn:         awsSdk.String(roleArn),
 		RoleSessionName: awsSdk.String("BatonCrossAccountSession"),
 	})
@@ -69,6 +71,10 @@ func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (aws
 func (f *AWSClientFactory) GetIAMClient(ctx context.Context, accountId string) (*iam.Client, error) {
 	f.mutex.Lock()
 	defer f.mutex.Unlock()
+
+	if v, ok := f.iamClientMap[accountId]; ok {
+		return v, nil
+	}
 
 	config, err := f.getConfig(ctx, accountId)
 	if err != nil {
