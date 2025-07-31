@@ -193,8 +193,6 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		return nil, fmt.Errorf("aws connector: config load failure: %w", err)
 	}
 
-	awsClientFactory := NewAWSClientFactory(config, baseConfig.Copy(), httpClient)
-
 	rv := &AWS{
 		useAssumeRole:           config.UseAssumeRole,
 		orgsEnabled:             config.GlobalAwsOrgsEnabled,
@@ -216,8 +214,9 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		_callingConfig:          map[string]awsSdk.Config{},
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
-		awsClientFactory:        awsClientFactory,
 	}
+
+	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
 		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
@@ -373,7 +372,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	}
 
 	if c.orgsEnabled && !c.ssoEnabled {
-		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory))
+		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c))
 	}
 
 	if c.orgsEnabled && c.ssoEnabled {
