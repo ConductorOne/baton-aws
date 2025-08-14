@@ -78,6 +78,12 @@ var (
 		field.WithDescription("Whether to sync secrets or not"),
 	)
 
+	IamAssumeRoleName = field.StringField(
+		"iam-assume-role-name",
+		field.WithDescription("Role name for the IAM role to assume when using the AWS connector"),
+		field.WithDefaultValue("OrganizationAccountAccessRole"),
+	)
+
 	Configuration = field.NewConfiguration(
 		[]field.SchemaField{
 			ExternalIdField,
@@ -95,6 +101,7 @@ var (
 			ScimTokenField,
 			UseAssumeField,
 			SyncSecrets,
+			IamAssumeRoleName,
 		},
 		field.WithConstraints(
 			field.FieldsDependentOn(

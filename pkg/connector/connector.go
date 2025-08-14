@@ -46,6 +46,7 @@ type Config struct {
 	SCIMEndpoint            string
 	SCIMEnabled             bool
 	SyncSecrets             bool
+	IamAssumeRoleName       string
 }
 
 type AWS struct {

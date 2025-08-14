@@ -41,7 +41,7 @@ func NewAWSClientFactory(config Config, aws *AWS, baseClient *http.Client) *AWSC
 func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (awsSdk.Config, error) {
 	l := ctxzap.Extract(ctx)
 
-	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/OrganizationAccountAccessRole", accountId)
+	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, f.config.IamAssumeRoleName)
 
 	stsClient, err := f.aws.getSTSClient(ctx)
 	if err != nil {
