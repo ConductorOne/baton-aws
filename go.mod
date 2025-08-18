@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.27.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.10
 	github.com/aws/smithy-go v1.22.2
-	github.com/conductorone/baton-sdk v0.3.10
+	github.com/conductorone/baton-sdk v0.3.35
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.22
@@ -114,6 +114,7 @@ require (
 	golang.org/x/oauth2 v0.26.0 // indirect
 	golang.org/x/sync v0.11.0 // indirect
 	golang.org/x/sys v0.30.0 // indirect
+	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250219182151-9fdb1cabc7b2 // indirect

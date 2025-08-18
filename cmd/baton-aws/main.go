@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 
+	cfg "github.com/conductorone/baton-aws/pkg/config"
 	"github.com/conductorone/baton-sdk/pkg/config"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/types"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
 	"github.com/conductorone/baton-aws/pkg/connector"
@@ -25,7 +25,7 @@ func main() {
 		ctx,
 		"baton-aws",
 		getConnector,
-		Configuration,
+		cfg.Config,
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err.Error())
@@ -41,35 +41,35 @@ func main() {
 	}
 }
 
-func getConnector(ctx context.Context, v *viper.Viper) (types.ConnectorServer, error) {
+func getConnector(ctx context.Context, awsc *cfg.Aws) (types.ConnectorServer, error) {
 	l := ctxzap.Extract(ctx)
 
-	err := field.Validate(Configuration, v)
+	err := field.Validate(cfg.Config, awsc)
 	if err != nil {
 		return nil, err
 	}
-	err = validateConfig(ctx, v)
+	err = cfg.ValidateConfig(ctx, awsc)
 	if err != nil {
 		return nil, err
 	}
 
 	config := connector.Config{
-		GlobalBindingExternalID: v.GetString(GlobalBindingExternalIdField.FieldName),
-		GlobalRegion:            v.GetString(GlobalRegionField.FieldName),
-		GlobalRoleARN:           v.GetString(GlobalRoleArnField.FieldName),
-		GlobalSecretAccessKey:   v.GetString(GlobalSecretAccessKeyField.FieldName),
-		GlobalAccessKeyID:       v.GetString(GlobalAccessKeyIdField.FieldName),
-		GlobalAwsSsoRegion:      v.GetString(GlobalAwsSsoRegionField.FieldName),
-		GlobalAwsOrgsEnabled:    v.GetBool(GlobalAwsOrgsEnabledField.FieldName),
-		GlobalAwsSsoEnabled:     v.GetBool(GlobalAwsSsoEnabledField.FieldName),
-		ExternalID:              v.GetString(ExternalIdField.FieldName),
-		RoleARN:                 v.GetString(RoleArnField.FieldName),
-		SCIMEndpoint:            v.GetString(ScimEndpointField.FieldName),
-		SCIMToken:               v.GetString(ScimTokenField.FieldName),
-		SCIMEnabled:             v.GetBool(ScimEnabledField.FieldName),
-		UseAssumeRole:           v.GetBool(UseAssumeField.FieldName),
-		SyncSecrets:             v.GetBool(SyncSecrets.FieldName),
-		IamAssumeRoleName:       v.GetString(IamAssumeRoleName.FieldName),
+		GlobalBindingExternalID: awsc.GetString(cfg.GlobalBindingExternalIdField.FieldName),
+		GlobalRegion:            awsc.GetString(cfg.GlobalRegionField.FieldName),
+		GlobalRoleARN:           awsc.GetString(cfg.GlobalRoleArnField.FieldName),
+		GlobalSecretAccessKey:   awsc.GetString(cfg.GlobalSecretAccessKeyField.FieldName),
+		GlobalAccessKeyID:       awsc.GetString(cfg.GlobalAccessKeyIdField.FieldName),
+		GlobalAwsSsoRegion:      awsc.GetString(cfg.GlobalAwsSsoRegionField.FieldName),
+		GlobalAwsOrgsEnabled:    awsc.GetBool(cfg.GlobalAwsOrgsEnabledField.FieldName),
+		GlobalAwsSsoEnabled:     awsc.GetBool(cfg.GlobalAwsSsoEnabledField.FieldName),
+		ExternalID:              awsc.GetString(cfg.ExternalIdField.FieldName),
+		RoleARN:                 awsc.GetString(cfg.RoleArnField.FieldName),
+		SCIMEndpoint:            awsc.GetString(cfg.ScimEndpointField.FieldName),
+		SCIMToken:               awsc.GetString(cfg.ScimTokenField.FieldName),
+		SCIMEnabled:             awsc.GetBool(cfg.ScimEnabledField.FieldName),
+		UseAssumeRole:           awsc.GetBool(cfg.UseAssumeField.FieldName),
+		SyncSecrets:             awsc.GetBool(cfg.SyncSecrets.FieldName),
+		IamAssumeRoleName:       awsc.GetString(cfg.IamAssumeRoleName.FieldName),
 	}
 
 	cb, err := connector.New(ctx, config)
