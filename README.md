@@ -283,3 +283,29 @@ If you've used the above policy and are still experiencing issues provisioning, 
   "Resource": "arn:aws:iam::*:saml-provider/AWSSSO_*_DO_NOT_DELETE"
 }
 ```
+
+## Inner account permissions
+
+When not using identity center, you may need to set up the following permissions in the accounts that you are syncing, if you are using custom role flag.
+Each sub-account will need to have the following policy attached to the role that baton-aws will assume in that account.
+
+```
+{
+  "Statement": [
+    {
+      "Action": [
+        "iam:ListUsers",
+        "iam:ListGroups",
+        "iam:ListRoles",
+        "iam:GetGroup",
+        "iam:ListAccessKeys",
+        "iam:GetAccessKeyLastUsed",
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      "Sid": "MinimumRequiredPermissionsSyncIAMUsersGroupsRoles"
+    },
+  ],
+  "Version": "2012-10-17"
+}
+```
