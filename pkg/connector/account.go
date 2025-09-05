@@ -441,6 +441,12 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 
 	complete, err := o.checkDeleteAccountAssignmentStatus(ctx, l, deleteOut.AccountAssignmentDeletionStatus)
 	if err != nil {
+		if strings.Contains(err.Error(), "Received a 404 status error") {
+			l.Info("aws-connector: Grant already revoked.")
+			annos.Append(&v2.GrantAlreadyRevoked{})
+			return annos, nil
+		}
+
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
 			l.Info("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
