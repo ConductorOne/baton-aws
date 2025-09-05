@@ -469,6 +469,11 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		l.Debug("aws-connector: waiting for account assignment deletion to complete, checking status...")
 		complete, err = o.checkDeleteAccountAssignmentStatus(waitCtx, l, deleteOut.AccountAssignmentDeletionStatus)
 		if err != nil {
+			if strings.Contains(err.Error(), "Received a 404 status error") {
+				l.Info("aws-connector: Grant already revoked.")
+				annos.Append(&v2.GrantAlreadyRevoked{})
+				return annos, nil
+			}
 			return nil, err
 		}
 	}
