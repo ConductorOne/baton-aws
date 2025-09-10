@@ -75,11 +75,11 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 			Id: awsSdk.ToString(account.Id),
 		}
 		profile := accountProfile(ctx, account)
-		userResource, err := resourceSdk.NewUserResource(
+		userResource, err := resourceSdk.NewAppResource(
 			awsSdk.ToString(account.Name),
 			resourceTypeAccountIam,
 			awsSdk.ToString(account.Id),
-			[]resourceSdk.UserTraitOption{resourceSdk.WithUserProfile(profile)},
+			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
 			resourceSdk.WithAnnotation(childForIam...),
 		)
