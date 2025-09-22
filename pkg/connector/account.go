@@ -247,8 +247,6 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 }
 
 func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	l := ctxzap.Extract(ctx)
-
 	principalType := awsSsoAdminTypes.PrincipalType("")
 	principalId := ""
 	switch principal.Id.ResourceType {
@@ -259,30 +257,6 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 			return nil, err
 		}
 		principalId = ssoUserID
-
-		trait, err := resourceSdk.GetAppTrait(entitlement.Resource)
-		if err != nil {
-			return nil, err
-		}
-
-		awsAccountId, ok := resourceSdk.GetProfileStringValue(trait.Profile, "aws_account_id")
-		if !ok {
-			return nil, fmt.Errorf("aws-connector: could not find aws_account_id in user profile")
-		}
-
-		account, err := o.orgClient.DescribeAccount(ctx, &awsOrgs.DescribeAccountInput{
-			AccountId: awsSdk.String(awsAccountId),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("aws-connector: describeAccount failed: %w", err)
-		}
-
-		if account.Account.Status != types.AccountStatusActive {
-			l.Info(fmt.Sprintf("aws-connector: account %s is not active, status: %s", principalId, account.Account.Status))
-
-			return nil, fmt.Errorf("aws-connector: account %s is not active", awsSdk.ToString(account.Account.Name))
-		}
-
 	case resourceTypeSSOGroup.Id:
 		principalType = awsSsoAdminTypes.PrincipalTypeGroup
 		ssoGroupID, err := ssoGroupIdFromARN(principal.Id.Resource)
@@ -318,7 +292,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		annos.Append(reqId)
 	}
 
-	l = l.With(
+	l := ctxzap.Extract(ctx).With(
 		zap.String("request_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.RequestId)),
 		zap.String("principal_id", awsSdk.ToString(createOut.AccountAssignmentCreationStatus.PrincipalId)),
 		zap.String("principal_type", string(createOut.AccountAssignmentCreationStatus.PrincipalType)),
@@ -349,9 +323,6 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		l.Debug("aws-connector: waiting for account assignment creation to complete, checking status...")
 		complete, err = o.checkCreateAccountAssignmentStatus(waitCtx, l, createOut.AccountAssignmentCreationStatus)
 		if err != nil {
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("aws-connector: account assignment creation timed out: %w", err)
-			}
 			return nil, err
 		}
 	}
