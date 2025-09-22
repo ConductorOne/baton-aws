@@ -26,6 +26,8 @@ type iamUserResourceType struct {
 	awsClientFactory *AWSClientFactory
 }
 
+var _ connectorbuilder.AccountManager = &iamUserResourceType{}
+
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
@@ -148,7 +150,7 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 
 	res, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 	if err != nil {
-		logger.Error("Error listing access keys", zap.Error(err))
+		logger.Warn("Error listing access keys", zap.Error(err))
 		return user.PasswordLastUsed
 	}
 
@@ -156,7 +158,7 @@ func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *
 	for _, key := range res.AccessKeyMetadata {
 		accessKeyLastUsed := getAccessKeyLastUsedDate(ctx, client, awsSdk.ToString(key.AccessKeyId))
 		if accessKeyLastUsed == nil {
-			logger.Error("Error getting access key last used", zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)))
+			logger.Warn("Error getting access key last used", zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)))
 			continue
 		}
 		accessKeyLastUsedDates = append(accessKeyLastUsedDates, *accessKeyLastUsed)
@@ -214,7 +216,7 @@ func (o *iamUserResourceType) CreateAccountCapabilityDetails(ctx context.Context
 func (o *iamUserResourceType) CreateAccount(
 	ctx context.Context,
 	accountInfo *v2.AccountInfo,
-	credentialOptions *v2.CredentialOptions,
+	credentialOptions *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
 	profile := accountInfo.Profile.AsMap()
 
