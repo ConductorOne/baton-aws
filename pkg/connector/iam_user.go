@@ -289,7 +289,7 @@ func (o *iamUserResourceType) CreateAccount(
 	}, nil, nil, nil
 }
 
-func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId, parentResourceID *v2.ResourceId) (annotations.Annotations, error) {
 	var noSuchEntity *iamTypes.NoSuchEntityException
 	l := ctxzap.Extract(ctx)
 	if resourceId.ResourceType != resourceTypeIAMUser.Id {
@@ -301,8 +301,16 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	}
 	awsStringUserName := awsSdk.String(userName)
 
+	iamClient := o.iamClient
+	if parentResourceID != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentResourceID.Resource)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+
 	// try to fetch the user, if not found then the user has already been deleted
-	user, err := o.iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsStringUserName})
+	user, err := iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsStringUserName})
 	if err != nil {
 		if errors.As(err, &noSuchEntity) {
 			l.Info("User not found, returning success for delete operation")
@@ -320,7 +328,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	// https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_remove.html#id_users_deleting_cli
 
 	// Permission needed: iam:DeleteLoginProfile
-	_, err = o.iamClient.DeleteLoginProfile(ctx, &iam.DeleteLoginProfileInput{UserName: awsStringUserName})
+	_, err = iamClient.DeleteLoginProfile(ctx, &iam.DeleteLoginProfileInput{UserName: awsStringUserName})
 	if err != nil {
 		if !errors.As(err, &noSuchEntity) {
 			return nil, fmt.Errorf("aws-connector: failed to delete login profile: %w", err)
@@ -330,13 +338,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all access keys
 	// Permission needed: iam:ListAccessKeys, iam:DeleteAccessKey
-	keys, err := o.iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: awsStringUserName})
+	keys, err := iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list access keys: %w", err)
 	}
 
 	for _, key := range keys.AccessKeyMetadata {
-		_, err = o.iamClient.DeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{UserName: awsStringUserName, AccessKeyId: awsSdk.String(awsSdk.ToString(key.AccessKeyId))})
+		_, err = iamClient.DeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{UserName: awsStringUserName, AccessKeyId: awsSdk.String(awsSdk.ToString(key.AccessKeyId))})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete access key: %w", err)
 		}
@@ -344,13 +352,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all signing certificates
 	// Permission needed: iam:ListSigningCertificates, iam:DeleteSigningCertificate
-	certificates, err := o.iamClient.ListSigningCertificates(ctx, &iam.ListSigningCertificatesInput{UserName: awsStringUserName})
+	certificates, err := iamClient.ListSigningCertificates(ctx, &iam.ListSigningCertificatesInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list signing certificates: %w", err)
 	}
 
 	for _, certificate := range certificates.Certificates {
-		_, err = o.iamClient.DeleteSigningCertificate(ctx, &iam.DeleteSigningCertificateInput{UserName: awsStringUserName, CertificateId: awsSdk.String(awsSdk.ToString(certificate.CertificateId))})
+		_, err = iamClient.DeleteSigningCertificate(ctx, &iam.DeleteSigningCertificateInput{UserName: awsStringUserName, CertificateId: awsSdk.String(awsSdk.ToString(certificate.CertificateId))})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete signing certificate: %w", err)
 		}
@@ -358,13 +366,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all SSH public keys
 	// Permission needed: iam:ListSSHPublicKeys, iam:DeleteSSHPublicKey
-	sshKeys, err := o.iamClient.ListSSHPublicKeys(ctx, &iam.ListSSHPublicKeysInput{UserName: awsStringUserName})
+	sshKeys, err := iamClient.ListSSHPublicKeys(ctx, &iam.ListSSHPublicKeysInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list SSH public keys: %w", err)
 	}
 
 	for _, key := range sshKeys.SSHPublicKeys {
-		_, err = o.iamClient.DeleteSSHPublicKey(ctx, &iam.DeleteSSHPublicKeyInput{UserName: awsStringUserName, SSHPublicKeyId: awsSdk.String(awsSdk.ToString(key.SSHPublicKeyId))})
+		_, err = iamClient.DeleteSSHPublicKey(ctx, &iam.DeleteSSHPublicKeyInput{UserName: awsStringUserName, SSHPublicKeyId: awsSdk.String(awsSdk.ToString(key.SSHPublicKeyId))})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete SSH public key: %w", err)
 		}
@@ -372,13 +380,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all service specific credentials
 	// Permission needed: iam:ListServiceSpecificCredentials, iam:DeleteServiceSpecificCredential
-	ssCredentials, err := o.iamClient.ListServiceSpecificCredentials(ctx, &iam.ListServiceSpecificCredentialsInput{UserName: awsStringUserName})
+	ssCredentials, err := iamClient.ListServiceSpecificCredentials(ctx, &iam.ListServiceSpecificCredentialsInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list service specific credentials: %w", err)
 	}
 
 	for _, credential := range ssCredentials.ServiceSpecificCredentials {
-		_, err = o.iamClient.DeleteServiceSpecificCredential(
+		_, err = iamClient.DeleteServiceSpecificCredential(
 			ctx,
 			&iam.DeleteServiceSpecificCredentialInput{
 				UserName:                    awsStringUserName,
@@ -392,13 +400,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// If user has MFA, deactivate them
 	// Permission needed: iam:ListMFADevices, iam:DeactivateMFADevice
-	mfaDevices, err := o.iamClient.ListMFADevices(ctx, &iam.ListMFADevicesInput{UserName: awsStringUserName})
+	mfaDevices, err := iamClient.ListMFADevices(ctx, &iam.ListMFADevicesInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list MFA devices: %w", err)
 	}
 
 	for _, device := range mfaDevices.MFADevices {
-		_, err = o.iamClient.DeactivateMFADevice(ctx, &iam.DeactivateMFADeviceInput{UserName: awsStringUserName, SerialNumber: awsSdk.String(awsSdk.ToString(device.SerialNumber))})
+		_, err = iamClient.DeactivateMFADevice(ctx, &iam.DeactivateMFADeviceInput{UserName: awsStringUserName, SerialNumber: awsSdk.String(awsSdk.ToString(device.SerialNumber))})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to deactivate MFA device: %w", err)
 		}
@@ -406,13 +414,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete users inline policies
 	// Permission needed: iam:ListUserPolicies, iam:DeleteUserPolicy
-	userPolicies, err := o.iamClient.ListUserPolicies(ctx, &iam.ListUserPoliciesInput{UserName: awsStringUserName})
+	userPolicies, err := iamClient.ListUserPolicies(ctx, &iam.ListUserPoliciesInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list user policies: %w", err)
 	}
 
 	for _, policy := range userPolicies.PolicyNames {
-		_, err = o.iamClient.DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{UserName: awsStringUserName, PolicyName: awsSdk.String(policy)})
+		_, err = iamClient.DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{UserName: awsStringUserName, PolicyName: awsSdk.String(policy)})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete user policy: %w", err)
 		}
@@ -420,13 +428,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// List and detach all attached policies
 	// Permission needed: iam:ListAttachedUserPolicies, iam:DetachUserPolicy
-	attachedPolicies, err := o.iamClient.ListAttachedUserPolicies(ctx, &iam.ListAttachedUserPoliciesInput{UserName: awsStringUserName})
+	attachedPolicies, err := iamClient.ListAttachedUserPolicies(ctx, &iam.ListAttachedUserPoliciesInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list attached user policies: %w", err)
 	}
 
 	for _, policy := range attachedPolicies.AttachedPolicies {
-		_, err = o.iamClient.DetachUserPolicy(ctx, &iam.DetachUserPolicyInput{UserName: awsStringUserName, PolicyArn: awsSdk.String(awsSdk.ToString(policy.PolicyArn))})
+		_, err = iamClient.DetachUserPolicy(ctx, &iam.DetachUserPolicyInput{UserName: awsStringUserName, PolicyArn: awsSdk.String(awsSdk.ToString(policy.PolicyArn))})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to detach user policy: %w", err)
 		}
@@ -434,13 +442,13 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Remove the user from any IAM groups
 	// Permission needed: iam:ListGroupsForUser, iam:RemoveUserFromGroup
-	userGroups, err := o.iamClient.ListGroupsForUser(ctx, &iam.ListGroupsForUserInput{UserName: awsStringUserName})
+	userGroups, err := iamClient.ListGroupsForUser(ctx, &iam.ListGroupsForUserInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to list groups for user: %w", err)
 	}
 
 	for _, group := range userGroups.Groups {
-		_, err = o.iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{UserName: awsStringUserName, GroupName: awsSdk.String(awsSdk.ToString(group.GroupName))})
+		_, err = iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{UserName: awsStringUserName, GroupName: awsSdk.String(awsSdk.ToString(group.GroupName))})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to remove user from group: %w", err)
 		}
@@ -448,7 +456,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Proceed to delete the user
 	// Permission needed: iam:DeleteUser
-	_, err = o.iamClient.DeleteUser(ctx, &iam.DeleteUserInput{UserName: awsStringUserName})
+	_, err = iamClient.DeleteUser(ctx, &iam.DeleteUserInput{UserName: awsStringUserName})
 	if err != nil {
 		return nil, fmt.Errorf("aws-connector: failed to delete user: %w", err)
 	}
