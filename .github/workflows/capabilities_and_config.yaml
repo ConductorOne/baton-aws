@@ -1,0 +1,45 @@
+name: Generate capabilities and config schema
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  generate_outputs:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.RELENG_GITHUB_TOKEN }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: "go.mod"
+
+      - name: Build
+        run: go build -o connector ./cmd/baton-aws
+
+      - name: Run and save config output
+        run: ./connector config > config_schema.json
+
+      - name: Run and save capabilities output
+        env:
+          BATON_GLOBAL_AWS_SSO_REGION: us-east-1
+          BATON_GLOBAL_REGION: us-east-1
+          BATON_GLOBAL_ACCESS_KEY_ID: my-key-id
+          BATON_GLOBAL_SECRET_ACCESS_KEY: my-secret-key
+        run: ./connector capabilities > baton_capabilities.json
+
+      - name: Commit changes
+        uses: EndBug/add-and-commit@v9
+        with:
+          default_author: github_actions
+          message: "Updating baton config schema and capabilities."
+          add: |
+            config_schema.json
+            baton_capabilities.json

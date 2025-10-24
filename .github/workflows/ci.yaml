@@ -68,3 +68,12 @@ jobs:
           baton-entitlement: 'sso_group:arn:aws:identitystore:us-east-1::d-90679d1878/group/9458d408-40b1-709f-4f45-92be754928e5:member'
           baton-principal: 'arn:aws:identitystore:us-east-1::d-90679d1878/user/54982488-f0d1-70c1-1dd5-6db47f7add45'
           baton-principal-type: 'sso_user'
+      - name: Test IAM user provisioning and deprovisioning
+        uses: ConductorOne/github-workflows/actions/account-provisioning@v3
+        with:
+          connector: ./baton-aws
+          account-email: 'testci-userci@test.com'
+          account-display-name: 'test-user-ci'
+          account-profile: '{"username": "test-user-ci", "email": "testci-userci@test.com"}' 
+          account-type: 'iam_user'
+          search-method: 'display_name'
