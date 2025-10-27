@@ -338,13 +338,22 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all access keys
 	// Permission needed: iam:ListAccessKeys, iam:DeleteAccessKey
-	keys, err := iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list access keys: %w", err)
+	listKeysInput := &iam.ListAccessKeysInput{UserName: awsStringUserName}
+	accessKeyMetadata := make([]iamTypes.AccessKeyMetadata, 0)
+	for {
+		keys, err := iamClient.ListAccessKeys(ctx, listKeysInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list access keys: %w", err)
+		}
+		accessKeyMetadata = append(accessKeyMetadata, keys.AccessKeyMetadata...)
+		if keys.Marker == nil || len(*keys.Marker) == 0 {
+			break
+		}
+		listKeysInput.Marker = keys.Marker
 	}
 
-	for _, key := range keys.AccessKeyMetadata {
-		_, err = iamClient.DeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{UserName: awsStringUserName, AccessKeyId: awsSdk.String(awsSdk.ToString(key.AccessKeyId))})
+	for _, key := range accessKeyMetadata {
+		_, err = iamClient.DeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{UserName: awsStringUserName, AccessKeyId: key.AccessKeyId})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete access key: %w", err)
 		}
