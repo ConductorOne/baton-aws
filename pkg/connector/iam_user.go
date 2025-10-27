@@ -361,13 +361,22 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all signing certificates
 	// Permission needed: iam:ListSigningCertificates, iam:DeleteSigningCertificate
-	certificates, err := iamClient.ListSigningCertificates(ctx, &iam.ListSigningCertificatesInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list signing certificates: %w", err)
+	listCertificatesInput := &iam.ListSigningCertificatesInput{UserName: awsStringUserName}
+	certificates := make([]iamTypes.SigningCertificate, 0)
+	for {
+		certs, err := iamClient.ListSigningCertificates(ctx, listCertificatesInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list signing certificates: %w", err)
+		}
+		certificates = append(certificates, certs.Certificates...)
+		if certs.Marker == nil || len(*certs.Marker) == 0 {
+			break
+		}
+		listCertificatesInput.Marker = certs.Marker
 	}
 
-	for _, certificate := range certificates.Certificates {
-		_, err = iamClient.DeleteSigningCertificate(ctx, &iam.DeleteSigningCertificateInput{UserName: awsStringUserName, CertificateId: awsSdk.String(awsSdk.ToString(certificate.CertificateId))})
+	for _, certificate := range certificates {
+		_, err = iamClient.DeleteSigningCertificate(ctx, &iam.DeleteSigningCertificateInput{UserName: awsStringUserName, CertificateId: certificate.CertificateId})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete signing certificate: %w", err)
 		}
@@ -375,13 +384,22 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete all SSH public keys
 	// Permission needed: iam:ListSSHPublicKeys, iam:DeleteSSHPublicKey
-	sshKeys, err := iamClient.ListSSHPublicKeys(ctx, &iam.ListSSHPublicKeysInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list SSH public keys: %w", err)
+	listSSHKeysInput := &iam.ListSSHPublicKeysInput{UserName: awsStringUserName}
+	sshKeys := make([]iamTypes.SSHPublicKeyMetadata, 0)
+	for {
+		keys, err := iamClient.ListSSHPublicKeys(ctx, listSSHKeysInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list SSH public keys: %w", err)
+		}
+		sshKeys = append(sshKeys, keys.SSHPublicKeys...)
+		if keys.Marker == nil || len(*keys.Marker) == 0 {
+			break
+		}
+		listSSHKeysInput.Marker = keys.Marker
 	}
 
-	for _, key := range sshKeys.SSHPublicKeys {
-		_, err = iamClient.DeleteSSHPublicKey(ctx, &iam.DeleteSSHPublicKeyInput{UserName: awsStringUserName, SSHPublicKeyId: awsSdk.String(awsSdk.ToString(key.SSHPublicKeyId))})
+	for _, key := range sshKeys {
+		_, err = iamClient.DeleteSSHPublicKey(ctx, &iam.DeleteSSHPublicKeyInput{UserName: awsStringUserName, SSHPublicKeyId: key.SSHPublicKeyId})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete SSH public key: %w", err)
 		}
@@ -399,7 +417,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 			ctx,
 			&iam.DeleteServiceSpecificCredentialInput{
 				UserName:                    awsStringUserName,
-				ServiceSpecificCredentialId: awsSdk.String(awsSdk.ToString(credential.ServiceSpecificCredentialId)),
+				ServiceSpecificCredentialId: credential.ServiceSpecificCredentialId,
 			},
 		)
 		if err != nil {
@@ -409,13 +427,22 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// If user has MFA, deactivate them
 	// Permission needed: iam:ListMFADevices, iam:DeactivateMFADevice
-	mfaDevices, err := iamClient.ListMFADevices(ctx, &iam.ListMFADevicesInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list MFA devices: %w", err)
+	listMFADevicesInput := &iam.ListMFADevicesInput{UserName: awsStringUserName}
+	mfaDevices := make([]iamTypes.MFADevice, 0)
+	for {
+		devices, err := iamClient.ListMFADevices(ctx, listMFADevicesInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list MFA devices: %w", err)
+		}
+		mfaDevices = append(mfaDevices, devices.MFADevices...)
+		if devices.Marker == nil || len(*devices.Marker) == 0 {
+			break
+		}
+		listMFADevicesInput.Marker = devices.Marker
 	}
 
-	for _, device := range mfaDevices.MFADevices {
-		_, err = iamClient.DeactivateMFADevice(ctx, &iam.DeactivateMFADeviceInput{UserName: awsStringUserName, SerialNumber: awsSdk.String(awsSdk.ToString(device.SerialNumber))})
+	for _, device := range mfaDevices {
+		_, err = iamClient.DeactivateMFADevice(ctx, &iam.DeactivateMFADeviceInput{UserName: awsStringUserName, SerialNumber: device.SerialNumber})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to deactivate MFA device: %w", err)
 		}
@@ -423,12 +450,21 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Delete users inline policies
 	// Permission needed: iam:ListUserPolicies, iam:DeleteUserPolicy
-	userPolicies, err := iamClient.ListUserPolicies(ctx, &iam.ListUserPoliciesInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list user policies: %w", err)
+	listUserPoliciesInput := &iam.ListUserPoliciesInput{UserName: awsStringUserName}
+	userPolicies := make([]string, 0)
+	for {
+		policies, err := iamClient.ListUserPolicies(ctx, listUserPoliciesInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list user policies: %w", err)
+		}
+		userPolicies = append(userPolicies, policies.PolicyNames...)
+		if policies.Marker == nil || len(*policies.Marker) == 0 {
+			break
+		}
+		listUserPoliciesInput.Marker = policies.Marker
 	}
 
-	for _, policy := range userPolicies.PolicyNames {
+	for _, policy := range userPolicies {
 		_, err = iamClient.DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{UserName: awsStringUserName, PolicyName: awsSdk.String(policy)})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to delete user policy: %w", err)
@@ -437,13 +473,22 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// List and detach all attached policies
 	// Permission needed: iam:ListAttachedUserPolicies, iam:DetachUserPolicy
-	attachedPolicies, err := iamClient.ListAttachedUserPolicies(ctx, &iam.ListAttachedUserPoliciesInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list attached user policies: %w", err)
+	listAttachedPoliciesInput := &iam.ListAttachedUserPoliciesInput{UserName: awsStringUserName}
+	attachedPolicies := make([]iamTypes.AttachedPolicy, 0)
+	for {
+		policies, err := iamClient.ListAttachedUserPolicies(ctx, listAttachedPoliciesInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list attached user policies: %w", err)
+		}
+		attachedPolicies = append(attachedPolicies, policies.AttachedPolicies...)
+		if policies.Marker == nil || len(*policies.Marker) == 0 {
+			break
+		}
+		listAttachedPoliciesInput.Marker = policies.Marker
 	}
 
-	for _, policy := range attachedPolicies.AttachedPolicies {
-		_, err = iamClient.DetachUserPolicy(ctx, &iam.DetachUserPolicyInput{UserName: awsStringUserName, PolicyArn: awsSdk.String(awsSdk.ToString(policy.PolicyArn))})
+	for _, policy := range attachedPolicies {
+		_, err = iamClient.DetachUserPolicy(ctx, &iam.DetachUserPolicyInput{UserName: awsStringUserName, PolicyArn: policy.PolicyArn})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to detach user policy: %w", err)
 		}
@@ -451,13 +496,22 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 
 	// Remove the user from any IAM groups
 	// Permission needed: iam:ListGroupsForUser, iam:RemoveUserFromGroup
-	userGroups, err := iamClient.ListGroupsForUser(ctx, &iam.ListGroupsForUserInput{UserName: awsStringUserName})
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list groups for user: %w", err)
+	listUserGroupsInput := &iam.ListGroupsForUserInput{UserName: awsStringUserName}
+	userGroups := make([]iamTypes.Group, 0)
+	for {
+		groups, err := iamClient.ListGroupsForUser(ctx, listUserGroupsInput)
+		if err != nil {
+			return nil, fmt.Errorf("aws-connector: failed to list groups for user: %w", err)
+		}
+		userGroups = append(userGroups, groups.Groups...)
+		if groups.Marker == nil || len(*groups.Marker) == 0 {
+			break
+		}
+		listUserGroupsInput.Marker = groups.Marker
 	}
 
-	for _, group := range userGroups.Groups {
-		_, err = iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{UserName: awsStringUserName, GroupName: awsSdk.String(awsSdk.ToString(group.GroupName))})
+	for _, group := range userGroups {
+		_, err = iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{UserName: awsStringUserName, GroupName: group.GroupName})
 		if err != nil {
 			return nil, fmt.Errorf("aws-connector: failed to remove user from group: %w", err)
 		}
