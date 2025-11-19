@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -11,7 +12,10 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 const (
@@ -106,8 +110,78 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 	return []*v2.Entitlement{member}, "", nil, nil
 }
 
-func (o *roleResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *roleResourceType) Grants(
+	ctx context.Context,
+	resource *v2.Resource,
+	_ *pagination.Token,
+) ([]*v2.Grant, string, annotations.Annotations, error) {
+	if resource == nil || resource.Id == nil || resource.Id.Resource == "" {
+		return nil, "", nil, fmt.Errorf("invalid role resource: missing resource id")
+	}
+	l := ctxzap.Extract(ctx)
+
+	iamClient := o.iamClient
+	if resource.ParentResourceId != nil {
+		var err error
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
+		if err != nil {
+			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+		}
+	}
+	if iamClient == nil {
+		return nil, "", nil, fmt.Errorf("no iam client available")
+	}
+
+	parts := strings.Split(resource.Id.Resource, "/")
+	if len(parts) < 2 {
+		return nil, "", nil, fmt.Errorf("invalid role ARN: %s", resource.Id.Resource)
+	}
+	roleName := parts[len(parts)-1]
+
+	roleResp, err := iamClient.GetRole(ctx, &iam.GetRoleInput{
+		RoleName: awsSdk.String(roleName),
+	})
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to get role %s: %w", roleName, err)
+	}
+	if roleResp == nil || roleResp.Role == nil {
+		return nil, "", nil, fmt.Errorf("GetRole returned empty role for %s", roleName)
+	}
+	if roleResp.Role.AssumeRolePolicyDocument == nil {
+		return nil, "", nil, nil
+	}
+
+	principals, err := extractTrustPrincipals(
+		awsSdk.ToString(roleResp.Role.AssumeRolePolicyDocument),
+	)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("failed to extract principals for role %s: %w", roleName, err)
+	}
+
+	var grants []*v2.Grant
+	for _, principalARN := range principals {
+		principalResourceType, principalID, ok := detectPrincipalResource(principalARN)
+		if !ok {
+			continue
+		}
+
+		principal, errCreateResource := resourceSdk.NewResourceID(principalResourceType, principalID)
+		if errCreateResource != nil {
+			l.Error("baton-aws: failed to create principal resource, skipping grant",
+				zap.Error(errCreateResource),
+				zap.String("principal_arn", principalARN),
+			)
+			continue
+		}
+
+		grants = append(grants, grant.NewGrant(
+			resource,
+			roleAssignmentEntitlement,
+			principal,
+		))
+	}
+
+	return grants, "", nil, nil
 }
 
 func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *roleResourceType {

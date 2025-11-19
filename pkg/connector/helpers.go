@@ -1,7 +1,9 @@
 package connector
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"path"
 	"strings"
 
@@ -133,4 +135,140 @@ func extractRequestID(md *middleware.Metadata) proto.Message {
 	}
 
 	return nil
+}
+
+// extractTrustPrincipals parses a raw (URL-encoded) IAM trust policy document
+// and extracts all AWS principals from statements that:
+// Have Effect == "Allow"
+// Include the action "sts:AssumeRole".
+func extractTrustPrincipals(policyDocument string) ([]string, error) {
+	decodedPolicy, err := url.QueryUnescape(policyDocument)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode trust policy: %w", err)
+	}
+	var policyMap map[string]any
+	if err := json.Unmarshal([]byte(decodedPolicy), &policyMap); err != nil {
+		return nil, fmt.Errorf("failed to parse trust policy JSON: %w", err)
+	}
+
+	rawStatements, ok := policyMap["Statement"]
+	if !ok {
+		return nil, nil
+	}
+
+	statementList, ok := rawStatements.([]any)
+	if !ok {
+		return nil, nil
+	}
+
+	awsPrincipals := make([]string, 0)
+	for _, stmt := range statementList {
+		statementMap, ok := stmt.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		// Must have Effect == "Allow"
+		effectValue, ok := statementMap["Effect"].(string)
+		if !ok || effectValue != "Allow" {
+			continue
+		}
+
+		// Must contain the action "sts:AssumeRole"
+		if !containsAssumeRole(statementMap["Action"]) {
+			continue
+		}
+
+		awsPrincipals = append(
+			awsPrincipals,
+			extractAWSPrincipals(statementMap["Principal"])...,
+		)
+	}
+
+	return awsPrincipals, nil
+}
+
+// containsAssumeRole checks whether the provided action (string or slice)
+// includes the "sts:AssumeRole" action. The type switch handles both cases cleanly.
+func containsAssumeRole(action any) bool {
+	switch v := action.(type) {
+	// single string value
+	case string:
+		return v == "sts:AssumeRole"
+	// slice of values
+	case []any:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s == "sts:AssumeRole" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+// extractAWSPrincipals extracts only AWS principals from a "Principal" field.
+func extractAWSPrincipals(principalField any) []string {
+	// The Principal field must be a JSON object (map).
+	principalMap, ok := principalField.(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	// Extract the "AWS" key, which may contain a single ARN or a list of ARNs.
+	awsValue, ok := principalMap["AWS"]
+	if !ok {
+		return nil
+	}
+
+	switch raw := awsValue.(type) {
+	// A single AWS principal string.
+	case string:
+		return []string{raw}
+	// A list of principals.
+	case []any:
+		awsPrincipals := make([]string, 0, len(raw))
+		for _, item := range raw {
+			if principalStr, ok := item.(string); ok {
+				awsPrincipals = append(awsPrincipals, principalStr)
+			}
+		}
+		return awsPrincipals
+	default:
+		return nil
+	}
+}
+
+// detectPrincipalResource analyzes a principal ARN and determines:
+// which Baton resource type it corresponds to (IAM user, IAM role, or account root)
+// the resource identifier to use in the Grant
+// It returns ok=false when the principal should be ignored.
+func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, bool) {
+	switch {
+	// Skip wildcards and service principals — not actual IAM identities
+	case principalARN == "*",
+		strings.Contains(principalARN, ":service/"):
+		return nil, "", false
+
+	// IAM User ARN (e.g. arn:aws:iam::123456789012:user/Alice)
+	case strings.Contains(principalARN, ":user/"):
+		return resourceTypeIAMUser, principalARN, true
+
+	// IAM Role ARN (e.g. arn:aws:iam::123456789012:role/MyRole)
+	case strings.Contains(principalARN, ":role/"):
+		return resourceTypeRole, principalARN, true
+
+	// Account root (e.g. arn:aws:iam::123456789012:root)
+	case strings.HasSuffix(principalARN, ":root"):
+		parts := strings.Split(principalARN, ":")
+		if len(parts) >= 5 {
+			accountID := parts[4]
+			return resourceTypeAccountIam, accountID, true
+		}
+		return nil, "", false
+
+	// Everything else → unsupported or not relevant
+	default:
+		return nil, "", false
+	}
 }
