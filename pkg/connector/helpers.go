@@ -243,31 +243,35 @@ func extractAWSPrincipals(principalField any) []string {
 // which Baton resource type it corresponds to (IAM user, IAM role, or account root)
 // the resource identifier to use in the Grant
 // It returns ok=false when the principal should be ignored.
+// detectPrincipalResource determines what type of IAM principal an ARN belongs to.
+// Supports IAM users, IAM roles, and account root identifiers.
 func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, bool) {
+	// Skip wildcards
+	if principalARN == "*" {
+		return nil, "", false
+	}
+
+	// Skip AWS service principals (e.g. ec2.amazonaws.com)
+	if strings.Contains(principalARN, ":service/") {
+		return nil, "", false
+	}
+
+	parsedARN, err := arn.Parse(principalARN)
+	if err != nil {
+		return nil, "", false
+	}
+
 	switch {
-	// Skip wildcards and service principals — not actual IAM identities
-	case principalARN == "*",
-		strings.Contains(principalARN, ":service/"):
-		return nil, "", false
-
-	// IAM User ARN (e.g. arn:aws:iam::123456789012:user/Alice)
-	case strings.Contains(principalARN, ":user/"):
+	// IAM User ARN (arn:aws:iam::123456789012:user/Alice)
+	case strings.HasPrefix(parsedARN.Resource, "user/"):
 		return resourceTypeIAMUser, principalARN, true
-
-	// IAM Role ARN (e.g. arn:aws:iam::123456789012:role/MyRole)
-	case strings.Contains(principalARN, ":role/"):
+	// IAM Role ARN (arn:aws:iam::123456789012:role/DevRole)
+	case strings.HasPrefix(parsedARN.Resource, "role/"):
 		return resourceTypeRole, principalARN, true
-
-	// Account root (e.g. arn:aws:iam::123456789012:root)
-	case strings.HasSuffix(principalARN, ":root"):
-		parts := strings.Split(principalARN, ":")
-		if len(parts) >= 5 {
-			accountID := parts[4]
-			return resourceTypeAccountIam, accountID, true
-		}
-		return nil, "", false
-
-	// Everything else → unsupported or not relevant
+	// Account root principal (arn:aws:iam::123456789012:root)
+	case parsedARN.Resource == "root":
+		return resourceTypeAccountIam, parsedARN.AccountID, true
+	// Anything else unsupported
 	default:
 		return nil, "", false
 	}

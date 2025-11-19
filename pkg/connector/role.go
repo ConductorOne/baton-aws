@@ -3,9 +3,10 @@ package connector
 import (
 	"context"
 	"fmt"
-	"strings"
+	"path"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -132,22 +133,36 @@ func (o *roleResourceType) Grants(
 		return nil, "", nil, fmt.Errorf("no iam client available")
 	}
 
-	parts := strings.Split(resource.Id.Resource, "/")
-	if len(parts) < 2 {
-		return nil, "", nil, fmt.Errorf("invalid role ARN: %s", resource.Id.Resource)
+	parsedARN, err := arn.Parse(resource.Id.Resource)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("invalid role ARN: %w", err)
 	}
-	roleName := parts[len(parts)-1]
+
+	roleName := path.Base(parsedARN.Resource)
+	if roleName == "" || roleName == "/" || roleName == "." {
+		return nil, "", nil, fmt.Errorf("invalid role resource in ARN: %s", resource.Id.Resource)
+	}
 
 	roleResp, err := iamClient.GetRole(ctx, &iam.GetRoleInput{
 		RoleName: awsSdk.String(roleName),
 	})
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("failed to get role %s: %w", roleName, err)
+		l.Error("baton-aws: failed to get role details, skipping grants for this role",
+			zap.String("role_name", roleName),
+			zap.Error(err),
+		)
+		return nil, "", nil, nil
 	}
+
 	if roleResp == nil || roleResp.Role == nil {
-		return nil, "", nil, fmt.Errorf("GetRole returned empty role for %s", roleName)
+		l.Warn("baton-aws: GetRole returned empty role", zap.String("role_name", roleName))
+		return nil, "", nil, nil
 	}
+
 	if roleResp.Role.AssumeRolePolicyDocument == nil {
+		l.Debug("role has no AssumeRolePolicyDocument, returning no grants",
+			zap.String("role_name", roleName),
+		)
 		return nil, "", nil, nil
 	}
 
