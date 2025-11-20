@@ -58,15 +58,15 @@ jobs:
         uses: ConductorOne/github-workflows/actions/sync-test@v2
         with:
           connector: ./baton-aws
-          baton-entitlement: 'group:arn:aws:iam::737118012813:group/ci-test-group:member'
-          baton-principal: 'arn:aws:iam::737118012813:user/ci-test-user'
+          baton-entitlement: ${{ vars.BATON_IAM_ENTITLEMENT}}
+          baton-principal: ${{ vars.BATON_IAM_PRINCIPAL}}
           baton-principal-type: 'iam_user'
       - name: Test grant/revoking SSO entitlements
         uses: ConductorOne/github-workflows/actions/sync-test@v2
         with:
           connector: ./baton-aws
-          baton-entitlement: 'sso_group:arn:aws:identitystore:us-east-1::d-90679d1878/group/9458d408-40b1-709f-4f45-92be754928e5:member'
-          baton-principal: 'arn:aws:identitystore:us-east-1::d-90679d1878/user/54982488-f0d1-70c1-1dd5-6db47f7add45'
+          baton-entitlement: ${{ vars.BATON_SSO_ENTITLEMENT}}
+          baton-principal: ${{ vars.BATON_SSO_PRINCIPAL}}
           baton-principal-type: 'sso_user'
       - name: Test IAM user provisioning and deprovisioning
         uses: ConductorOne/github-workflows/actions/account-provisioning@v3
