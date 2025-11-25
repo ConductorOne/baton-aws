@@ -246,16 +246,6 @@ func extractAWSPrincipals(principalField any) []string {
 // detectPrincipalResource determines what type of IAM principal an ARN belongs to.
 // Supports IAM users, IAM roles, and account root identifiers.
 func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, bool) {
-	// Skip wildcards
-	if principalARN == "*" {
-		return nil, "", false
-	}
-
-	// Skip AWS service principals (e.g. ec2.amazonaws.com)
-	if strings.Contains(principalARN, ":service/") {
-		return nil, "", false
-	}
-
 	parsedARN, err := arn.Parse(principalARN)
 	if err != nil {
 		return nil, "", false
