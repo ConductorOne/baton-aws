@@ -244,7 +244,7 @@ func extractAWSPrincipals(principalField any) []string {
 // the resource identifier to use in the Grant
 // It returns ok=false when the principal should be ignored.
 // detectPrincipalResource determines what type of IAM principal an ARN belongs to.
-// Supports IAM users, IAM roles, and account root identifiers.
+// Supports IAM users and IAM roles.
 func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, bool) {
 	parsedARN, err := arn.Parse(principalARN)
 	if err != nil {
