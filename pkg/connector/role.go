@@ -104,7 +104,12 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
 	})
-	member := entitlementSdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, entitlementSdk.WithGrantableTo(resourceTypeIAMGroup, resourceTypeSSOUser))
+	member := entitlementSdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, entitlementSdk.WithGrantableTo(
+		resourceTypeIAMUser,
+		resourceTypeRole,
+		resourceTypeIAMGroup,
+		resourceTypeSSOUser,
+	))
 	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Role", resource.DisplayName)
@@ -189,11 +194,25 @@ func (o *roleResourceType) Grants(
 			continue
 		}
 
-		grants = append(grants, grant.NewGrant(
+		var grantAnnos annotations.Annotations
+		if principalResourceType == resourceTypeRole {
+			grantAnnos.Update(&v2.GrantExpandable{
+				EntitlementIds: []string{
+					fmt.Sprintf("%s:%s:%s", resourceTypeRole.Id, principalID, roleAssignmentEntitlement),
+				},
+			})
+		}
+
+		newGrant := grant.NewGrant(
 			resource,
 			roleAssignmentEntitlement,
 			principal,
-		))
+		)
+
+		if len(grantAnnos) > 0 {
+			newGrant.Annotations = grantAnnos
+		}
+		grants = append(grants, newGrant)
 	}
 
 	return grants, "", nil, nil

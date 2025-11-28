@@ -258,10 +258,6 @@ func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, boo
 	// IAM Role ARN (arn:aws:iam::123456789012:role/DevRole)
 	case strings.HasPrefix(parsedARN.Resource, "role/"):
 		return resourceTypeRole, principalARN, true
-	// Account root principal (arn:aws:iam::123456789012:root)
-	case parsedARN.Resource == "root":
-		return resourceTypeAccountIam, parsedARN.AccountID, true
-	// Anything else unsupported
 	default:
 		return nil, "", false
 	}
