@@ -189,17 +189,22 @@ func extractTrustPrincipals(policyDocument string) ([]string, error) {
 }
 
 // containsAssumeRole checks whether the provided action (string or slice)
-// includes the "sts:AssumeRole" action. The type switch handles both cases cleanly.
+// includes "sts:AssumeRole" or a wildcard that permits it.
 func containsAssumeRole(action any) bool {
 	switch v := action.(type) {
-	// single string value
+	// The action is a single string value
 	case string:
-		return v == "sts:AssumeRole"
-	// slice of values
+		// We accept the exact action OR wildcards that include it effectively
+		return v == "sts:AssumeRole" || v == "sts:*" || v == "*"
+
+	// The action is a slice of values
 	case []any:
 		for _, item := range v {
-			if s, ok := item.(string); ok && s == "sts:AssumeRole" {
-				return true
+			if s, ok := item.(string); ok {
+				// Check if any item in the list enables AssumeRole
+				if s == "sts:AssumeRole" || s == "sts:*" || s == "*" {
+					return true
+				}
 			}
 		}
 	}
