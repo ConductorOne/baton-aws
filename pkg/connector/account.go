@@ -282,8 +282,9 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		AccountId: awsSdk.String(binding.AccountID),
 	})
 	if err != nil {
-		var ade *types.AccessDeniedException
-		if errors.As(err, &ade) {
+		var accessDeniedErr *types.AccessDeniedException
+		switch {
+		case errors.As(err, &accessDeniedErr):
 			// we don't have permissions to verify: warn but continue (backward compatibility)
 			// this maintains backward compatibility with clients that don't have the permission
 			// if the account is suspended, AWS will return ConflictException that we handle later
@@ -292,15 +293,19 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 			l.Warn("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). " +
 				"Proceeding with assignment creation. If account is suspended, this will fail with ConflictException. " +
 				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.")
-		} else {
+		default:
 			// other errors: fail
 			return nil, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
 		}
-	} else if descOut.Account == nil {
-		return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
-	} else if descOut.Account.Status != types.AccountStatusActive {
-		// if we could verify and the account is not active, fail
-		return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
+	}
+	if err == nil {
+		if descOut.Account == nil {
+			return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
+		}
+		if descOut.Account.Status != types.AccountStatusActive {
+			// if we could verify and the account is not active, fail
+			return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
+		}
 	}
 
 	inp := &awsSsoAdmin.CreateAccountAssignmentInput{
@@ -475,8 +480,9 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		AccountId: awsSdk.String(binding.AccountID),
 	})
 	if err != nil {
-		var ade *types.AccessDeniedException
-		if errors.As(err, &ade) {
+		var accessDeniedErr *types.AccessDeniedException
+		switch {
+		case errors.As(err, &accessDeniedErr):
 			// we don't have permissions to verify: warn but continue (backward compatibility)
 			// this maintains backward compatibility with clients that don't have the permission
 			// if the account is suspended, AWS will return ConflictException that we handle later
@@ -485,15 +491,19 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 			l.Warn("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). " +
 				"Proceeding with assignment deletion. If account is suspended, this will fail with ConflictException. " +
 				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.")
-		} else {
+		default:
 			// other errors: fail
 			return nil, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
 		}
-	} else if descOut.Account == nil {
-		return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
-	} else if descOut.Account.Status != types.AccountStatusActive {
-		// if we could verify and the account is not active, fail
-		return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
+	}
+	if err == nil {
+		if descOut.Account == nil {
+			return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
+		}
+		if descOut.Account.Status != types.AccountStatusActive {
+			// if we could verify and the account is not active, fail
+			return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
+		}
 	}
 
 	inp := &awsSsoAdmin.DeleteAccountAssignmentInput{
