@@ -246,6 +246,41 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 	return rv, "", nil, nil
 }
 
+// verifyAccountStatus verifies the account status before performing an operation.
+// It returns (couldNotVerifyStatus, error) where couldNotVerifyStatus is true
+// if we couldn't verify due to missing permissions (but should continue), and
+// error is non-nil if we should fail the operation.
+func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID string, operation string) (bool, error) {
+	descOut, err := o.orgClient.DescribeAccount(ctx, &awsOrgs.DescribeAccountInput{
+		AccountId: awsSdk.String(accountID),
+	})
+	if err != nil {
+		var accessDeniedErr *types.AccessDeniedException
+		switch {
+		case errors.As(err, &accessDeniedErr):
+			// we don't have permissions to verify: warn but continue (backward compatibility)
+			// this maintains backward compatibility with clients that don't have the permission
+			// if the account is suspended, AWS will return ConflictException that we handle later
+			l := ctxzap.Extract(ctx).With(zap.String("account_id", accountID))
+			l.Warn("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). " +
+				fmt.Sprintf("Proceeding with assignment %s. If account is suspended, this will fail with ConflictException. ", operation) +
+				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.")
+			return true, nil
+		default:
+			// other errors: fail
+			return false, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
+		}
+	}
+	if descOut.Account == nil {
+		return false, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", accountID)
+	}
+	if descOut.Account.Status != types.AccountStatusActive {
+		// if we could verify and the account is not active, fail
+		return false, fmt.Errorf("aws-connector: account %s is not active, status: %s", accountID, descOut.Account.Status)
+	}
+	return false, nil
+}
+
 func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
 	principalType := awsSsoAdminTypes.PrincipalType("")
 	principalId := ""
@@ -277,35 +312,9 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 	// if we have permissions and the account is suspended, fail to avoid ConflictException
 	// if we don't have permissions, warn but continue (backward compatibility)
 	// NOTE: It is recommended to add organizations:DescribeAccount to the IAM policies
-	couldNotVerifyStatus := false
-	descOut, err := o.orgClient.DescribeAccount(ctx, &awsOrgs.DescribeAccountInput{
-		AccountId: awsSdk.String(binding.AccountID),
-	})
+	couldNotVerifyStatus, err := o.verifyAccountStatus(ctx, binding.AccountID, "creation")
 	if err != nil {
-		var accessDeniedErr *types.AccessDeniedException
-		switch {
-		case errors.As(err, &accessDeniedErr):
-			// we don't have permissions to verify: warn but continue (backward compatibility)
-			// this maintains backward compatibility with clients that don't have the permission
-			// if the account is suspended, AWS will return ConflictException that we handle later
-			couldNotVerifyStatus = true
-			l := ctxzap.Extract(ctx).With(zap.String("account_id", binding.AccountID))
-			l.Warn("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). " +
-				"Proceeding with assignment creation. If account is suspended, this will fail with ConflictException. " +
-				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.")
-		default:
-			// other errors: fail
-			return nil, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
-		}
-	}
-	if err == nil {
-		if descOut.Account == nil {
-			return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
-		}
-		if descOut.Account.Status != types.AccountStatusActive {
-			// if we could verify and the account is not active, fail
-			return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
-		}
+		return nil, err
 	}
 
 	inp := &awsSsoAdmin.CreateAccountAssignmentInput{
@@ -350,7 +359,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		if errors.As(err, &ae) {
 			// we couldn't verify the status, but we already started the operation
 			// in this case, we can't assume success - it could be in progress or have failed
-			// but for backward compatibility, we assume it will eventually complete
+			// we continue retrying until timeout
 			l.Warn("aws-connector: access denied while attempting to check status. Cannot verify if account assignment was created. Operation may still be in progress.", zap.Error(err))
 			// we don't assume complete, but we don't fail - we let the timeout handle this
 			complete = false
@@ -475,35 +484,9 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 	// if we have permissions and the account is suspended, fail to avoid ConflictException
 	// if we don't have permissions, warn but continue (backward compatibility)
 	// NOTE: It is recommended to add organizations:DescribeAccount to the IAM policies
-	couldNotVerifyStatus := false
-	descOut, err := o.orgClient.DescribeAccount(ctx, &awsOrgs.DescribeAccountInput{
-		AccountId: awsSdk.String(binding.AccountID),
-	})
+	couldNotVerifyStatus, err := o.verifyAccountStatus(ctx, binding.AccountID, "deletion")
 	if err != nil {
-		var accessDeniedErr *types.AccessDeniedException
-		switch {
-		case errors.As(err, &accessDeniedErr):
-			// we don't have permissions to verify: warn but continue (backward compatibility)
-			// this maintains backward compatibility with clients that don't have the permission
-			// if the account is suspended, AWS will return ConflictException that we handle later
-			couldNotVerifyStatus = true
-			l := ctxzap.Extract(ctx).With(zap.String("account_id", binding.AccountID))
-			l.Warn("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). " +
-				"Proceeding with assignment deletion. If account is suspended, this will fail with ConflictException. " +
-				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.")
-		default:
-			// other errors: fail
-			return nil, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
-		}
-	}
-	if err == nil {
-		if descOut.Account == nil {
-			return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
-		}
-		if descOut.Account.Status != types.AccountStatusActive {
-			// if we could verify and the account is not active, fail
-			return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
-		}
+		return nil, err
 	}
 
 	inp := &awsSsoAdmin.DeleteAccountAssignmentInput{
@@ -552,8 +535,12 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
-			l.Info("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
-			complete = true
+			// we couldn't verify the status, but we already started the operation
+			// in this case, we can't assume success - it could be in progress or have failed
+			// we continue retrying until timeout
+			l.Warn("aws-connector: access denied while attempting to check status. Cannot verify if account assignment deletion was completed. Operation may still be in progress.", zap.Error(err))
+			// we don't assume complete, but we don't fail - we let the timeout handle this
+			complete = false
 		} else {
 			return nil, err
 		}
@@ -565,7 +552,8 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 	for !complete {
 		select {
 		case <-waitCtx.Done():
-			return nil, fmt.Errorf("aws-connector: account assignment deletion timed out: %w", ctx.Err())
+			// if we couldn't verify the status during the timeout, we can't confirm success
+			return nil, fmt.Errorf("aws-connector: account assignment deletion timed out. Cannot verify if operation completed successfully: %w", waitCtx.Err())
 		case <-time.After(AccountAssignmentRetryDelay):
 		}
 
@@ -576,6 +564,14 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 				l.Info("aws-connector: Grant already revoked.")
 				annos.Append(&v2.GrantAlreadyRevoked{})
 				return annos, nil
+			}
+
+			var ae *awsSsoAdminTypes.AccessDeniedException
+			if errors.As(err, &ae) {
+				// we couldn't verify, but we continue trying until the timeout
+				l.Warn("aws-connector: access denied while checking status, will retry", zap.Error(err))
+				complete = false
+				continue
 			}
 			return nil, err
 		}
