@@ -155,6 +155,18 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 				return awsSdk.Config{}, fmt.Errorf("aws-connector: internal binding error")
 			}
 
+			// if globalRoleARN and roleARN are the same, we've already assumed the target role
+			// skip the second assumption and use the binding credentials directly
+			if o.globalRoleARN == o.roleARN {
+				callingConfig := awsSdk.Config{
+					HTTPClient:   o.baseClient,
+					Region:       region,
+					DefaultsMode: awsSdk.DefaultsModeInRegion,
+					Credentials:  bindingCreds,
+				}
+				return callingConfig, nil
+			}
+
 			// ok, now we have a working binding credentials.... lets go.
 			stsConfig := o.baseConfig.Copy()
 			stsConfig.Credentials = bindingCreds
