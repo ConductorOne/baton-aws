@@ -296,6 +296,8 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 			// other errors: fail
 			return nil, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
 		}
+	} else if descOut.Account == nil {
+		return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
 	} else if descOut.Account.Status != types.AccountStatusActive {
 		// if we could verify and the account is not active, fail
 		return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
@@ -487,6 +489,8 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 			// other errors: fail
 			return nil, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
 		}
+	} else if descOut.Account == nil {
+		return nil, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", binding.AccountID)
 	} else if descOut.Account.Status != types.AccountStatusActive {
 		// if we could verify and the account is not active, fail
 		return nil, fmt.Errorf("aws-connector: account %s is not active, status: %s", binding.AccountID, descOut.Account.Status)
