@@ -1,0 +1,169 @@
+{
+  "fields": [
+    {
+      "name": "external-id",
+      "displayName": "External ID",
+      "description": "The external id for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "global-access-key-id",
+      "displayName": "Global Access Key",
+      "description": "The global-access-key-id for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "global-aws-orgs-enabled",
+      "displayName": "Global AWS Orgs Enabled",
+      "description": "Enable support for AWS Organizations",
+      "boolField": {}
+    },
+    {
+      "name": "global-aws-sso-enabled",
+      "displayName": "Global AWS SSO Enabled",
+      "description": "Enable support for AWS IAM Identity Center",
+      "boolField": {}
+    },
+    {
+      "name": "global-aws-sso-region",
+      "displayName": "Global AWS SSO Region",
+      "description": "The region for the sso identities",
+      "stringField": {
+        "defaultValue": "us-east-1"
+      }
+    },
+    {
+      "name": "global-binding-external-id",
+      "displayName": "Global Binding External ID",
+      "description": "The global external id for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "global-region",
+      "displayName": "Global Region",
+      "description": "The region for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "global-role-arn",
+      "displayName": "Global Role ARN",
+      "description": "The role arn for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "global-secret-access-key",
+      "displayName": "Global Secret Access Key",
+      "description": "The global-secret-access-key for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "iam-assume-role-name",
+      "displayName": "IAM Assume Role Name",
+      "description": "Role name for the IAM role to assume when using the AWS connector",
+      "stringField": {
+        "defaultValue": "OrganizationAccountAccessRole"
+      }
+    },
+    {
+      "name": "log-level",
+      "description": "The log level: debug, info, warn, error",
+      "isOps": true,
+      "stringField": {
+        "defaultValue": "info"
+      }
+    },
+    {
+      "name": "log-level-debug-expires-at",
+      "description": "The timestamp indicating when debug-level logging should expire",
+      "isOps": true,
+      "stringField": {}
+    },
+    {
+      "name": "otel-collector-endpoint",
+      "description": "The endpoint of the OpenTelemetry collector to send observability data to (used for both tracing and logging if specific endpoints are not provided)",
+      "isOps": true,
+      "stringField": {}
+    },
+    {
+      "name": "otel-collector-endpoint-tls-cert",
+      "description": "A PEM-encoded certificate to use as a CA for TLS connections to the OpenTelemetry collector",
+      "isOps": true,
+      "stringField": {}
+    },
+    {
+      "name": "otel-collector-endpoint-tls-cert-path",
+      "description": "Path to a file containing a PEM-encoded certificate to use as a CA for TLS connections to the OpenTelemetry collector",
+      "isOps": true,
+      "stringField": {}
+    },
+    {
+      "name": "otel-collector-endpoint-tls-insecure",
+      "description": "Allow insecure connections to the OpenTelemetry collector",
+      "isOps": true,
+      "boolField": {}
+    },
+    {
+      "name": "otel-logging-disabled",
+      "description": "Disable OpenTelemetry logging",
+      "isOps": true,
+      "boolField": {}
+    },
+    {
+      "name": "otel-tracing-disabled",
+      "description": "Disable OpenTelemetry tracing",
+      "isOps": true,
+      "boolField": {}
+    },
+    {
+      "name": "role-arn",
+      "displayName": "Role ARN",
+      "description": "The role arn for the aws account",
+      "stringField": {}
+    },
+    {
+      "name": "scim-enabled",
+      "displayName": "SCIM Enabled",
+      "description": "Enable support for pulling SSO User status from the AWS SCIM API",
+      "boolField": {}
+    },
+    {
+      "name": "scim-endpoint",
+      "displayName": "SCIM Endpoint",
+      "description": "The SCIMv2 endpoint for aws identity center",
+      "stringField": {}
+    },
+    {
+      "name": "scim-token",
+      "displayName": "SCIM Token",
+      "description": "The SCIMv2 token for aws identity center",
+      "stringField": {}
+    },
+    {
+      "name": "sync-secrets",
+      "displayName": "Sync Secrets",
+      "description": "Whether to sync secrets or not",
+      "boolField": {}
+    },
+    {
+      "name": "use-assume",
+      "displayName": "Use Assume",
+      "description": "Enable support for assume role",
+      "boolField": {}
+    }
+  ],
+  "constraints": [
+    {
+      "kind": "CONSTRAINT_KIND_DEPENDENT_ON",
+      "fieldNames": [
+        "use-assume"
+      ],
+      "secondaryFieldNames": [
+        "external-id",
+        "role-arn"
+      ]
+    }
+  ],
+  "displayName": "AWS",
+  "helpUrl": "/docs/baton/aws-v2",
+  "iconUrl": "/static/app-icons/aws.svg"
+}
