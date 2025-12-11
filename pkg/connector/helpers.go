@@ -175,7 +175,7 @@ func extractTrustPrincipals(policyDocument string) ([]string, error) {
 }
 
 // detectPrincipalResource analyzes a principal ARN and determines:
-// which Baton resource type it corresponds to (IAM user or IAM role)
+// which Baton resource type it corresponds to (IAM user or IAM role).
 func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, bool) {
 	parsedARN, err := arn.Parse(principalARN)
 	if err != nil {

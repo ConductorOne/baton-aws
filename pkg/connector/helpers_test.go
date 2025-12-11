@@ -432,8 +432,11 @@ func TestDetectPrincipalResource(t *testing.T) {
 
 func TestExtractTrustPrincipals(t *testing.T) {
 	t.Run("should extract single user principal", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:user/test-user"},"Action":"sts:AssumeRole"}]}
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest-user%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"AWS":"arn:aws:iam::123456789012:user/test-user"},"Action":"sts:AssumeRole"}]}
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest-user%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -442,8 +445,12 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should extract multiple principals", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["arn:aws:iam::123456789012:user/test1","arn:aws:iam::123456789012:user/test2"]},"Action":"sts:AssumeRole"}]}
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%5B%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest1%22%2C%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest2%22%5D%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"AWS":["arn:aws:iam::123456789012:user/test1","arn:aws:iam::123456789012:user/test2"]},
+		// "Action":"sts:AssumeRole"}]}
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%5B%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest1%22%2C` +
+			`%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest2%22%5D%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -455,8 +462,11 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should handle statement as single object", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:user/test"},"Action":"sts:AssumeRole"}}
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%7D`
+		// URL-encoded: {"Version":"2012-10-17","Statement":{"Effect":"Allow",
+		// "Principal":{"AWS":"arn:aws:iam::123456789012:user/test"},"Action":"sts:AssumeRole"}}
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -465,8 +475,11 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should handle action as string", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:user/test"},"Action":"sts:AssumeRole"}]}
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"AWS":"arn:aws:iam::123456789012:user/test"},"Action":"sts:AssumeRole"}]}
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -476,7 +489,11 @@ func TestExtractTrustPrincipals(t *testing.T) {
 
 	t.Run("should filter out Deny statements", func(t *testing.T) {
 		// URL-encoded with Deny and Allow statements
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Deny%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Fdenied%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%2C%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Fallowed%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Deny%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Fdenied%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%2C%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Fallowed%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -486,7 +503,11 @@ func TestExtractTrustPrincipals(t *testing.T) {
 
 	t.Run("should filter out non-AssumeRole actions", func(t *testing.T) {
 		// URL-encoded with s3:GetObject and sts:AssumeRole
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest1%22%7D%2C%22Action%22%3A%22s3%3AGetObject%22%7D%2C%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest2%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest1%22%7D%2C` +
+			`%22Action%22%3A%22s3%3AGetObject%22%7D%2C%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest2%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -495,8 +516,11 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should extract role principals", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:role/test-role"},"Action":"sts:AssumeRole"}]}
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Arole%2Ftest-role%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"AWS":"arn:aws:iam::123456789012:role/test-role"},"Action":"sts:AssumeRole"}]}
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Arole%2Ftest-role%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -505,9 +529,12 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should include account root principals in results", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"AWS":"arn:aws:iam::123456789012:root"},"Action":"sts:AssumeRole"}]}
 		// NOTE: extractTrustPrincipals returns ALL AWS principals, filtering happens later in detectPrincipalResource
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Aroot%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%22arn%3Aaws%3Aiam%3A%3A123456789012%3Aroot%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -545,9 +572,12 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should ignore service principals in results", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}
 		// Service principals don't have AWS field, so AWS array is empty
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22Service%22%3A%22lambda.amazonaws.com%22%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22Service%22%3A%22lambda.amazonaws.com%22%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
@@ -556,9 +586,12 @@ func TestExtractTrustPrincipals(t *testing.T) {
 	})
 
 	t.Run("should filter out empty string principals", func(t *testing.T) {
-		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["arn:aws:iam::123456789012:user/test",""]},"Action":"sts:AssumeRole"}]}
+		// URL-encoded: {"Version":"2012-10-17","Statement":[{"Effect":"Allow",
+		// "Principal":{"AWS":["arn:aws:iam::123456789012:user/test",""]},"Action":"sts:AssumeRole"}]}
 		// Has one valid ARN and one empty string
-		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C%22Principal%22%3A%7B%22AWS%22%3A%5B%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest%22%2C%22%22%5D%7D%2C%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
+		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Allow%22%2C` +
+			`%22Principal%22%3A%7B%22AWS%22%3A%5B%22arn%3Aaws%3Aiam%3A%3A123456789012%3Auser%2Ftest%22%2C%22%22%5D%7D%2C` +
+			`%22Action%22%3A%22sts%3AAssumeRole%22%7D%5D%7D`
 
 		principals, err := extractTrustPrincipals(policyDocument)
 
