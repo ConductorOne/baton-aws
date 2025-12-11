@@ -175,7 +175,12 @@ func (o *roleResourceType) Grants(
 		awsSdk.ToString(roleResp.Role.AssumeRolePolicyDocument),
 	)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("failed to extract principals for role %s: %w", roleName, err)
+		l.Warn("baton-aws: failed to parse trust policy, skipping grants for this role",
+			zap.String("role_name", roleName),
+			zap.String("role_arn", resource.Id.Resource),
+			zap.Error(err),
+		)
+		return nil, "", nil, nil
 	}
 
 	var grants []*v2.Grant
