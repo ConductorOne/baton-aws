@@ -384,10 +384,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		if err != nil {
 			var ae *awsSsoAdminTypes.AccessDeniedException
 			if errors.As(err, &ae) {
-				// we couldn't verify, but we continue trying until the timeout
-				l.Warn("aws-connector: access denied while checking status, will retry", zap.Error(err))
-				complete = false
-				continue
+				return nil, fmt.Errorf("aws-connector: access denied while checking account assignment creation status. Missing required permissions: %w", err)
 			}
 			// other errors: fail
 			return nil, err
@@ -568,10 +565,7 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 
 			var ae *awsSsoAdminTypes.AccessDeniedException
 			if errors.As(err, &ae) {
-				// we couldn't verify, but we continue trying until the timeout
-				l.Warn("aws-connector: access denied while checking status, will retry", zap.Error(err))
-				complete = false
-				continue
+				return nil, fmt.Errorf("aws-connector: access denied while checking account assignment deletion status. Missing required permissions: %w", err)
 			}
 			return nil, err
 		}
