@@ -357,15 +357,9 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 	if err != nil {
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
-			// we couldn't verify the status, but we already started the operation
-			// in this case, we can't assume success - it could be in progress or have failed
-			// we continue retrying until timeout
-			l.Warn("aws-connector: access denied while attempting to check status. Cannot verify if account assignment was created. Operation may still be in progress.", zap.Error(err))
-			// we don't assume complete, but we don't fail - we let the timeout handle this
-			complete = false
-		} else {
-			return nil, err
+			return nil, fmt.Errorf("aws-connector: access denied while checking account assignment creation status. Missing required permissions: %w", err)
 		}
+		return nil, err
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, AccountAssignmentMaxWaitDuration)
@@ -532,15 +526,9 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
-			// we couldn't verify the status, but we already started the operation
-			// in this case, we can't assume success - it could be in progress or have failed
-			// we continue retrying until timeout
-			l.Warn("aws-connector: access denied while attempting to check status. Cannot verify if account assignment deletion was completed. Operation may still be in progress.", zap.Error(err))
-			// we don't assume complete, but we don't fail - we let the timeout handle this
-			complete = false
-		} else {
-			return nil, err
+			return nil, fmt.Errorf("aws-connector: access denied while checking account assignment deletion status. Missing required permissions: %w", err)
 		}
+		return nil, err
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, AccountAssignmentMaxWaitDuration)
