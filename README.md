@@ -122,6 +122,7 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:ListGroups",
         "iam:ListRoles",
         "iam:GetGroup",
+        "iam:GetRole",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
       ],
@@ -171,7 +172,10 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:ListUsers",
         "iam:ListGroups",
         "iam:ListRoles",
-        "iam:GetGroup"
+        "iam:GetGroup",
+        "iam:GetRole",
+        "iam:ListAccessKeys",
+        "iam:GetAccessKeyLastUsed"
       ],
       "Effect": "Allow",
       "Resource": "*",
@@ -298,6 +302,7 @@ Each sub-account will need to have the following policy attached to the role tha
         "iam:ListGroups",
         "iam:ListRoles",
         "iam:GetGroup",
+        "iam:GetRole",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
       ],
