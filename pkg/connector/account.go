@@ -16,6 +16,8 @@ import (
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -272,7 +274,7 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 		}
 	}
 	if descOut.Account == nil {
-		return false, fmt.Errorf("aws-connector: DescribeAccount returned nil account for %s", accountID)
+		return false, status.Errorf(codes.NotFound, "aws-connector: DescribeAccount returned nil account for %s", accountID)
 	}
 	if descOut.Account.Status != types.AccountStatusActive {
 		// if we could verify and the account is not active, fail
