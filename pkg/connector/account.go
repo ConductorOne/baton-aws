@@ -264,7 +264,9 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 			// this maintains backward compatibility with clients that don't have the permission
 			// if the account is suspended, AWS will return ConflictException that we handle later
 			l := ctxzap.Extract(ctx).With(zap.String("account_id", accountID))
-			l.Debug("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). Proceeding with assignment. If account is suspended, this will fail with ConflictException. Consider adding organizations:DescribeAccount to your IAM policy for better error messages.",
+			l.Debug("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). "+
+				"Proceeding with assignment. If account is suspended, this will fail with ConflictException. "+
+				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.",
 				zap.String("operation", operation))
 			return true, nil
 		default:
