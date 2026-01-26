@@ -260,13 +260,12 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 		var accessDeniedErr *types.AccessDeniedException
 		switch {
 		case errors.As(err, &accessDeniedErr):
-			// we don't have permissions to verify: warn but continue (backward compatibility)
+			// we don't have permissions to verify: debug but continue (backward compatibility)
 			// this maintains backward compatibility with clients that don't have the permission
 			// if the account is suspended, AWS will return ConflictException that we handle later
 			l := ctxzap.Extract(ctx).With(zap.String("account_id", accountID))
-			l.Warn("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). " +
-				fmt.Sprintf("Proceeding with assignment %s. If account is suspended, this will fail with ConflictException. ", operation) +
-				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.")
+			l.Debug("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). Proceeding with assignment. If account is suspended, this will fail with ConflictException. Consider adding organizations:DescribeAccount to your IAM policy for better error messages.",
+				zap.String("operation", operation))
 			return true, nil
 		default:
 			// other errors: fail
@@ -359,8 +358,8 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 	if err != nil {
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
-			// we don't have permissions to verify: warn but assume complete (backward compatibility)
-			l.Warn("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
+			// we don't have permissions to verify: debug but assume complete (backward compatibility)
+			l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
 			complete = true
 		} else {
 			return nil, err
@@ -383,8 +382,8 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		if err != nil {
 			var ae *awsSsoAdminTypes.AccessDeniedException
 			if errors.As(err, &ae) {
-				// we don't have permissions to verify: warn but assume complete (backward compatibility)
-				l.Warn("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
+				// we don't have permissions to verify: debug but assume complete (backward compatibility)
+				l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
 				complete = true
 			} else {
 				return nil, err
@@ -533,8 +532,8 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
-			// we don't have permissions to verify: warn but assume complete (backward compatibility)
-			l.Warn("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
+			// we don't have permissions to verify: debug but assume complete (backward compatibility)
+			l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
 			complete = true
 		} else {
 			return nil, err
@@ -563,8 +562,8 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 
 			var ae *awsSsoAdminTypes.AccessDeniedException
 			if errors.As(err, &ae) {
-				// we don't have permissions to verify: warn but assume complete (backward compatibility)
-				l.Warn("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
+				// we don't have permissions to verify: debug but assume complete (backward compatibility)
+				l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
 				complete = true
 			} else {
 				return nil, err
