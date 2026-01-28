@@ -260,13 +260,13 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 		var accessDeniedErr *types.AccessDeniedException
 		switch {
 		case errors.As(err, &accessDeniedErr):
-			// we don't have permissions to verify: debug but continue (backward compatibility)
-			// this maintains backward compatibility with clients that don't have the permission
-			// if the account is suspended, AWS will return ConflictException that we handle later
+			// We don't have organizations:DescribeAccount permission. We proceed anyway for
+			// backward compatibility with existing IAM policies. If the account is suspended,
+			// AWS will return ConflictException later and we handle it then.
+			// This log is for operators/admins reviewing connector logs; adding
+			// organizations:DescribeAccount to the IAM policy improves error clarity.
 			l := ctxzap.Extract(ctx).With(zap.String("account_id", accountID))
-			l.Debug("aws-connector: Cannot verify account status (missing organizations:DescribeAccount permission). "+
-				"Proceeding with the operation. If account is suspended, this will fail with ConflictException. "+
-				"Consider adding organizations:DescribeAccount to your IAM policy for better error messages.",
+			l.Debug("aws-connector: skipping account status check (missing organizations:DescribeAccount); proceeding with operation",
 				zap.String("operation", operation))
 			return true, nil
 		default:
