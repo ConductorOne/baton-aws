@@ -240,6 +240,17 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Enable provisioning of SSO Users directly to permission sets in accounts
       "Sid": "SSOUserToAccountPermissionSetProvisioning"
+    },
+    {
+      "Action": [
+        "organizations:DescribeAccount"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Recommended: Enables proactive validation of account status before creating assignments.
+      // Without this, the connector will attempt assignments and may get unclear ConflictException errors
+      // for suspended accounts. This permission provides clearer error messages.
+      "Sid": "AccountStatusValidationForProvisioning"
     }
   ],
   "Version": "2012-10-17"
