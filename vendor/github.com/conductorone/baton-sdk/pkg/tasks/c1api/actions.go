@@ -3,6 +3,7 @@ package c1api
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -139,6 +140,23 @@ func (c *actionInvokeTaskHandler) HandleTask(ctx context.Context) error {
 	}
 
 	l.Debug("ActionInvoke response", zap.Any("resp", resp))
+
+	// Check if the action itself failed and propagate the error
+	if resp.GetStatus() == v2.BatonActionStatus_BATON_ACTION_STATUS_FAILED {
+		errMsg := "action failed"
+		if resp.GetResponse() != nil && resp.GetResponse().GetFields() != nil {
+			if errField, ok := resp.GetResponse().GetFields()["error"]; ok {
+				errMsg = errField.GetStringValue()
+			}
+		}
+		l.Error("ActionInvoke failed",
+			zap.String("error", errMsg),
+			zap.String("action_id", resp.GetId()),
+			zap.String("action_name", resp.GetName()),
+			zap.Stringer("status", resp.GetStatus()),
+		)
+		return c.helpers.FinishTask(ctx, resp, nil, fmt.Errorf("%s", errMsg))
+	}
 
 	return c.helpers.FinishTask(ctx, resp, nil, nil)
 }
