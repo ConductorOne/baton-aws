@@ -98,6 +98,11 @@ var (
 		field.WithDescription("Role name for the IAM role to assume when using the AWS connector"),
 		field.WithDefaultValue("OrganizationAccountAccessRole"),
 	)
+	SyncSSOUserLastLogin = field.BoolField(
+		"sync-sso-user-last-login",
+		field.WithDisplayName("Sync SSO User Last Login"),
+		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
+	)
 )
 
 func ValidateExternalId(input string) error {
@@ -146,6 +151,7 @@ var Config = field.NewConfiguration(
 		UseAssumeField,
 		SyncSecrets,
 		IamAssumeRoleName,
+		SyncSSOUserLastLogin,
 	},
 	field.WithConstraints(
 		field.FieldsDependentOn(
