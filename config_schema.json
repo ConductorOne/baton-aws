@@ -59,6 +59,28 @@
       "boolField": {}
     },
     {
+      "name": "health-check",
+      "description": "Enable the HTTP health check endpoint",
+      "isOps": true,
+      "boolField": {}
+    },
+    {
+      "name": "health-check-port",
+      "description": "Port for the HTTP health check endpoint",
+      "isOps": true,
+      "intField": {
+        "defaultValue": "8081"
+      }
+    },
+    {
+      "name": "health-check-bind-address",
+      "description": "Bind address for health check server (127.0.0.1 for localhost-only)",
+      "isOps": true,
+      "stringField": {
+        "defaultValue": "127.0.0.1"
+      }
+    },
+    {
       "name": "external-id",
       "displayName": "External ID",
       "description": "The external id for the aws account",
