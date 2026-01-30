@@ -188,7 +188,6 @@
         "use-assume"
       ],
       "secondaryFieldNames": [
-        "external-id",
         "role-arn"
       ]
     }
