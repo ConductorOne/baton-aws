@@ -135,7 +135,35 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 				return o.baseConfig, nil
 			}
 			l := ctxzap.Extract(ctx)
-			// ok, if we are an instance, we do the assumeRole twice, first time from our Instance role, INTO the binding account
+
+			// Single-hop mode: when globalRoleARN is empty, assume directly into roleARN
+			// This supports self-hosted deployments (e.g., EKS with IRSA) that don't need
+			// an intermediate binding account.
+			if o.globalRoleARN == "" && o.roleARN != "" {
+				l.Debug("aws-connector: using single-hop assume role mode",
+					zap.String("role_arn", o.roleARN),
+				)
+				stsSvc := sts.NewFromConfig(o.baseConfig)
+				callingCreds := awsSdk.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsSvc, o.roleARN, func(aro *stscreds.AssumeRoleOptions) {
+					if o.externalID != "" {
+						aro.ExternalID = awsSdk.String(o.externalID)
+					}
+				}))
+
+				_, err := callingCreds.Retrieve(ctx)
+				if err != nil {
+					return awsSdk.Config{}, fmt.Errorf("aws-connector: failed to assume role into '%s': %w", o.roleARN, err)
+				}
+
+				return awsSdk.Config{
+					HTTPClient:   o.baseClient,
+					Region:       region,
+					DefaultsMode: awsSdk.DefaultsModeInRegion,
+					Credentials:  callingCreds,
+				}, nil
+			}
+
+			// Two-hop mode: if we are an instance, we do the assumeRole twice, first time from our Instance role, INTO the binding account
 			// and from there, into the customer account.
 			stsSvc := sts.NewFromConfig(o.baseConfig)
 			bindingCreds := awsSdk.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsSvc, o.globalRoleARN, func(aro *stscreds.AssumeRoleOptions) {
