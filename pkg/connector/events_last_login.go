@@ -27,6 +27,7 @@ type eventFeedPageToken struct {
 	LatestEventSeen string `json:"latest_event_seen,omitempty"`
 	NextPageToken   string `json:"next_page_token,omitempty"`
 	StartAt         string `json:"start_at,omitempty"`
+	EndAt           string `json:"end_at,omitempty"`
 }
 
 func unmarshalEventFeedPageToken(token *pagination.StreamToken, defaultStart *timestamppb.Timestamp) (*eventFeedPageToken, error) {
@@ -44,10 +45,14 @@ func unmarshalEventFeedPageToken(token *pagination.StreamToken, defaultStart *ti
 
 	if pt.StartAt == "" {
 		if defaultStart == nil {
-			// Default to 1 hour ago if no start time provided
-			defaultStart = timestamppb.New(time.Now().Add(-1 * time.Hour))
+			// Default to 2 hour ago if no start time provided
+			defaultStart = timestamppb.New(time.Now().Add(-2 * time.Hour))
 		}
 		pt.StartAt = defaultStart.AsTime().Format(time.RFC3339)
+	}
+
+	if pt.EndAt == "" {
+		pt.EndAt = time.Now().Format(time.RFC3339)
 	}
 
 	if pt.LatestEventSeen == "" {
@@ -111,11 +116,15 @@ func (f *ssoLoginEventFeed) ListEvents(
 
 	startTime, err := time.Parse(time.RFC3339, cursor.StartAt)
 	if err != nil {
-		l.Warn("aws-connector: failed to parse start time, using default", zap.Error(err))
+		l.Debug("aws-connector: failed to parse start time, using default", zap.Error(err))
 		startTime = time.Now().Add(-1 * time.Hour)
 	}
-	endTime := time.Now()
 
+	endTime, err := time.Parse(time.RFC3339, cursor.EndAt)
+	if err != nil {
+		l.Debug("aws-connector: failed to parse end time, using default", zap.Error(err))
+		endTime = time.Now()
+	}
 	input := &cloudtrail.LookupEventsInput{
 		StartTime: &startTime,
 		EndTime:   &endTime,
@@ -171,9 +180,15 @@ func (f *ssoLoginEventFeed) ListEvents(
 		// Extract identity store ID from the identityStoreArn
 		// Format: arn:aws:identitystore::531807593589:identitystore/d-9066341176
 		identityStoreArn := ctEvent.UserIdentity.OnBehalfOf.IdentityStoreArn
+		if identityStoreArn == "" {
+			continue
+		}
 		identityStoreID := ""
 		if parts := strings.Split(identityStoreArn, "/"); len(parts) >= 2 {
 			identityStoreID = parts[len(parts)-1]
+		}
+		if identityStoreID == "" {
+			continue
 		}
 
 		occurredAt := event.EventTime
@@ -228,6 +243,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 		cursor.StartAt = cursor.LatestEventSeen
 		cursor.LatestEventSeen = ""
 		cursor.NextPageToken = ""
+		cursor.EndAt = ""
 	}
 
 	cursorToken, err := cursor.marshal()
