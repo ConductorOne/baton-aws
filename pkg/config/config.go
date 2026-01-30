@@ -115,13 +115,18 @@ func ValidateExternalId(input string) error {
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
 func ValidateConfig(ctx context.Context, awsc *Aws) error {
 	if awsc.GetBool(UseAssumeField.FieldName) {
-		err := ValidateExternalId(awsc.GetString(ExternalIdField.FieldName))
+		err := connector.IsValidRoleARN(awsc.GetString(RoleArnField.FieldName))
 		if err != nil {
 			return err
 		}
-		err = connector.IsValidRoleARN(awsc.GetString(RoleArnField.FieldName))
-		if err != nil {
-			return err
+		// Only validate external-id for two-hop mode (when global-role-arn is set)
+		// Single-hop mode (IRSA → target role) doesn't require external-id
+		globalRoleArn := awsc.GetString(GlobalRoleArnField.FieldName)
+		if globalRoleArn != "" {
+			err = ValidateExternalId(awsc.GetString(ExternalIdField.FieldName))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -153,7 +158,6 @@ var Config = field.NewConfiguration(
 				UseAssumeField,
 			},
 			[]field.SchemaField{
-				ExternalIdField,
 				RoleArnField,
 			},
 		)),
