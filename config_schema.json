@@ -179,6 +179,12 @@
       "stringField": {
         "defaultValue": "OrganizationAccountAccessRole"
       }
+    },
+    {
+      "name": "sync-sso-user-last-login",
+      "displayName": "Sync SSO User Last Login",
+      "description": "Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)",
+      "boolField": {}
     }
   ],
   "constraints": [
