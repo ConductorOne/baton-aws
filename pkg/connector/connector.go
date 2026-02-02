@@ -13,6 +13,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
@@ -47,6 +48,7 @@ type Config struct {
 	SCIMEnabled             bool
 	SyncSecrets             bool
 	IamAssumeRoleName       string
+	SyncSSOUserLastLogin    bool
 }
 
 type AWS struct {
@@ -81,8 +83,10 @@ type AWS struct {
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	awsClientFactory    *AWSClientFactory
+	cloudTrailClient    *cloudtrail.Client
 
-	syncSecrets bool
+	syncSecrets          bool
+	syncSSOUserLastLogin bool
 }
 
 func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
@@ -243,6 +247,7 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		_callingConfig:          map[string]awsSdk.Config{},
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
+		syncSSOUserLastLogin:    config.SyncSSOUserLastLogin,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -350,6 +355,7 @@ func (c *AWS) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadClo
 }
 
 func (c *AWS) SetupClients(ctx context.Context) error {
+	l := ctxzap.Extract(ctx)
 	globalCallingConfig, err := c.getCallingConfig(ctx, c.globalRegion)
 	if err != nil {
 		return err
@@ -369,6 +375,12 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 		}
 		c.identityStoreClient = awsIdentityStore.NewFromConfig(ssoCallingConfig)
 		c.ssoAdminClient = awsSsoAdmin.NewFromConfig(ssoCallingConfig)
+
+		// Only create CloudTrail client if SSO user last login sync is enabled
+		if c.syncSSOUserLastLogin {
+			l.Debug("syncSSOUserLastLogin enabled. creating cloudTrailClient")
+			c.cloudTrailClient = cloudtrail.NewFromConfig(ssoCallingConfig)
+		}
 
 		identityInstance, err := c.getIdentityInstance(ctx, c.ssoAdminClient)
 		if err != nil {
@@ -414,6 +426,18 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
 	return rs
+}
+
+func (c *AWS) EventFeeds(ctx context.Context) []connectorbuilder.EventFeed {
+	l := ctxzap.Extract(ctx)
+	if !c.syncSSOUserLastLogin || c.cloudTrailClient == nil {
+		return nil
+	}
+	l.Debug("syncSSOUserLastLogin enabled. adding ssoLoginEventFeed")
+
+	return []connectorbuilder.EventFeed{
+		newSSOLoginEventFeed(c.cloudTrailClient, c.ssoRegion),
+	}
 }
 
 func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Client) (*awsSsoAdminTypes.InstanceMetadata, error) {

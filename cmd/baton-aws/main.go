@@ -70,6 +70,7 @@ func getConnector(ctx context.Context, awsc *cfg.Aws) (types.ConnectorServer, er
 		UseAssumeRole:           awsc.GetBool(cfg.UseAssumeField.FieldName),
 		SyncSecrets:             awsc.GetBool(cfg.SyncSecrets.FieldName),
 		IamAssumeRoleName:       awsc.GetString(cfg.IamAssumeRoleName.FieldName),
+		SyncSSOUserLastLogin:    awsc.GetBool(cfg.SyncSSOUserLastLogin.FieldName),
 	}
 
 	cb, err := connector.New(ctx, config)
