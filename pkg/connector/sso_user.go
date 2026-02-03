@@ -64,7 +64,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		status, err := o.scimClient.getUserStatus(ctx, awsSdk.ToString(user.UserId))
 		if err != nil {
 			// getUserStatus returns UserTrait_Status_STATUS_UNSPECIFIED in error case, and we don't want to fail sync if we fail to get status for one user.
-			l.Warn("aws-connector: failed to get user status from scim", zap.Error(err), zap.String("user_id", awsSdk.ToString(user.UserId)))
+			l.Debug("aws-connector: failed to get user status from scim", zap.Error(err), zap.String("user_id", awsSdk.ToString(user.UserId)))
 		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		annos := &v2.V1Identifier{
