@@ -8,7 +8,6 @@ import (
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -33,11 +32,11 @@ func (o *secretResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -55,13 +54,13 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err)
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
@@ -107,32 +106,32 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 				resourceSdk.WithAnnotation(annos),
 			)
 			if err != nil {
-				return nil, "", nil, err
+				return nil, nil, err
 			}
 			rv = append(rv, secretResource)
 		}
 	}
 
 	if !resp.IsTruncated {
-		return rv, "", nil, nil
+		return rv, nil, nil
 	}
 
 	if resp.Marker != nil {
 		token, err := bag.NextToken(*resp.Marker)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *secretResourceType) Entitlements(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *secretResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
-func (o *secretResourceType) Grants(ctx context.Context, resource *v2.Resource, pToken *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *secretResourceType) Grants(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
 func getAccessKeyLastUsedDate(ctx context.Context, iamClient *iam.Client, accessKeyId string) *time.Time {

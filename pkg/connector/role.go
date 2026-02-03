@@ -33,11 +33,11 @@ func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -55,13 +55,13 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListRoles(ctx, listRolesInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListRoles failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: iam.ListRoles failed: %w", err)
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
@@ -79,27 +79,27 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, roleResource)
 	}
 
 	if !resp.IsTruncated {
-		return rv, "", nil, nil
+		return rv, nil, nil
 	}
 
 	if resp.Marker != nil {
 		token, err := bag.NextToken(*resp.Marker)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
 	var annos annotations.Annotations
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
@@ -113,16 +113,16 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Role", resource.DisplayName)
-	return []*v2.Entitlement{member}, "", nil, nil
+	return []*v2.Entitlement{member}, nil, nil
 }
 
 func (o *roleResourceType) Grants(
 	ctx context.Context,
 	resource *v2.Resource,
-	_ *pagination.Token,
-) ([]*v2.Grant, string, annotations.Annotations, error) {
+	_ resourceSdk.SyncOpAttrs,
+) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	if resource == nil || resource.Id == nil || resource.Id.Resource == "" {
-		return nil, "", nil, fmt.Errorf("invalid role resource: missing resource id")
+		return nil, nil, fmt.Errorf("invalid role resource: missing resource id")
 	}
 	l := ctxzap.Extract(ctx)
 
@@ -131,21 +131,21 @@ func (o *roleResourceType) Grants(
 		var err error
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
 		}
 	}
 	if iamClient == nil {
-		return nil, "", nil, fmt.Errorf("no iam client available")
+		return nil, nil, fmt.Errorf("no iam client available")
 	}
 
 	parsedARN, err := arn.Parse(resource.Id.Resource)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("invalid role ARN: %w", err)
+		return nil, nil, fmt.Errorf("invalid role ARN: %w", err)
 	}
 
 	roleName := path.Base(parsedARN.Resource)
 	if roleName == "" || roleName == "/" || roleName == "." {
-		return nil, "", nil, fmt.Errorf("invalid role resource in ARN: %s", resource.Id.Resource)
+		return nil, nil, fmt.Errorf("invalid role resource in ARN: %s", resource.Id.Resource)
 	}
 
 	roleResp, err := iamClient.GetRole(ctx, &iam.GetRoleInput{
@@ -156,19 +156,19 @@ func (o *roleResourceType) Grants(
 			zap.String("role_name", roleName),
 			zap.Error(err),
 		)
-		return nil, "", nil, nil
+		return nil, nil, nil
 	}
 
 	if roleResp == nil || roleResp.Role == nil {
 		l.Warn("baton-aws: GetRole returned empty role", zap.String("role_name", roleName))
-		return nil, "", nil, nil
+		return nil, nil, nil
 	}
 
 	if roleResp.Role.AssumeRolePolicyDocument == nil {
 		l.Debug("role has no AssumeRolePolicyDocument, returning no grants",
 			zap.String("role_name", roleName),
 		)
-		return nil, "", nil, nil
+		return nil, nil, nil
 	}
 
 	principals, err := extractTrustPrincipals(
@@ -180,7 +180,7 @@ func (o *roleResourceType) Grants(
 			zap.String("role_arn", resource.Id.Resource),
 			zap.Error(err),
 		)
-		return nil, "", nil, nil
+		return nil, nil, nil
 	}
 
 	var grants []*v2.Grant
@@ -220,7 +220,7 @@ func (o *roleResourceType) Grants(
 		grants = append(grants, newGrant)
 	}
 
-	return grants, "", nil, nil
+	return grants, nil, nil
 }
 
 func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *roleResourceType {
