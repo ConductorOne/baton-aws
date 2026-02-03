@@ -4,18 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
-	"google.golang.org/protobuf/proto"
-
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 // accountIAMResourceType represents the IAM resources for an AWS account.
@@ -31,11 +29,11 @@ func (o *accountIAMResourceType) ResourceType(_ context.Context) *v2.ResourceTyp
 	return o.resourceType
 }
 
-func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -51,24 +49,24 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 
 	resp, err := o.orgClient.ListAccounts(ctx, listAccountsInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
 	}
 
 	stsClient, err := o.aws.getSTSClient(ctx)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: getSTSClient failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: getSTSClient failed: %w", err)
 	}
 
 	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	rv := make([]*v2.Resource, 0)
 	for _, account := range resp.Accounts {
 		childForIam, err := o.parseAssumeRole(ctx, identity, account)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 
 		annos := &v2.V1Identifier{
@@ -84,7 +82,7 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 			resourceSdk.WithAnnotation(childForIam...),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 
 		rv = append(rv, userResource)
@@ -93,20 +91,20 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *accountIAMResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *accountIAMResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
-func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
 func (o *accountIAMResourceType) parseAssumeRole(
