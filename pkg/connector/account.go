@@ -49,13 +49,13 @@ func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	l := ctxzap.Extract(ctx)
 
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -71,7 +71,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	resp, err := o.orgClient.ListAccounts(ctx, listAccountsInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
@@ -99,7 +99,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, userResource)
 	}
@@ -107,20 +107,20 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
 	// we fetch all permission sets, so that even on accounts that aren't associated with a permission set
 	// you could do a Grant Request for it -- and we'll just have an entitlement with zero entries in it in ListGrants.
 	allPS, err := o.getPermissionSets(ctx)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: getPermissionSets failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: getPermissionSets failed: %w", err)
 	}
 	rv := make([]*v2.Entitlement, 0, len(allPS))
 	for _, ps := range allPS {
@@ -142,10 +142,10 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		member.Slug = fmt.Sprintf("%s access", awsSdk.ToString(ps.Name))
 		rv = append(rv, member)
 	}
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	rv := make([]*v2.Grant, 0, 32)
 	psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
 		AccountId:   awsSdk.String(resource.Id.Resource),
@@ -156,13 +156,13 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 	for {
 		psBindingsResp, err := psBindingPaginator.NextPage(ctx)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err)
+			return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err)
 		}
 
 		for _, psId := range psBindingsResp.PermissionSets {
 			ps, err := o.getPermissionSet(ctx, psId)
 			if err != nil {
-				return nil, "", nil, fmt.Errorf("aws-connector: ssoadmin.DescribePermissionSet failed: %w", err)
+				return nil, nil, fmt.Errorf("aws-connector: ssoadmin.DescribePermissionSet failed: %w", err)
 			}
 
 			bindingName := &PermissionSetBinding{
@@ -193,7 +193,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 			for {
 				assignmentsResp, err := assignmentsPaginator.NextPage(ctx)
 				if err != nil {
-					return nil, "", nil, fmt.Errorf("aws-connector: ssoadmin.ListAccountAssignments failed: %w", err)
+					return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListAccountAssignments failed: %w", err)
 				}
 
 				for _, assignment := range assignmentsResp.AccountAssignments {
@@ -245,7 +245,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		}
 	} // end pagination loop for permission set to account binding
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
 // verifyAccountStatus verifies the account status before performing an operation.

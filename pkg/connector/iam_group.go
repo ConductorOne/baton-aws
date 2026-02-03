@@ -30,11 +30,11 @@ func (o *iamGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType 
 	return o.resourceType
 }
 
-func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -52,13 +52,13 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListGroups failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: iam.ListGroups failed: %w", err)
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
@@ -78,27 +78,27 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, groupResource)
 	}
 
 	if !resp.IsTruncated {
-		return rv, "", nil, nil
+		return rv, nil, nil
 	}
 
 	if resp.Marker != nil {
 		token, err := bag.NextToken(*resp.Marker)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
 	var annos annotations.Annotations
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
@@ -107,14 +107,14 @@ func (o *iamGroupResourceType) Entitlements(ctx context.Context, resource *v2.Re
 	member.Description = fmt.Sprintf("Is member of the %s IAM group in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
-	return []*v2.Entitlement{member}, "", nil, nil
+	return []*v2.Entitlement{member}, nil, nil
 }
 
-func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	input := &iam.GetGroupInput{
@@ -128,20 +128,20 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	if resource.ParentResourceId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.GetGroup(ctx, input)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err)
 	}
 
 	var rv []*v2.Grant
 	for _, user := range resp.Users {
 		uID, err := resourceSdk.NewResourceID(resourceTypeIAMUser, awsSdk.ToString(user.Arn))
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		grant := grantSdk.NewGrant(resource, groupMemberEntitlement, uID,
 			grantSdk.WithAnnotation(
@@ -154,18 +154,18 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	}
 
 	if !resp.IsTruncated {
-		return rv, "", nil, nil
+		return rv, nil, nil
 	}
 
 	if resp.Marker != nil {
 		token, err := bag.NextToken(*resp.Marker)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
 func iamGroupBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamGroupResourceType {

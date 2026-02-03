@@ -20,15 +20,22 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	cfg "github.com/conductorone/baton-aws/pkg/config"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/structpb"
+)
 
-	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+const (
+	externalIDLengthMaximum = 65
+	externalIDLengthMinimum = 32
 )
 
 type Config struct {
@@ -213,17 +220,79 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	return o._callingConfig[region], o._callingConfigError[region]
 }
 
-func New(ctx context.Context, config Config) (*AWS, error) {
-	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, ctxzap.Extract(ctx)))
-	if err != nil {
-		return nil, err
+func ValidateExternalID(input string) error {
+	fieldLength := len(input)
+	if fieldLength <= 0 {
+		return fmt.Errorf("external id is missing")
 	}
 
-	opts := GetAwsConfigOptions(httpClient, config)
+	if fieldLength < externalIDLengthMinimum || fieldLength > externalIDLengthMaximum {
+		return fmt.Errorf("aws_external_id must be between 32 and 64 bytes")
+	}
+	return nil
+}
 
-	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, opts...)
+func validateConfig(awsc *cfg.Aws) error {
+	if awsc.GetBool(cfg.UseAssumeField.FieldName) {
+		err := IsValidRoleARN(awsc.GetString(cfg.RoleArnField.FieldName))
+		if err != nil {
+			return err
+		}
+		// Only validate external-id for two-hop mode (when global-role-arn is set)
+		// Single-hop mode (IRSA → target role) doesn't require external-id
+		globalRoleArn := awsc.GetString(cfg.GlobalRoleArnField.FieldName)
+		if globalRoleArn != "" {
+			err = ValidateExternalID(awsc.GetString(cfg.ExternalIdField.FieldName))
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func New(ctx context.Context, awsc *cfg.Aws, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+	l := ctxzap.Extract(ctx)
+
+	err := field.Validate(cfg.Config, awsc)
 	if err != nil {
-		return nil, fmt.Errorf("aws connector: config load failure: %w", err)
+		return nil, nil, err
+	}
+	err = validateConfig(awsc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	config := Config{
+		GlobalBindingExternalID: awsc.GetString(cfg.GlobalBindingExternalIdField.FieldName),
+		GlobalRegion:            awsc.GetString(cfg.GlobalRegionField.FieldName),
+		GlobalRoleARN:           awsc.GetString(cfg.GlobalRoleArnField.FieldName),
+		GlobalSecretAccessKey:   awsc.GetString(cfg.GlobalSecretAccessKeyField.FieldName),
+		GlobalAccessKeyID:       awsc.GetString(cfg.GlobalAccessKeyIdField.FieldName),
+		GlobalAwsSsoRegion:      awsc.GetString(cfg.GlobalAwsSsoRegionField.FieldName),
+		GlobalAwsOrgsEnabled:    awsc.GetBool(cfg.GlobalAwsOrgsEnabledField.FieldName),
+		GlobalAwsSsoEnabled:     awsc.GetBool(cfg.GlobalAwsSsoEnabledField.FieldName),
+		ExternalID:              awsc.GetString(cfg.ExternalIdField.FieldName),
+		RoleARN:                 awsc.GetString(cfg.RoleArnField.FieldName),
+		SCIMEndpoint:            awsc.GetString(cfg.ScimEndpointField.FieldName),
+		SCIMToken:               awsc.GetString(cfg.ScimTokenField.FieldName),
+		SCIMEnabled:             awsc.GetBool(cfg.ScimEnabledField.FieldName),
+		UseAssumeRole:           awsc.GetBool(cfg.UseAssumeField.FieldName),
+		SyncSecrets:             awsc.GetBool(cfg.SyncSecrets.FieldName),
+		IamAssumeRoleName:       awsc.GetString(cfg.IamAssumeRoleName.FieldName),
+		SyncSSOUserLastLogin:    awsc.GetBool(cfg.SyncSSOUserLastLogin.FieldName),
+	}
+
+	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	awsOpts := GetAwsConfigOptions(httpClient, config)
+
+	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, awsOpts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("aws connector: config load failure: %w", err)
 	}
 
 	rv := &AWS{
@@ -253,15 +322,16 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
-		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
+		return nil, nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
 	}
 
 	err = rv.SetupClients(ctx)
 	if err != nil {
-		return nil, err
+		l.Error("error creating connector", zap.Error(err))
+		return nil, nil, err
 	}
 
-	return rv, nil
+	return rv, nil, nil
 }
 
 func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
@@ -398,9 +468,9 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 	return nil
 }
 
-func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
-	rs := []connectorbuilder.ResourceSyncer{
+	rs := []connectorbuilder.ResourceSyncerV2{
 		iamUserBuilder(c.iamClient, c.awsClientFactory),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),

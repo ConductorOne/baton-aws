@@ -1,17 +1,11 @@
 package config
 
 import (
-	"context"
-	"fmt"
-
-	"github.com/conductorone/baton-aws/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/field"
 )
 
 const (
-	ExternalIDLengthMaximum = 65 // TODO(marcos): this might be a bug.
-	ExternalIDLengthMinimum = 32
-	RegionDefault           = "us-east-1"
+	RegionDefault = "us-east-1"
 )
 
 var (
@@ -105,38 +99,6 @@ var (
 		field.WithDefaultValue(false),
 	)
 )
-
-func ValidateExternalId(input string) error {
-	fieldLength := len(input)
-	if fieldLength <= 0 {
-		return fmt.Errorf("external id is missing")
-	}
-
-	if fieldLength < ExternalIDLengthMinimum || fieldLength > ExternalIDLengthMaximum {
-		return fmt.Errorf("aws_external_id must be between 32 and 64 bytes")
-	}
-	return nil
-}
-
-// validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
-func ValidateConfig(ctx context.Context, awsc *Aws) error {
-	if awsc.GetBool(UseAssumeField.FieldName) {
-		err := connector.IsValidRoleARN(awsc.GetString(RoleArnField.FieldName))
-		if err != nil {
-			return err
-		}
-		// Only validate external-id for two-hop mode (when global-role-arn is set)
-		// Single-hop mode (IRSA → target role) doesn't require external-id
-		globalRoleArn := awsc.GetString(GlobalRoleArnField.FieldName)
-		if globalRoleArn != "" {
-			err = ValidateExternalId(awsc.GetString(ExternalIdField.FieldName))
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
 
 //go:generate go run ./gen
 var Config = field.NewConfiguration(
