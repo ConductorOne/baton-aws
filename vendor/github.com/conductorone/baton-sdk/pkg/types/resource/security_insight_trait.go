@@ -26,6 +26,20 @@ func WithRiskScore(value string) SecurityInsightTraitOption {
 	}
 }
 
+// WithRiskScoreFactors sets or updates the factors on a risk score insight.
+// Factors provide context as to why a particular risk score was assigned.
+// This should be used after WithRiskScore or on an existing risk score insight.
+func WithRiskScoreFactors(factors ...string) SecurityInsightTraitOption {
+	return func(t *v2.SecurityInsightTrait) error {
+		rs := t.GetRiskScore()
+		if rs == nil {
+			return fmt.Errorf("cannot set factors: insight is not a risk score type (use WithRiskScore first)")
+		}
+		rs.SetFactors(factors)
+		return nil
+	}
+}
+
 // WithIssue sets the insight type to issue with the given value.
 func WithIssue(value string) SecurityInsightTraitOption {
 	return func(t *v2.SecurityInsightTrait) error {
@@ -88,6 +102,18 @@ func WithInsightExternalResourceTarget(externalId string, appHint string) Securi
 		t.SetExternalResource(v2.SecurityInsightTrait_ExternalResourceTarget_builder{
 			ExternalId: externalId,
 			AppHint:    appHint,
+		}.Build())
+		return nil
+	}
+}
+
+// WithInsightAppUserTarget sets the app user target for the insight.
+// Use this when the insight should be resolved to an AppUser by email and external ID.
+func WithInsightAppUserTarget(email string, externalId string) SecurityInsightTraitOption {
+	return func(t *v2.SecurityInsightTrait) error {
+		t.SetAppUser(v2.SecurityInsightTrait_AppUserTarget_builder{
+			Email:      email,
+			ExternalId: externalId,
 		}.Build())
 		return nil
 	}
@@ -200,6 +226,7 @@ func WithSecurityInsightTrait(opts ...SecurityInsightTraitOption) ResourceOption
 //	    securityInsightResourceType,
 //	    "user-123",
 //	    WithRiskScore("85"),
+//	    WithRiskScoreFactors("MFA not enabled", "No recent activity", "Excessive permissions"),
 //	    WithInsightUserTarget("user@example.com"))
 //
 //	// Issue with severity for a resource
@@ -274,6 +301,14 @@ func GetIssueSeverity(trait *v2.SecurityInsightTrait) string {
 	return ""
 }
 
+// GetRiskScoreFactors returns the factors of a risk score insight, or nil if not set or not a risk score.
+func GetRiskScoreFactors(trait *v2.SecurityInsightTrait) []string {
+	if rs := trait.GetRiskScore(); rs != nil {
+		return rs.GetFactors()
+	}
+	return nil
+}
+
 // --- Target type checkers ---
 
 // IsUserTarget returns true if the insight targets a user.
@@ -289,6 +324,11 @@ func IsResourceTarget(trait *v2.SecurityInsightTrait) bool {
 // IsExternalResourceTarget returns true if the insight targets an external resource.
 func IsExternalResourceTarget(trait *v2.SecurityInsightTrait) bool {
 	return trait.GetExternalResource() != nil
+}
+
+// IsAppUserTarget returns true if the insight targets an app user.
+func IsAppUserTarget(trait *v2.SecurityInsightTrait) bool {
+	return trait.GetAppUser() != nil
 }
 
 // --- Target data extractors ---
@@ -318,6 +358,22 @@ func GetExternalResourceTargetId(trait *v2.SecurityInsightTrait) string {
 func GetExternalResourceTargetAppHint(trait *v2.SecurityInsightTrait) string {
 	if ext := trait.GetExternalResource(); ext != nil {
 		return ext.GetAppHint()
+	}
+	return ""
+}
+
+// GetAppUserTargetEmail returns the email from a SecurityInsightTrait, or empty string if not an app user target.
+func GetAppUserTargetEmail(trait *v2.SecurityInsightTrait) string {
+	if appUser := trait.GetAppUser(); appUser != nil {
+		return appUser.GetEmail()
+	}
+	return ""
+}
+
+// GetAppUserTargetExternalId returns the external ID from a SecurityInsightTrait, or empty string if not an app user target.
+func GetAppUserTargetExternalId(trait *v2.SecurityInsightTrait) string {
+	if appUser := trait.GetAppUser(); appUser != nil {
+		return appUser.GetExternalId()
 	}
 	return ""
 }
