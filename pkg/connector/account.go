@@ -31,7 +31,7 @@ const (
 	AccountAssignmentMaxWaitDuration = 5 * time.Minute
 	AccountAssignmentRetryDelay      = 1 * time.Second
 
-	// SessionStore cache keys
+	// SessionStore cache keys.
 	permissionSetsCacheKey       = "permission-sets"
 	permissionSetDetailKeyPrefix = "permission-set:"
 )
