@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -22,13 +21,19 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/conductorone/baton-sdk/pkg/session"
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 )
 
 const (
 	AccountAssignmentMaxWaitDuration = 5 * time.Minute
 	AccountAssignmentRetryDelay      = 1 * time.Second
+
+	// SessionStore cache keys
+	permissionSetsCacheKey       = "permission-sets"
+	permissionSetDetailKeyPrefix = "permission-set:"
 )
 
 type accountResourceType struct {
@@ -39,10 +44,6 @@ type accountResourceType struct {
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 	identityClient   client.IdentityStoreClient
 	region           string
-
-	_permissionSetsCacheMtx    sync.Mutex
-	_permissionSetsCache       []*awsSsoAdminTypes.PermissionSet
-	_permissionSetDetailsCache sync.Map
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -115,10 +116,10 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 	return rv, nil, nil
 }
 
-func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
+func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
 	// we fetch all permission sets, so that even on accounts that aren't associated with a permission set
 	// you could do a Grant Request for it -- and we'll just have an entitlement with zero entries in it in ListGrants.
-	allPS, err := o.getPermissionSets(ctx)
+	allPS, err := o.getPermissionSets(ctx, opts.Session)
 	if err != nil {
 		return nil, nil, fmt.Errorf("aws-connector: getPermissionSets failed: %w", err)
 	}
@@ -145,7 +146,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 	return rv, nil, nil
 }
 
-func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	rv := make([]*v2.Grant, 0, 32)
 	psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
 		AccountId:   awsSdk.String(resource.Id.Resource),
@@ -160,7 +161,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		}
 
 		for _, psId := range psBindingsResp.PermissionSets {
-			ps, err := o.getPermissionSet(ctx, psId)
+			ps, err := o.getPermissionSet(ctx, opts.Session, psId)
 			if err != nil {
 				return nil, nil, fmt.Errorf("aws-connector: ssoadmin.DescribePermissionSet failed: %w", err)
 			}
@@ -576,9 +577,14 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 	return annos, nil
 }
 
-func (o *accountResourceType) getPermissionSet(ctx context.Context, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
-	if v, ok := o._permissionSetDetailsCache.Load(permissionSetId); ok {
-		return v.(*awsSsoAdminTypes.PermissionSet), nil
+func (o *accountResourceType) getPermissionSet(ctx context.Context, ss sessions.SessionStore, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
+	cacheKey := permissionSetDetailKeyPrefix + permissionSetId
+
+	if ss != nil {
+		cached, found, err := session.GetJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKey)
+		if err == nil && found {
+			return cached, nil
+		}
 	}
 
 	input := &awsSsoAdmin.DescribePermissionSetInput{
@@ -589,7 +595,11 @@ func (o *accountResourceType) getPermissionSet(ctx context.Context, permissionSe
 	if err != nil {
 		return nil, err
 	}
-	o._permissionSetDetailsCache.Store(permissionSetId, resp.PermissionSet)
+
+	if ss != nil {
+		_ = session.SetJSON(ctx, ss, cacheKey, resp.PermissionSet)
+	}
+
 	return resp.PermissionSet, nil
 }
 
@@ -631,14 +641,15 @@ func (psm *PermissionSetBinding) String() string {
 	return strings.Join([]string{psm.AccountID, psm.PermissionSetId}, "|")
 }
 
-func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoAdminTypes.PermissionSet, error) {
-	o._permissionSetsCacheMtx.Lock()
-	defer o._permissionSetsCacheMtx.Unlock()
-	if o._permissionSetsCache != nil {
-		return o._permissionSetsCache, nil
+func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions.SessionStore) ([]*awsSsoAdminTypes.PermissionSet, error) {
+	if ss != nil {
+		cached, found, err := session.GetJSON[[]*awsSsoAdminTypes.PermissionSet](ctx, ss, permissionSetsCacheKey)
+		if err == nil && found {
+			return cached, nil
+		}
 	}
 
-	permissionSetIDs := []string{}
+	var permissionSetIDs []string
 	input := &awsSsoAdmin.ListPermissionSetsInput{
 		InstanceArn: o.identityInstance.InstanceArn,
 	}
@@ -653,14 +664,50 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context) ([]*awsSsoA
 			break
 		}
 	}
-	for _, psId := range permissionSetIDs {
-		ps, err := o.getPermissionSet(ctx, psId)
+
+	cacheKeys := make([]string, len(permissionSetIDs))
+	for i, psId := range permissionSetIDs {
+		cacheKeys[i] = permissionSetDetailKeyPrefix + psId
+	}
+
+	var cachedDetails map[string]*awsSsoAdminTypes.PermissionSet
+	if ss != nil {
+		cachedDetails, _ = session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKeys)
+	}
+
+	var result []*awsSsoAdminTypes.PermissionSet
+	toCache := make(map[string]*awsSsoAdminTypes.PermissionSet)
+
+	for i, psId := range permissionSetIDs {
+		cacheKey := cacheKeys[i]
+
+		if ps, found := cachedDetails[cacheKey]; found {
+			result = append(result, ps)
+			continue
+		}
+
+		apiInput := &awsSsoAdmin.DescribePermissionSetInput{
+			InstanceArn:      o.identityInstance.InstanceArn,
+			PermissionSetArn: awsSdk.String(psId),
+		}
+		resp, err := o.ssoAdminClient.DescribePermissionSet(ctx, apiInput)
 		if err != nil {
 			return nil, err
 		}
-		o._permissionSetsCache = append(o._permissionSetsCache, ps)
+
+		result = append(result, resp.PermissionSet)
+		toCache[cacheKey] = resp.PermissionSet
 	}
-	return o._permissionSetsCache, nil
+
+	if ss != nil && len(toCache) > 0 {
+		_ = session.SetManyJSON(ctx, ss, toCache)
+	}
+
+	if ss != nil {
+		_ = session.SetJSON(ctx, ss, permissionSetsCacheKey, result)
+	}
+
+	return result, nil
 }
 
 func accountProfile(ctx context.Context, account types.Account) map[string]interface{} {
