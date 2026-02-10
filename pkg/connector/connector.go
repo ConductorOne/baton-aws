@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"sync"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -56,9 +55,6 @@ type AWS struct {
 	orgsEnabled             bool
 	ssoEnabled              bool
 	ssoRegion               string
-	scimEnabled             bool
-	scimToken               string
-	scimEndpoint            string
 	globalRegion            string
 	roleARN                 string
 	externalID              string
@@ -79,7 +75,6 @@ type AWS struct {
 	iamClient           *iam.Client
 	orgClient           *awsOrgs.Client
 	ssoAdminClient      *awsSsoAdmin.Client
-	ssoSCIMClient       *awsIdentityCenterSCIMClient
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	awsClientFactory    *AWSClientFactory
@@ -95,30 +90,6 @@ func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
 		return nil, err
 	}
 	return iam.NewFromConfig(callingConfig), nil
-}
-
-func (o *AWS) getSSOSCIMClient(ctx context.Context) (*awsIdentityCenterSCIMClient, error) {
-	if !o.scimEnabled {
-		return &awsIdentityCenterSCIMClient{scimEnabled: false}, nil
-	}
-
-	normalizedEndpoint, err := NormalizeAWSIdentityCenterSCIMUrl(o.scimEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector-scim: invalid endpoint: %w", err)
-	}
-	ep, err := url.Parse(normalizedEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("aws-connector-scim: invalid endpoint: %w", err)
-	}
-	if len(o.scimToken) == 0 {
-		return nil, fmt.Errorf("aws-connector-scim: token is required")
-	}
-	return &awsIdentityCenterSCIMClient{
-		Client:      o.baseClient,
-		Endpoint:    ep,
-		Token:       o.scimToken,
-		scimEnabled: o.scimEnabled,
-	}, nil
 }
 
 func (o *AWS) getSTSClient(ctx context.Context) (*sts.Client, error) {
@@ -238,9 +209,6 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		globalAccessKeyID:       config.GlobalAccessKeyID,
 		globalSecretAccessKey:   config.GlobalSecretAccessKey,
 		ssoRegion:               config.GlobalAwsSsoRegion,
-		scimEndpoint:            config.SCIMEndpoint,
-		scimToken:               config.SCIMToken,
-		scimEnabled:             config.SCIMEnabled,
 		baseClient:              httpClient,
 		baseConfig:              baseConfig.Copy(),
 		_onceCallingConfig:      map[string]*sync.Once{},
@@ -387,12 +355,6 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 			return err
 		}
 		c.identityInstance = identityInstance
-
-		scimClient, err := c.getSSOSCIMClient(ctx)
-		if err != nil {
-			return err
-		}
-		c.ssoSCIMClient = scimClient
 	}
 
 	return nil
@@ -408,7 +370,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 
 	if c.ssoEnabled {
 		l.Debug("ssoEnabled. creating ssoUserBuilder and ssoGroupBuilder")
-		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c.ssoSCIMClient))
+		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
 		rs = append(rs, ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
 	}
 

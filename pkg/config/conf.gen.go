@@ -14,9 +14,6 @@ type Aws struct {
 	GlobalRoleArn string `mapstructure:"global-role-arn"`
 	GlobalSecretAccessKey string `mapstructure:"global-secret-access-key"`
 	RoleArn string `mapstructure:"role-arn"`
-	ScimEnabled bool `mapstructure:"scim-enabled"`
-	ScimEndpoint string `mapstructure:"scim-endpoint"`
-	ScimToken string `mapstructure:"scim-token"`
 	UseAssume bool `mapstructure:"use-assume"`
 	SyncSecrets bool `mapstructure:"sync-secrets"`
 	IamAssumeRoleName string `mapstructure:"iam-assume-role-name"`

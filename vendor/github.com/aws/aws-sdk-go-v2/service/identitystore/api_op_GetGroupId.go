@@ -13,10 +13,10 @@ import (
 
 // Retrieves GroupId in an identity store.
 //
-// If you have administrator access to a member account, you can use this API from
-// the member account. Read about [member accounts]in the Organizations User Guide.
+// If you have access to a member account, you can use this API operation from the
+// member account. For more information, see [Limiting access to the identity store from member accounts]in the IAM Identity Center User Guide.
 //
-// [member accounts]: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html
+// [Limiting access to the identity store from member accounts]: https://docs.aws.amazon.com/singlesignon/latest/userguide/manage-your-accounts.html#limiting-access-from-member-accounts
 func (c *Client) GetGroupId(ctx context.Context, params *GetGroupIdInput, optFns ...func(*Options)) (*GetGroupIdOutput, error) {
 	if params == nil {
 		params = &GetGroupIdInput{}
@@ -111,6 +111,9 @@ func (c *Client) addOperationGetGroupIdMiddlewares(stack *middleware.Stack, opti
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -127,6 +130,9 @@ func (c *Client) addOperationGetGroupIdMiddlewares(stack *middleware.Stack, opti
 		return err
 	}
 	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpGetGroupIdValidationMiddleware(stack); err != nil {
@@ -148,6 +154,15 @@ func (c *Client) addOperationGetGroupIdMiddlewares(stack *middleware.Stack, opti
 		return err
 	}
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeRetryLoop(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAttempt(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil

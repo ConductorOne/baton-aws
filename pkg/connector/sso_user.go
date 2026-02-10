@@ -15,8 +15,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
-	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
-	"go.uber.org/zap"
 )
 
 type ssoUserResourceType struct {
@@ -24,7 +22,6 @@ type ssoUserResourceType struct {
 	ssoClient           *awsSsoAdmin.Client
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
-	scimClient          *awsIdentityCenterSCIMClient
 	region              string
 }
 
@@ -58,13 +55,14 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 		return nil, "", nil, fmt.Errorf("aws-connector: sso ListUsers failed: %w", err)
 	}
 
-	l := ctxzap.Extract(ctx)
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		status, err := o.scimClient.getUserStatus(ctx, awsSdk.ToString(user.UserId))
-		if err != nil {
-			// getUserStatus returns UserTrait_Status_STATUS_UNSPECIFIED in error case, and we don't want to fail sync if we fail to get status for one user.
-			l.Debug("aws-connector: failed to get user status from scim", zap.Error(err), zap.String("user_id", awsSdk.ToString(user.UserId)))
+		status := v2.UserTrait_Status_STATUS_UNSPECIFIED
+		switch user.UserStatus {
+		case awsIdentityStoreTypes.UserStatusEnabled:
+			status = v2.UserTrait_Status_STATUS_ENABLED
+		case awsIdentityStoreTypes.UserStatusDisabled:
+			status = v2.UserTrait_Status_STATUS_DISABLED
 		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		annos := &v2.V1Identifier{
@@ -129,7 +127,6 @@ func ssoUserBuilder(
 	ssoClient *awsSsoAdmin.Client,
 	identityStoreClient client.IdentityStoreClient,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
-	scimClient *awsIdentityCenterSCIMClient,
 ) *ssoUserResourceType {
 	return &ssoUserResourceType{
 		resourceType:        resourceTypeSSOUser,
@@ -137,7 +134,6 @@ func ssoUserBuilder(
 		identityInstance:    identityInstance,
 		identityStoreClient: identityStoreClient,
 		ssoClient:           ssoClient,
-		scimClient:          scimClient,
 	}
 }
 

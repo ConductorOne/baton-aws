@@ -6,17 +6,19 @@ import (
 	"context"
 	"fmt"
 	awsmiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	"github.com/aws/aws-sdk-go-v2/service/identitystore/document"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"time"
 )
 
 // Retrieves the user metadata and attributes from the UserId in an identity store.
 //
-// If you have administrator access to a member account, you can use this API from
-// the member account. Read about [member accounts]in the Organizations User Guide.
+// If you have access to a member account, you can use this API operation from the
+// member account. For more information, see [Limiting access to the identity store from member accounts]in the IAM Identity Center User Guide.
 //
-// [member accounts]: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html
+// [Limiting access to the identity store from member accounts]: https://docs.aws.amazon.com/singlesignon/latest/userguide/manage-your-accounts.html#limiting-access-from-member-accounts
 func (c *Client) DescribeUser(ctx context.Context, params *DescribeUserInput, optFns ...func(*Options)) (*DescribeUserOutput, error) {
 	if params == nil {
 		params = &DescribeUserInput{}
@@ -47,6 +49,11 @@ type DescribeUserInput struct {
 	// This member is required.
 	UserId *string
 
+	// A collection of extension names indicating what extensions the service should
+	// retrieve alongside other user attributes. aws:identitystore:enterprise is the
+	// only supported extension name.
+	Extensions []string
+
 	noSmithyDocumentSerde
 }
 
@@ -65,11 +72,25 @@ type DescribeUserOutput struct {
 	// The physical address of the user.
 	Addresses []types.Address
 
+	// The user's birthdate in YYYY-MM-DD format. This field returns the stored
+	// birthdate information for the user.
+	Birthdate *string
+
+	// The date and time the user was created.
+	CreatedAt *time.Time
+
+	// The identifier of the user or system that created the user.
+	CreatedBy *string
+
 	// The display name of the user.
 	DisplayName *string
 
 	// The email address of the user.
 	Emails []types.Email
+
+	// A map of explicitly requested attribute extensions associated with the user.
+	// Not populated if the user has no requested extensions.
+	Extensions map[string]document.Interface
 
 	// A list of ExternalId objects that contains the identifiers issued to this
 	// resource by an external identity provider.
@@ -87,11 +108,18 @@ type DescribeUserOutput struct {
 	// A list of PhoneNumber objects associated with a user.
 	PhoneNumbers []types.PhoneNumber
 
+	// A list of photos associated with the user. Returns up to 3 photos with their
+	// associated metadata including type, display name, and primary designation.
+	Photos []types.Photo
+
 	// The preferred language of the user.
 	PreferredLanguage *string
 
 	// A URL link for the user's profile.
 	ProfileUrl *string
+
+	// The roles of the user.
+	Roles []types.Role
 
 	// The time zone for a user.
 	Timezone *string
@@ -99,14 +127,27 @@ type DescribeUserOutput struct {
 	// A string containing the title of the user.
 	Title *string
 
+	// The date and time the user was last updated.
+	UpdatedAt *time.Time
+
+	// The identifier of the user or system that last updated the user.
+	UpdatedBy *string
+
 	// A unique string used to identify the user. The length limit is 128 characters.
 	// This value can consist of letters, accented characters, symbols, numbers, and
 	// punctuation. This value is specified at the time the user is created and stored
 	// as an attribute of the user object in the identity store.
 	UserName *string
 
+	// The current status of the user account.
+	UserStatus types.UserStatus
+
 	// A string indicating the type of user.
 	UserType *string
+
+	// The user's personal website or blog URL. Returns the stored website information
+	// for the user.
+	Website *string
 
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
@@ -157,6 +198,9 @@ func (c *Client) addOperationDescribeUserMiddlewares(stack *middleware.Stack, op
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -173,6 +217,9 @@ func (c *Client) addOperationDescribeUserMiddlewares(stack *middleware.Stack, op
 		return err
 	}
 	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeUserValidationMiddleware(stack); err != nil {
@@ -194,6 +241,15 @@ func (c *Client) addOperationDescribeUserMiddlewares(stack *middleware.Stack, op
 		return err
 	}
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeRetryLoop(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAttempt(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil
