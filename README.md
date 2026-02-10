@@ -1,6 +1,6 @@
 ![Baton Logo](./docs/images/baton-logo.png)
 
-# `baton-aws` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-aws.svg)](https://pkg.go.dev/github.com/conductorone/baton-aws) ![main ci](https://github.com/conductorone/baton-aws/actions/workflows/main.yaml/badge.svg)
+# `baton-aws` [![Go Reference](https://pkg.go.dev/badge/github.com/conductorone/baton-aws.svg)](https://pkg.go.dev/github.com/conductorone/baton-aws) ![ci](https://github.com/conductorone/baton-aws/actions/workflows/ci.yaml/badge.svg) ![verify](https://github.com/conductorone/baton-aws/actions/workflows/verify.yaml/badge.svg)
 
 `baton-aws` is a connector for AWS built using the [Baton SDK](https://github.com/conductorone/baton-sdk). It communicates with the AWS API to sync data about which groups and users have access to accounts, groups, and roles within an AWS org.
 
