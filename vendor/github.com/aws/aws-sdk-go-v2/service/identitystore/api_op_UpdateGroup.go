@@ -11,8 +11,8 @@ import (
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
-// For the specified group in the specified identity store, updates the group
-// metadata and attributes.
+// Updates the specified group metadata and attributes in the specified identity
+// store.
 func (c *Client) UpdateGroup(ctx context.Context, params *UpdateGroupInput, optFns ...func(*Options)) (*UpdateGroupOutput, error) {
 	if params == nil {
 		params = &UpdateGroupInput{}
@@ -41,7 +41,10 @@ type UpdateGroupInput struct {
 	IdentityStoreId *string
 
 	// A list of AttributeOperation objects to apply to the requested group. These
-	// operations might add, replace, or remove an attribute.
+	// operations might add, replace, or remove an attribute. For more information on
+	// the attributes that can be added, replaced, or removed, see [Group].
+	//
+	// [Group]: https://docs.aws.amazon.com/singlesignon/latest/IdentityStoreAPIReference/API_Group.html
 	//
 	// This member is required.
 	Operations []types.AttributeOperation
@@ -99,6 +102,9 @@ func (c *Client) addOperationUpdateGroupMiddlewares(stack *middleware.Stack, opt
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -115,6 +121,9 @@ func (c *Client) addOperationUpdateGroupMiddlewares(stack *middleware.Stack, opt
 		return err
 	}
 	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpUpdateGroupValidationMiddleware(stack); err != nil {
@@ -136,6 +145,15 @@ func (c *Client) addOperationUpdateGroupMiddlewares(stack *middleware.Stack, opt
 		return err
 	}
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeRetryLoop(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAttempt(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil

@@ -61,10 +61,20 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	l := ctxzap.Extract(ctx)
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		status, err := o.scimClient.getUserStatus(ctx, awsSdk.ToString(user.UserId))
-		if err != nil {
-			// getUserStatus returns UserTrait_Status_STATUS_UNSPECIFIED in error case, and we don't want to fail sync if we fail to get status for one user.
-			l.Debug("aws-connector: failed to get user status from scim", zap.Error(err), zap.String("user_id", awsSdk.ToString(user.UserId)))
+		// Check the UserStatus field from the Identity Store API first.
+		// Fall back to SCIM only if the status is still unspecified.
+		var status v2.UserTrait_Status_Status
+		switch user.UserStatus {
+		case awsIdentityStoreTypes.UserStatusEnabled:
+			status = v2.UserTrait_Status_STATUS_ENABLED
+		case awsIdentityStoreTypes.UserStatusDisabled:
+			status = v2.UserTrait_Status_STATUS_DISABLED
+		default:
+			status, err = o.scimClient.getUserStatus(ctx, awsSdk.ToString(user.UserId))
+			if err != nil {
+				// getUserStatus returns UserTrait_Status_STATUS_UNSPECIFIED in error case, and we don't want to fail sync if we fail to get status for one user.
+				l.Debug("aws-connector: failed to get user status from scim", zap.Error(err), zap.String("user_id", awsSdk.ToString(user.UserId)))
+			}
 		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		annos := &v2.V1Identifier{
