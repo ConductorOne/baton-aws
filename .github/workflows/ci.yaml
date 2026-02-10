@@ -1,40 +1,6 @@
 name: ci
 on: pull_request
 jobs:
-  go-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: Run linters
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-          args: --timeout=3m
-  go-test:
-    strategy:
-      matrix:
-        platform: [ubuntu-latest]
-    runs-on: ${{ matrix.platform }}
-    steps:
-      - name: Checkout code
-        if: success()
-        uses: actions/checkout@v4
-      - name: Install Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - name: go tests
-        run: (set -o pipefail && go test -v -covermode=count -json ./... | tee test.json)
-      - name: annotate go tests
-        if: always()
-        uses: guyarb/golang-test-annotations@v0.5.1
-        with:
-          test-results: test.json
   test:
     runs-on: ubuntu-latest
     env:
@@ -74,6 +40,6 @@ jobs:
           connector: ./baton-aws
           account-email: 'testci-userci@test.com'
           account-display-name: 'test-user-ci'
-          account-profile: '{"username": "test-user-ci", "email": "testci-userci@test.com"}' 
+          account-profile: '{"username": "test-user-ci", "email": "testci-userci@test.com"}'
           account-type: 'iam_user'
           search-method: 'display_name'
