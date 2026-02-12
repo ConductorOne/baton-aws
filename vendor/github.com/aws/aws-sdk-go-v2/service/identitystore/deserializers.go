@@ -8,25 +8,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/restjson"
+	"github.com/aws/aws-sdk-go-v2/service/identitystore/document"
+	internaldocument "github.com/aws/aws-sdk-go-v2/service/identitystore/internal/document"
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	smithy "github.com/aws/smithy-go"
 	smithyio "github.com/aws/smithy-go/io"
 	"github.com/aws/smithy-go/middleware"
 	"github.com/aws/smithy-go/ptr"
 	smithytime "github.com/aws/smithy-go/time"
+	"github.com/aws/smithy-go/tracing"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"io"
 	"strings"
-	"time"
 )
-
-func deserializeS3Expires(v string) (*time.Time, error) {
-	t, err := smithytime.ParseHTTPDate(v)
-	if err != nil {
-		return nil, nil
-	}
-	return &t, nil
-}
 
 type awsAwsjson11_deserializeOpCreateGroup struct {
 }
@@ -43,6 +37,10 @@ func (m *awsAwsjson11_deserializeOpCreateGroup) HandleDeserialize(ctx context.Co
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -168,6 +166,10 @@ func (m *awsAwsjson11_deserializeOpCreateGroupMembership) HandleDeserialize(ctx 
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -293,6 +295,10 @@ func (m *awsAwsjson11_deserializeOpCreateUser) HandleDeserialize(ctx context.Con
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -418,6 +424,10 @@ func (m *awsAwsjson11_deserializeOpDeleteGroup) HandleDeserialize(ctx context.Co
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -540,6 +550,10 @@ func (m *awsAwsjson11_deserializeOpDeleteGroupMembership) HandleDeserialize(ctx 
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -662,6 +676,10 @@ func (m *awsAwsjson11_deserializeOpDeleteUser) HandleDeserialize(ctx context.Con
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -784,6 +802,10 @@ func (m *awsAwsjson11_deserializeOpDescribeGroup) HandleDeserialize(ctx context.
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -903,6 +925,10 @@ func (m *awsAwsjson11_deserializeOpDescribeGroupMembership) HandleDeserialize(ct
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1022,6 +1048,10 @@ func (m *awsAwsjson11_deserializeOpDescribeUser) HandleDeserialize(ctx context.C
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1141,6 +1171,10 @@ func (m *awsAwsjson11_deserializeOpGetGroupId) HandleDeserialize(ctx context.Con
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1260,6 +1294,10 @@ func (m *awsAwsjson11_deserializeOpGetGroupMembershipId) HandleDeserialize(ctx c
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1379,6 +1417,10 @@ func (m *awsAwsjson11_deserializeOpGetUserId) HandleDeserialize(ctx context.Cont
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1498,6 +1540,10 @@ func (m *awsAwsjson11_deserializeOpIsMemberInGroups) HandleDeserialize(ctx conte
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1617,6 +1663,10 @@ func (m *awsAwsjson11_deserializeOpListGroupMemberships) HandleDeserialize(ctx c
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1736,6 +1786,10 @@ func (m *awsAwsjson11_deserializeOpListGroupMembershipsForMember) HandleDeserial
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1855,6 +1909,10 @@ func (m *awsAwsjson11_deserializeOpListGroups) HandleDeserialize(ctx context.Con
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -1974,6 +2032,10 @@ func (m *awsAwsjson11_deserializeOpListUsers) HandleDeserialize(ctx context.Cont
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -2093,6 +2155,10 @@ func (m *awsAwsjson11_deserializeOpUpdateGroup) HandleDeserialize(ctx context.Co
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -2218,6 +2284,10 @@ func (m *awsAwsjson11_deserializeOpUpdateUser) HandleDeserialize(ctx context.Con
 		return out, metadata, err
 	}
 
+	_, span := tracing.StartSpan(ctx, "OperationDeserializer")
+	endTimer := startMetricTimer(ctx, "client.call.deserialization_duration")
+	defer endTimer()
+	defer span.End()
 	response, ok := out.RawResponse.(*smithyhttp.Response)
 	if !ok {
 		return out, metadata, &smithy.DeserializationError{Err: fmt.Errorf("unknown transport type %T", out.RawResponse)}
@@ -2595,13 +2665,22 @@ func awsAwsjson11_deserializeDocumentAccessDeniedException(v **types.AccessDenie
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
 					return fmt.Errorf("expected ExceptionMessage to be of type string, got %T instead", value)
 				}
 				sv.Message = ptr.String(jtv)
+			}
+
+		case "Reason":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected AccessDeniedExceptionReason to be of type string, got %T instead", value)
+				}
+				sv.Reason = types.AccessDeniedExceptionReason(jtv)
 			}
 
 		case "RequestId":
@@ -2684,7 +2763,7 @@ func awsAwsjson11_deserializeDocumentAddress(v **types.Address, value interface{
 			if value != nil {
 				jtv, ok := value.(bool)
 				if !ok {
-					return fmt.Errorf("expected SensitiveBooleanType to be of type *bool, got %T instead", value)
+					return fmt.Errorf("expected BooleanType to be of type *bool, got %T instead", value)
 				}
 				sv.Primary = jtv
 			}
@@ -2759,6 +2838,14 @@ func awsAwsjson11_deserializeDocumentAddresses(v *[]types.Address, value interfa
 	return nil
 }
 
+func awsAwsjson11_deserializeDocumentAttributeValue(v *document.Interface, value interface{}) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	*v = internaldocument.NewDocumentUnmarshaler(value)
+	return nil
+}
+
 func awsAwsjson11_deserializeDocumentConflictException(v **types.ConflictException, value interface{}) error {
 	if v == nil {
 		return fmt.Errorf("unexpected nil of type %T", v)
@@ -2781,7 +2868,7 @@ func awsAwsjson11_deserializeDocumentConflictException(v **types.ConflictExcepti
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
@@ -2843,7 +2930,7 @@ func awsAwsjson11_deserializeDocumentEmail(v **types.Email, value interface{}) e
 			if value != nil {
 				jtv, ok := value.(bool)
 				if !ok {
-					return fmt.Errorf("expected SensitiveBooleanType to be of type *bool, got %T instead", value)
+					return fmt.Errorf("expected BooleanType to be of type *bool, got %T instead", value)
 				}
 				sv.Primary = jtv
 			}
@@ -2906,6 +2993,40 @@ func awsAwsjson11_deserializeDocumentEmails(v *[]types.Email, value interface{})
 
 	}
 	*v = cv
+	return nil
+}
+
+func awsAwsjson11_deserializeDocumentExtensions(v *map[string]document.Interface, value interface{}) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	if value == nil {
+		return nil
+	}
+
+	shape, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected JSON type %v", value)
+	}
+
+	var mv map[string]document.Interface
+	if *v == nil {
+		mv = map[string]document.Interface{}
+	} else {
+		mv = *v
+	}
+
+	for key, value := range shape {
+		var parsedVal document.Interface
+		mapVar := parsedVal
+		if err := awsAwsjson11_deserializeDocumentAttributeValue(&mapVar, value); err != nil {
+			return err
+		}
+		parsedVal = mapVar
+		mv[key] = parsedVal
+
+	}
+	*v = mv
 	return nil
 }
 
@@ -3014,6 +3135,31 @@ func awsAwsjson11_deserializeDocumentGroup(v **types.Group, value interface{}) e
 
 	for key, value := range shape {
 		switch key {
+		case "CreatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.CreatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "CreatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.CreatedBy = ptr.String(jtv)
+			}
+
 		case "Description":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -3055,6 +3201,31 @@ func awsAwsjson11_deserializeDocumentGroup(v **types.Group, value interface{}) e
 				sv.IdentityStoreId = ptr.String(jtv)
 			}
 
+		case "UpdatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.UpdatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "UpdatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.UpdatedBy = ptr.String(jtv)
+			}
+
 		default:
 			_, _ = key, value
 
@@ -3086,6 +3257,31 @@ func awsAwsjson11_deserializeDocumentGroupMembership(v **types.GroupMembership, 
 
 	for key, value := range shape {
 		switch key {
+		case "CreatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.CreatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "CreatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.CreatedBy = ptr.String(jtv)
+			}
+
 		case "GroupId":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -3116,6 +3312,31 @@ func awsAwsjson11_deserializeDocumentGroupMembership(v **types.GroupMembership, 
 					return fmt.Errorf("expected ResourceId to be of type string, got %T instead", value)
 				}
 				sv.MembershipId = ptr.String(jtv)
+			}
+
+		case "UpdatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.UpdatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "UpdatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.UpdatedBy = ptr.String(jtv)
 			}
 
 		default:
@@ -3167,7 +3388,7 @@ func awsAwsjson11_deserializeDocumentGroupMembershipExistenceResult(v **types.Gr
 			if value != nil {
 				jtv, ok := value.(bool)
 				if !ok {
-					return fmt.Errorf("expected SensitiveBooleanType to be of type *bool, got %T instead", value)
+					return fmt.Errorf("expected BooleanType to be of type *bool, got %T instead", value)
 				}
 				sv.MembershipExists = jtv
 			}
@@ -3305,7 +3526,7 @@ func awsAwsjson11_deserializeDocumentInternalServerException(v **types.InternalS
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
@@ -3498,7 +3719,7 @@ func awsAwsjson11_deserializeDocumentPhoneNumber(v **types.PhoneNumber, value in
 			if value != nil {
 				jtv, ok := value.(bool)
 				if !ok {
-					return fmt.Errorf("expected SensitiveBooleanType to be of type *bool, got %T instead", value)
+					return fmt.Errorf("expected BooleanType to be of type *bool, got %T instead", value)
 				}
 				sv.Primary = jtv
 			}
@@ -3564,6 +3785,107 @@ func awsAwsjson11_deserializeDocumentPhoneNumbers(v *[]types.PhoneNumber, value 
 	return nil
 }
 
+func awsAwsjson11_deserializeDocumentPhoto(v **types.Photo, value interface{}) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	if value == nil {
+		return nil
+	}
+
+	shape, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected JSON type %v", value)
+	}
+
+	var sv *types.Photo
+	if *v == nil {
+		sv = &types.Photo{}
+	} else {
+		sv = *v
+	}
+
+	for key, value := range shape {
+		switch key {
+		case "Display":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Display = ptr.String(jtv)
+			}
+
+		case "Primary":
+			if value != nil {
+				jtv, ok := value.(bool)
+				if !ok {
+					return fmt.Errorf("expected BooleanType to be of type *bool, got %T instead", value)
+				}
+				sv.Primary = jtv
+			}
+
+		case "Type":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Type = ptr.String(jtv)
+			}
+
+		case "Value":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Value = ptr.String(jtv)
+			}
+
+		default:
+			_, _ = key, value
+
+		}
+	}
+	*v = sv
+	return nil
+}
+
+func awsAwsjson11_deserializeDocumentPhotos(v *[]types.Photo, value interface{}) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	if value == nil {
+		return nil
+	}
+
+	shape, ok := value.([]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected JSON type %v", value)
+	}
+
+	var cv []types.Photo
+	if *v == nil {
+		cv = []types.Photo{}
+	} else {
+		cv = *v
+	}
+
+	for _, value := range shape {
+		var col types.Photo
+		destAddr := &col
+		if err := awsAwsjson11_deserializeDocumentPhoto(&destAddr, value); err != nil {
+			return err
+		}
+		col = *destAddr
+		cv = append(cv, col)
+
+	}
+	*v = cv
+	return nil
+}
+
 func awsAwsjson11_deserializeDocumentResourceNotFoundException(v **types.ResourceNotFoundException, value interface{}) error {
 	if v == nil {
 		return fmt.Errorf("unexpected nil of type %T", v)
@@ -3586,13 +3908,22 @@ func awsAwsjson11_deserializeDocumentResourceNotFoundException(v **types.Resourc
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
 					return fmt.Errorf("expected ExceptionMessage to be of type string, got %T instead", value)
 				}
 				sv.Message = ptr.String(jtv)
+			}
+
+		case "Reason":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected ResourceNotFoundExceptionReason to be of type string, got %T instead", value)
+				}
+				sv.Reason = types.ResourceNotFoundExceptionReason(jtv)
 			}
 
 		case "RequestId":
@@ -3631,6 +3962,98 @@ func awsAwsjson11_deserializeDocumentResourceNotFoundException(v **types.Resourc
 	return nil
 }
 
+func awsAwsjson11_deserializeDocumentRole(v **types.Role, value interface{}) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	if value == nil {
+		return nil
+	}
+
+	shape, ok := value.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected JSON type %v", value)
+	}
+
+	var sv *types.Role
+	if *v == nil {
+		sv = &types.Role{}
+	} else {
+		sv = *v
+	}
+
+	for key, value := range shape {
+		switch key {
+		case "Primary":
+			if value != nil {
+				jtv, ok := value.(bool)
+				if !ok {
+					return fmt.Errorf("expected BooleanType to be of type *bool, got %T instead", value)
+				}
+				sv.Primary = jtv
+			}
+
+		case "Type":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Type = ptr.String(jtv)
+			}
+
+		case "Value":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Value = ptr.String(jtv)
+			}
+
+		default:
+			_, _ = key, value
+
+		}
+	}
+	*v = sv
+	return nil
+}
+
+func awsAwsjson11_deserializeDocumentRoles(v *[]types.Role, value interface{}) error {
+	if v == nil {
+		return fmt.Errorf("unexpected nil of type %T", v)
+	}
+	if value == nil {
+		return nil
+	}
+
+	shape, ok := value.([]interface{})
+	if !ok {
+		return fmt.Errorf("unexpected JSON type %v", value)
+	}
+
+	var cv []types.Role
+	if *v == nil {
+		cv = []types.Role{}
+	} else {
+		cv = *v
+	}
+
+	for _, value := range shape {
+		var col types.Role
+		destAddr := &col
+		if err := awsAwsjson11_deserializeDocumentRole(&destAddr, value); err != nil {
+			return err
+		}
+		col = *destAddr
+		cv = append(cv, col)
+
+	}
+	*v = cv
+	return nil
+}
+
 func awsAwsjson11_deserializeDocumentServiceQuotaExceededException(v **types.ServiceQuotaExceededException, value interface{}) error {
 	if v == nil {
 		return fmt.Errorf("unexpected nil of type %T", v)
@@ -3653,7 +4076,7 @@ func awsAwsjson11_deserializeDocumentServiceQuotaExceededException(v **types.Ser
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
@@ -3702,13 +4125,22 @@ func awsAwsjson11_deserializeDocumentThrottlingException(v **types.ThrottlingExc
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
 					return fmt.Errorf("expected ExceptionMessage to be of type string, got %T instead", value)
 				}
 				sv.Message = ptr.String(jtv)
+			}
+
+		case "Reason":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected ThrottlingExceptionReason to be of type string, got %T instead", value)
+				}
+				sv.Reason = types.ThrottlingExceptionReason(jtv)
 			}
 
 		case "RequestId":
@@ -3769,6 +4201,40 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 				return err
 			}
 
+		case "Birthdate":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Birthdate = ptr.String(jtv)
+			}
+
+		case "CreatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.CreatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "CreatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.CreatedBy = ptr.String(jtv)
+			}
+
 		case "DisplayName":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -3780,6 +4246,11 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 
 		case "Emails":
 			if err := awsAwsjson11_deserializeDocumentEmails(&sv.Emails, value); err != nil {
+				return err
+			}
+
+		case "Extensions":
+			if err := awsAwsjson11_deserializeDocumentExtensions(&sv.Extensions, value); err != nil {
 				return err
 			}
 
@@ -3825,6 +4296,11 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 				return err
 			}
 
+		case "Photos":
+			if err := awsAwsjson11_deserializeDocumentPhotos(&sv.Photos, value); err != nil {
+				return err
+			}
+
 		case "PreferredLanguage":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -3841,6 +4317,11 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
 				}
 				sv.ProfileUrl = ptr.String(jtv)
+			}
+
+		case "Roles":
+			if err := awsAwsjson11_deserializeDocumentRoles(&sv.Roles, value); err != nil {
+				return err
 			}
 
 		case "Timezone":
@@ -3861,6 +4342,31 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 				sv.Title = ptr.String(jtv)
 			}
 
+		case "UpdatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.UpdatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "UpdatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.UpdatedBy = ptr.String(jtv)
+			}
+
 		case "UserId":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -3879,6 +4385,15 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 				sv.UserName = ptr.String(jtv)
 			}
 
+		case "UserStatus":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected UserStatus to be of type string, got %T instead", value)
+				}
+				sv.UserStatus = types.UserStatus(jtv)
+			}
+
 		case "UserType":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -3886,6 +4401,15 @@ func awsAwsjson11_deserializeDocumentUser(v **types.User, value interface{}) err
 					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
 				}
 				sv.UserType = ptr.String(jtv)
+			}
+
+		case "Website":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Website = ptr.String(jtv)
 			}
 
 		default:
@@ -3953,13 +4477,22 @@ func awsAwsjson11_deserializeDocumentValidationException(v **types.ValidationExc
 
 	for key, value := range shape {
 		switch key {
-		case "Message":
+		case "message", "Message":
 			if value != nil {
 				jtv, ok := value.(string)
 				if !ok {
 					return fmt.Errorf("expected ExceptionMessage to be of type string, got %T instead", value)
 				}
 				sv.Message = ptr.String(jtv)
+			}
+
+		case "Reason":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected ValidationExceptionReason to be of type string, got %T instead", value)
+				}
+				sv.Reason = types.ValidationExceptionReason(jtv)
 			}
 
 		case "RequestId":
@@ -4242,6 +4775,31 @@ func awsAwsjson11_deserializeOpDocumentDescribeGroupMembershipOutput(v **Describ
 
 	for key, value := range shape {
 		switch key {
+		case "CreatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.CreatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "CreatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.CreatedBy = ptr.String(jtv)
+			}
+
 		case "GroupId":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -4272,6 +4830,31 @@ func awsAwsjson11_deserializeOpDocumentDescribeGroupMembershipOutput(v **Describ
 					return fmt.Errorf("expected ResourceId to be of type string, got %T instead", value)
 				}
 				sv.MembershipId = ptr.String(jtv)
+			}
+
+		case "UpdatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.UpdatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "UpdatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.UpdatedBy = ptr.String(jtv)
 			}
 
 		default:
@@ -4305,6 +4888,31 @@ func awsAwsjson11_deserializeOpDocumentDescribeGroupOutput(v **DescribeGroupOutp
 
 	for key, value := range shape {
 		switch key {
+		case "CreatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.CreatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "CreatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.CreatedBy = ptr.String(jtv)
+			}
+
 		case "Description":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -4346,6 +4954,31 @@ func awsAwsjson11_deserializeOpDocumentDescribeGroupOutput(v **DescribeGroupOutp
 				sv.IdentityStoreId = ptr.String(jtv)
 			}
 
+		case "UpdatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.UpdatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "UpdatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.UpdatedBy = ptr.String(jtv)
+			}
+
 		default:
 			_, _ = key, value
 
@@ -4382,6 +5015,40 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 				return err
 			}
 
+		case "Birthdate":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Birthdate = ptr.String(jtv)
+			}
+
+		case "CreatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.CreatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "CreatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.CreatedBy = ptr.String(jtv)
+			}
+
 		case "DisplayName":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -4393,6 +5060,11 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 
 		case "Emails":
 			if err := awsAwsjson11_deserializeDocumentEmails(&sv.Emails, value); err != nil {
+				return err
+			}
+
+		case "Extensions":
+			if err := awsAwsjson11_deserializeDocumentExtensions(&sv.Extensions, value); err != nil {
 				return err
 			}
 
@@ -4438,6 +5110,11 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 				return err
 			}
 
+		case "Photos":
+			if err := awsAwsjson11_deserializeDocumentPhotos(&sv.Photos, value); err != nil {
+				return err
+			}
+
 		case "PreferredLanguage":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -4454,6 +5131,11 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
 				}
 				sv.ProfileUrl = ptr.String(jtv)
+			}
+
+		case "Roles":
+			if err := awsAwsjson11_deserializeDocumentRoles(&sv.Roles, value); err != nil {
+				return err
 			}
 
 		case "Timezone":
@@ -4474,6 +5156,31 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 				sv.Title = ptr.String(jtv)
 			}
 
+		case "UpdatedAt":
+			if value != nil {
+				switch jtv := value.(type) {
+				case json.Number:
+					f64, err := jtv.Float64()
+					if err != nil {
+						return err
+					}
+					sv.UpdatedAt = ptr.Time(smithytime.ParseEpochSeconds(f64))
+
+				default:
+					return fmt.Errorf("expected DateType to be a JSON Number, got %T instead", value)
+
+				}
+			}
+
+		case "UpdatedBy":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected StringType to be of type string, got %T instead", value)
+				}
+				sv.UpdatedBy = ptr.String(jtv)
+			}
+
 		case "UserId":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -4492,6 +5199,15 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 				sv.UserName = ptr.String(jtv)
 			}
 
+		case "UserStatus":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected UserStatus to be of type string, got %T instead", value)
+				}
+				sv.UserStatus = types.UserStatus(jtv)
+			}
+
 		case "UserType":
 			if value != nil {
 				jtv, ok := value.(string)
@@ -4499,6 +5215,15 @@ func awsAwsjson11_deserializeOpDocumentDescribeUserOutput(v **DescribeUserOutput
 					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
 				}
 				sv.UserType = ptr.String(jtv)
+			}
+
+		case "Website":
+			if value != nil {
+				jtv, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("expected SensitiveStringType to be of type string, got %T instead", value)
+				}
+				sv.Website = ptr.String(jtv)
 			}
 
 		default:
