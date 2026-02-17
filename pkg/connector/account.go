@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
+	"github.com/aws/smithy-go"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -32,9 +35,81 @@ const (
 	AccountAssignmentRetryDelay      = 1 * time.Second
 
 	// SessionStore cache keys.
-	permissionSetsCacheKey       = "permission-sets"
-	permissionSetDetailKeyPrefix = "permission-set:"
+	permissionSetsCacheKey         = "permission-sets"
+	permissionSetDetailKeyPrefix   = "permission-set:"
+	permissionSetIDsCacheKeyPrefix = "permission-set-ids:"
 )
+
+// awsThrottleErrorCodes contains AWS API error codes that indicate rate limiting.
+// These codes are from the AWS SDK (aws/retry/standard.go).
+var awsThrottleErrorCodes = map[string]struct{}{
+	"Throttling":                             {},
+	"ThrottlingException":                    {},
+	"ThrottledException":                     {},
+	"RequestThrottledException":              {},
+	"TooManyRequestsException":               {},
+	"ProvisionedThroughputExceededException": {},
+	"RequestLimitExceeded":                   {},
+	"BandwidthLimitExceeded":                 {},
+	"LimitExceededException":                 {},
+	"RequestThrottled":                       {},
+	"SlowDown":                               {},
+	"EC2ThrottledException":                  {},
+}
+
+// wrapAWSError checks if the error is an AWS throttling error and wraps it
+// with codes.Unavailable so the baton-sdk sync engine can handle rate limiting.
+func wrapAWSError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		if _, isThrottle := awsThrottleErrorCodes[apiErr.ErrorCode()]; isThrottle {
+			return status.Error(codes.Unavailable, err.Error())
+		}
+	}
+
+	return err
+}
+
+// grantsPageState tracks pagination state for the Grants function.
+// This allows progress to be saved between calls, reducing the "blast radius"
+// if a rate limit error occurs mid-sync.
+type grantsPageState struct {
+	// PermissionSetIndex is the index into the cached permission set IDs list
+	PermissionSetIndex int `json:"psi"`
+	// AssignmentPageToken is the AWS pagination token for ListAccountAssignments
+	AssignmentPageToken string `json:"apt,omitempty"`
+}
+
+func encodeGrantsPageToken(state grantsPageState) (string, error) {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
+}
+
+func decodeGrantsPageToken(token string) (grantsPageState, error) {
+	if token == "" {
+		return grantsPageState{}, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return grantsPageState{}, err
+	}
+	var state grantsPageState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return grantsPageState{}, err
+	}
+	return state, nil
+}
+
+func permissionSetIDsCacheKey(accountID string) string {
+	return permissionSetIDsCacheKeyPrefix + accountID
+}
 
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
@@ -72,7 +147,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 	resp, err := o.orgClient.ListAccounts(ctx, listAccountsInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: listAccounts failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
@@ -147,10 +222,115 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 }
 
 func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
-	// Phase 1: Collect all permission set IDs provisioned to this account
+	// Parse page state from token
+	pageState, err := decodeGrantsPageToken(opts.PageToken.Token)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-aws: failed to decode page token: %w", err)
+	}
+
+	// Step 1: Get or fetch permission set IDs for this account (cached per-account)
+	permissionSetIDs, err := o.getOrFetchPermissionSetIDs(ctx, opts.Session, resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// If no permission sets, we're done
+	if len(permissionSetIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	// If we've processed all permission sets, we're done
+	if pageState.PermissionSetIndex >= len(permissionSetIDs) {
+		return nil, nil, nil
+	}
+
+	// Step 2: Get the current permission set to process
+	currentPsId := permissionSetIDs[pageState.PermissionSetIndex]
+
+	// Step 3: Fetch the permission set details (with caching)
+	ps, err := o.getPermissionSetWithCache(ctx, opts.Session, currentPsId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Step 4: Build the entitlement for this permission set
+	bindingName := &PermissionSetBinding{
+		AccountID:       resource.Id.Resource,
+		PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
+	}
+
+	var annos annotations.Annotations
+	annos.Update(&v2.V1Identifier{
+		Id: bindingName.String(),
+	})
+	entitlement := &v2.Entitlement{
+		Id:          bindingName.String(),
+		DisplayName: fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name)),
+		Description: awsSdk.ToString(ps.Description),
+		Resource:    resource,
+		Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
+		GrantableTo: []*v2.ResourceType{resourceTypeSSOGroup, resourceTypeSSOUser},
+		Annotations: annos,
+	}
+
+	// Step 5: Fetch one page of assignments for this permission set
+	grants, nextAssignmentToken, err := o.fetchGrantsForPermissionSet(ctx, resource, entitlement, ps, pageState.AssignmentPageToken)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Step 6: Determine next page state
+	var nextPageToken string
+	if nextAssignmentToken != "" {
+		// More assignments for the current permission set
+		nextState := grantsPageState{
+			PermissionSetIndex:  pageState.PermissionSetIndex,
+			AssignmentPageToken: nextAssignmentToken,
+		}
+
+		nextPageToken, err = encodeGrantsPageToken(nextState)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
+		}
+	} else if pageState.PermissionSetIndex+1 < len(permissionSetIDs) {
+		// Move to next permission set
+		nextState := grantsPageState{
+			PermissionSetIndex:  pageState.PermissionSetIndex + 1,
+			AssignmentPageToken: "",
+		}
+
+		nextPageToken, err = encodeGrantsPageToken(nextState)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
+		}
+	}
+	// else: nextPageToken remains empty, signaling completion
+
+	if nextPageToken != "" {
+		return grants, &resourceSdk.SyncOpResults{NextPageToken: nextPageToken}, nil
+	}
+	return grants, nil, nil
+}
+
+// getOrFetchPermissionSetIDs retrieves permission set IDs for an account, using cache if available.
+func (o *accountResourceType) getOrFetchPermissionSetIDs(ctx context.Context, ss sessions.SessionStore, accountID string) ([]string, error) {
+	cacheKey := permissionSetIDsCacheKey(accountID)
+
+	// Try cache first
+	if ss != nil {
+		cached, found, err := session.GetJSON[[]string](ctx, ss, cacheKey)
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+		}
+		if found {
+			return cached, nil
+		}
+	}
+
+	// Fetch from AWS API
 	var permissionSetIDs []string
 	psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
-		AccountId:   awsSdk.String(resource.Id.Resource),
+		AccountId:   awsSdk.String(accountID),
 		InstanceArn: o.identityInstance.InstanceArn,
 	}
 
@@ -158,7 +338,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 	for {
 		psBindingsResp, err := psBindingPaginator.NextPage(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err))
 		}
 
 		permissionSetIDs = append(permissionSetIDs, psBindingsResp.PermissionSets...)
@@ -167,145 +347,132 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		}
 	}
 
-	if len(permissionSetIDs) == 0 {
-		return nil, nil, nil
+	// Cache the result
+	if ss != nil {
+		if err := session.SetJSON(ctx, ss, cacheKey, permissionSetIDs); err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
+		}
 	}
 
-	// Phase 2: Batch fetch permission sets from cache
-	cacheKeys := make([]string, len(permissionSetIDs))
-	for i, psId := range permissionSetIDs {
-		cacheKeys[i] = permissionSetDetailKeyPrefix + psId
-	}
+	return permissionSetIDs, nil
+}
 
-	var cachedDetails map[string]*awsSsoAdminTypes.PermissionSet
-	if opts.Session != nil {
-		cacheResponse, err := session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, opts.Session, cacheKeys)
+// getPermissionSetWithCache fetches a permission set by ID, using cache if available.
+func (o *accountResourceType) getPermissionSetWithCache(ctx context.Context, ss sessions.SessionStore, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
+	cacheKey := permissionSetDetailKeyPrefix + permissionSetId
+
+	// Try cache first
+	if ss != nil {
+		cached, found, err := session.GetJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKey)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: Session Storage reading operation failed: %w", err)
+			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
 		}
-
-		cachedDetails = cacheResponse
+		if found {
+			return cached, nil
+		}
 	}
 
-	// Phase 3: Build permission sets map - use cached or fetch from API
-	permissionSets := make(map[string]*awsSsoAdminTypes.PermissionSet, len(permissionSetIDs))
-	toCache := make(map[string]*awsSsoAdminTypes.PermissionSet)
-
-	for i, psId := range permissionSetIDs {
-		cacheKey := cacheKeys[i]
-
-		// Check if we got it from batch cache lookup
-		if ps, found := cachedDetails[cacheKey]; found {
-			permissionSets[psId] = ps
-			continue
-		}
-
-		// Fetch from AWS API
-		ps, err := o.fetchPermissionSetFromAPI(ctx, psId)
-		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: ssoadmin.DescribePermissionSet failed: %w", err)
-		}
-
-		permissionSets[psId] = ps
-		toCache[cacheKey] = ps
+	// Fetch from AWS API
+	ps, err := o.fetchPermissionSetFromAPI(ctx, permissionSetId)
+	if err != nil {
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.DescribePermissionSet failed: %w", err))
 	}
 
-	// Phase 4: Build grants for each permission set
-	rv := make([]*v2.Grant, 0, 32)
-	for _, psId := range permissionSetIDs {
-		ps := permissionSets[psId]
-
-		bindingName := &PermissionSetBinding{
-			AccountID:       resource.Id.Resource,
-			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
+	// Cache the result
+	if ss != nil {
+		if err := session.SetJSON(ctx, ss, cacheKey, ps); err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
 		}
+	}
 
-		var annos annotations.Annotations
-		annos.Update(&v2.V1Identifier{
-			Id: bindingName.String(),
+	return ps, nil
+}
+
+// fetchGrantsForPermissionSet fetches one page of grants for a permission set.
+// Returns the grants, the next assignment page token (empty if done), and any error.
+func (o *accountResourceType) fetchGrantsForPermissionSet(
+	ctx context.Context,
+	resource *v2.Resource,
+	entitlement *v2.Entitlement,
+	ps *awsSsoAdminTypes.PermissionSet,
+	assignmentPageToken string,
+) ([]*v2.Grant, string, error) {
+	assignmentsInput := &awsSsoAdmin.ListAccountAssignmentsInput{
+		AccountId:        awsSdk.String(resource.Id.Resource),
+		InstanceArn:      o.identityInstance.InstanceArn,
+		PermissionSetArn: ps.PermissionSetArn,
+	}
+
+	if assignmentPageToken != "" {
+		assignmentsInput.NextToken = awsSdk.String(assignmentPageToken)
+	}
+
+	assignmentsResp, err := o.ssoAdminClient.ListAccountAssignments(ctx, assignmentsInput)
+	if err != nil {
+		return nil, "", wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListAccountAssignments failed: %w", err))
+	}
+
+	rv := make([]*v2.Grant, 0, len(assignmentsResp.AccountAssignments))
+	for _, assignment := range assignmentsResp.AccountAssignments {
+		grant := o.buildGrantFromAssignment(entitlement, assignment)
+		if grant != nil {
+			rv = append(rv, grant)
+		}
+	}
+
+	nextToken := ""
+	if assignmentsResp.NextToken != nil {
+		nextToken = *assignmentsResp.NextToken
+	}
+
+	return rv, nextToken, nil
+}
+
+// buildGrantFromAssignment creates a Grant from an AccountAssignment.
+func (o *accountResourceType) buildGrantFromAssignment(entitlement *v2.Entitlement, assignment awsSsoAdminTypes.AccountAssignment) *v2.Grant {
+	switch assignment.PrincipalType {
+	case awsSsoAdminTypes.PrincipalTypeGroup:
+		groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+
+		var groupAnnos annotations.Annotations
+		groupAnnos.Update(&v2.V1Identifier{
+			Id: V1GrantID(entitlement.Id, groupARN),
 		})
-		entitlement := &v2.Entitlement{
-			Id:          bindingName.String(),
-			DisplayName: fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name)),
-			Description: awsSdk.ToString(ps.Description),
-			Resource:    resource,
-			Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
-			GrantableTo: []*v2.ResourceType{resourceTypeSSOGroup, resourceTypeSSOUser},
-			Annotations: annos,
+		groupAnnos.Update(&v2.GrantExpandable{
+			EntitlementIds: []string{
+				fmt.Sprintf("%s:%s:%s", resourceTypeSSOGroup.Id, groupARN, groupMemberEntitlement),
+			},
+		})
+
+		return &v2.Grant{
+			Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
+			Entitlement: entitlement,
+			Principal: &v2.Resource{
+				Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
+			},
+			Annotations: groupAnnos,
 		}
 
-		assignmentsInput := &awsSsoAdmin.ListAccountAssignmentsInput{
-			AccountId:        awsSdk.String(resource.Id.Resource),
-			InstanceArn:      o.identityInstance.InstanceArn,
-			PermissionSetArn: ps.PermissionSetArn,
+	case awsSsoAdminTypes.PrincipalTypeUser:
+		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+
+		var userAnnos annotations.Annotations
+		userAnnos.Update(&v2.V1Identifier{
+			Id: V1GrantID(entitlement.Id, userARN),
+		})
+
+		return &v2.Grant{
+			Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
+			Entitlement: entitlement,
+			Principal: &v2.Resource{
+				Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
+			},
+			Annotations: userAnnos,
 		}
 
-		assignmentsPaginator := awsSsoAdmin.NewListAccountAssignmentsPaginator(o.ssoAdminClient, assignmentsInput)
-		for {
-			assignmentsResp, err := assignmentsPaginator.NextPage(ctx)
-			if err != nil {
-				return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListAccountAssignments failed: %w", err)
-			}
-
-			for _, assignment := range assignmentsResp.AccountAssignments {
-				switch assignment.PrincipalType {
-				case awsSsoAdminTypes.PrincipalTypeGroup:
-					groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
-
-					var groupAnnos annotations.Annotations
-					groupAnnos.Update(&v2.V1Identifier{
-						Id: V1GrantID(entitlement.Id, groupARN),
-					})
-					groupAnnos.Update(&v2.GrantExpandable{
-						EntitlementIds: []string{
-							fmt.Sprintf("%s:%s:%s", resourceTypeSSOGroup.Id, groupARN, groupMemberEntitlement),
-						},
-					})
-
-					rv = append(rv, &v2.Grant{
-						Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
-						Entitlement: entitlement,
-						Principal: &v2.Resource{
-							Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
-						},
-						Annotations: groupAnnos,
-					})
-
-				case awsSsoAdminTypes.PrincipalTypeUser:
-					userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
-
-					var userAnnos annotations.Annotations
-					userAnnos.Update(&v2.V1Identifier{
-						Id: V1GrantID(entitlement.Id, userARN),
-					})
-
-					rv = append(rv, &v2.Grant{
-						Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
-						Entitlement: entitlement,
-						Principal: &v2.Resource{
-							Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
-						},
-						Annotations: userAnnos,
-					})
-				}
-			}
-
-			assignmentsInput.NextToken = assignmentsResp.NextToken
-			if !assignmentsPaginator.HasMorePages() {
-				break
-			}
-		}
+	default:
+		return nil
 	}
-
-	// Phase 5: Batch cache all uncached permission sets in a single operation
-	if opts.Session != nil && len(toCache) > 0 {
-		err := session.SetManyJSON(ctx, opts.Session, toCache)
-		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: Session Storage writting operation failed: %w", err)
-		}
-	}
-
-	return rv, nil, nil
 }
 
 // verifyAccountStatus verifies the account status before performing an operation.
@@ -326,20 +493,20 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 			// This log is for operators/admins reviewing connector logs; adding
 			// organizations:DescribeAccount to the IAM policy improves error clarity.
 			l := ctxzap.Extract(ctx).With(zap.String("account_id", accountID))
-			l.Debug("aws-connector: skipping account status check (missing organizations:DescribeAccount); proceeding with operation",
+			l.Debug("baton-aws: skipping account status check (missing organizations:DescribeAccount); proceeding with operation",
 				zap.String("operation", operation))
 			return true, nil
 		default:
 			// other errors: fail
-			return false, fmt.Errorf("aws-connector: DescribeAccount failed: %w", err)
+			return false, fmt.Errorf("baton-aws: DescribeAccount failed: %w", err)
 		}
 	}
 	if descOut.Account == nil {
-		return false, status.Errorf(codes.NotFound, "aws-connector: DescribeAccount returned nil account for %s", accountID)
+		return false, status.Errorf(codes.NotFound, "baton-aws: DescribeAccount returned nil account for %s", accountID)
 	}
 	if descOut.Account.Status != types.AccountStatusActive {
 		// if we could verify and the account is not active, fail
-		return false, fmt.Errorf("aws-connector: account %s is not active, status: %s", accountID, descOut.Account.Status)
+		return false, fmt.Errorf("baton-aws: account %s is not active, status: %s", accountID, descOut.Account.Status)
 	}
 	return false, nil
 }
@@ -363,7 +530,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		}
 		principalId = ssoGroupID
 	default:
-		return nil, fmt.Errorf("aws-connector: invalid principal resource type: %s", principal.Id.ResourceType)
+		return nil, fmt.Errorf("baton-aws: invalid principal resource type: %s", principal.Id.ResourceType)
 	}
 
 	binding := &PermissionSetBinding{}
@@ -394,7 +561,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		var ce *awsSsoAdminTypes.ConflictException
 		if errors.As(err, &ce) {
 			// there is a pending operation, probably because the account is suspended
-			errorMsg := fmt.Sprintf("aws-connector: conflicting operation in progress for account %s. This may indicate the account is suspended", binding.AccountID)
+			errorMsg := fmt.Sprintf("baton-aws: conflicting operation in progress for account %s. This may indicate the account is suspended", binding.AccountID)
 			// if we couldn't verify the status before, suggest adding the permission
 			if couldNotVerifyStatus {
 				errorMsg += ". Tip: Add organizations:DescribeAccount permission to get clearer error messages for suspended accounts"
@@ -421,7 +588,7 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
 			// we don't have permissions to verify: debug but assume complete (backward compatibility)
-			l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
+			l.Debug("baton-aws: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
 			complete = true
 		} else {
 			return nil, err
@@ -435,17 +602,18 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 		select {
 		case <-waitCtx.Done():
 			// if we couldn't verify the status during the timeout, we can't confirm success
-			return nil, fmt.Errorf("aws-connector: account assignment creation timed out. Cannot verify if operation completed successfully: %w", waitCtx.Err())
+			return nil, fmt.Errorf("baton-aws: account assignment creation timed out. Cannot verify if operation completed successfully: %w", waitCtx.Err())
+
 		case <-time.After(AccountAssignmentRetryDelay):
 		}
 
-		l.Debug("aws-connector: waiting for account assignment creation to complete, checking status...")
+		l.Debug("baton-aws: waiting for account assignment creation to complete, checking status...")
 		complete, err = o.checkCreateAccountAssignmentStatus(waitCtx, l, createOut.AccountAssignmentCreationStatus)
 		if err != nil {
 			var ae *awsSsoAdminTypes.AccessDeniedException
 			if errors.As(err, &ae) {
 				// we don't have permissions to verify: debug but assume complete (backward compatibility)
-				l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
+				l.Debug("baton-aws: access denied while attempting to check status. Assuming account assignment creation is complete.", zap.Error(err))
 				complete = true
 			} else {
 				return nil, err
@@ -463,23 +631,26 @@ func (o *accountResourceType) checkCreateAccountAssignmentStatus(ctx context.Con
 		InstanceArn:                        o.identityInstance.InstanceArn,
 	})
 	if err != nil {
-		l.Error("aws-connector: DescribeAccountAssignmentCreationStatus request failed", zap.Error(err))
+		l.Error("baton-aws: DescribeAccountAssignmentCreationStatus request failed", zap.Error(err))
 		return false, err
 	}
 
 	switch descOut.AccountAssignmentCreationStatus.Status {
 	case awsSsoAdminTypes.StatusValuesInProgress:
-		l.Debug("aws-connector: account assignment creation still in progress")
+		l.Debug("baton-aws: account assignment creation still in progress")
 		return false, nil
+
 	case awsSsoAdminTypes.StatusValuesFailed:
-		l.Error("aws-connector: account assignment creation failed", zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason)))
-		return true, fmt.Errorf("aws-connector: %s", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason))
+		l.Error("baton-aws: account assignment creation failed", zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason)))
+		return true, fmt.Errorf("baton-aws: %s", awsSdk.ToString(descOut.AccountAssignmentCreationStatus.FailureReason))
+
 	case awsSsoAdminTypes.StatusValuesSucceeded:
-		l.Debug("aws-connector: account assignment creation succeeded")
+		l.Debug("baton-aws: account assignment creation succeeded")
 		return true, nil
+
 	default:
-		l.Error("aws-connector: unexpected status", zap.String("status", string(descOut.AccountAssignmentCreationStatus.Status)))
-		return false, errors.New("aws-connector: account assignment creation failed")
+		l.Error("baton-aws: unexpected status", zap.String("status", string(descOut.AccountAssignmentCreationStatus.Status)))
+		return false, errors.New("baton-aws: account assignment creation failed")
 	}
 }
 
@@ -490,23 +661,26 @@ func (o *accountResourceType) checkDeleteAccountAssignmentStatus(ctx context.Con
 		InstanceArn:                        o.identityInstance.InstanceArn,
 	})
 	if err != nil {
-		l.Error("aws-connector: DescribeAccountAssignmentDeletionStatus request failed", zap.Error(err))
+		l.Error("baton-aws: DescribeAccountAssignmentDeletionStatus request failed", zap.Error(err))
 		return false, err
 	}
 
 	switch descOut.AccountAssignmentDeletionStatus.Status {
 	case awsSsoAdminTypes.StatusValuesInProgress:
-		l.Debug("aws-connector: account assignment deletion still in progress")
+		l.Debug("baton-aws: account assignment deletion still in progress")
 		return false, nil
+
 	case awsSsoAdminTypes.StatusValuesFailed:
-		l.Error("aws-connector: account assignment deletion failed", zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentDeletionStatus.FailureReason)))
-		return true, fmt.Errorf("aws-connector: %s", awsSdk.ToString(descOut.AccountAssignmentDeletionStatus.FailureReason))
+		l.Error("baton-aws: account assignment deletion failed", zap.String("failure_reason", awsSdk.ToString(descOut.AccountAssignmentDeletionStatus.FailureReason)))
+		return true, fmt.Errorf("baton-aws: %s", awsSdk.ToString(descOut.AccountAssignmentDeletionStatus.FailureReason))
+
 	case awsSsoAdminTypes.StatusValuesSucceeded:
-		l.Debug("aws-connector: account assignment deletion succeeded")
+		l.Debug("baton-aws: account assignment deletion succeeded")
 		return true, nil
+
 	default:
-		l.Error("aws-connector: unexpected status", zap.String("status", string(descOut.AccountAssignmentDeletionStatus.Status)))
-		return false, errors.New("aws-connector: account assignment deletion failed")
+		l.Error("baton-aws: unexpected status", zap.String("status", string(descOut.AccountAssignmentDeletionStatus.Status)))
+		return false, errors.New("baton-aws: account assignment deletion failed")
 	}
 }
 
@@ -522,16 +696,19 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		if err != nil {
 			return nil, err
 		}
+
 		principalId = ssoUserID
+
 	case resourceTypeSSOGroup.Id:
 		principalType = awsSsoAdminTypes.PrincipalTypeGroup
 		ssoGroupID, err := ssoGroupIdFromARN(principal.Id.Resource)
 		if err != nil {
 			return nil, err
 		}
+
 		principalId = ssoGroupID
 	default:
-		return nil, fmt.Errorf("aws-connector: invalid principal resource type: %s", principal.Id.ResourceType)
+		return nil, fmt.Errorf("baton-aws: invalid principal resource type: %s", principal.Id.ResourceType)
 	}
 
 	binding := &PermissionSetBinding{}
@@ -562,13 +739,15 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		var ce *awsSsoAdminTypes.ConflictException
 		if errors.As(err, &ce) {
 			// there is a pending operation, probably because the account is suspended
-			errorMsg := fmt.Sprintf("aws-connector: conflicting operation in progress for account %s. This may indicate the account is suspended", binding.AccountID)
+			errorMsg := fmt.Sprintf("baton-aws: conflicting operation in progress for account %s. This may indicate the account is suspended", binding.AccountID)
 			// if we couldn't verify the status before, suggest adding the permission
 			if couldNotVerifyStatus {
 				errorMsg += ". Tip: Add organizations:DescribeAccount permission to get clearer error messages for suspended accounts"
 			}
+
 			return nil, fmt.Errorf("%s: %w", errorMsg, err)
 		}
+
 		return nil, err
 	}
 
@@ -587,7 +766,7 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 	complete, err := o.checkDeleteAccountAssignmentStatus(ctx, l, deleteOut.AccountAssignmentDeletionStatus)
 	if err != nil {
 		if strings.Contains(err.Error(), "Received a 404 status error") {
-			l.Info("aws-connector: Grant already revoked.")
+			l.Info("baton-aws: Grant already revoked.")
 			annos.Append(&v2.GrantAlreadyRevoked{})
 			return annos, nil
 		}
@@ -595,7 +774,7 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		var ae *awsSsoAdminTypes.AccessDeniedException
 		if errors.As(err, &ae) {
 			// we don't have permissions to verify: debug but assume complete (backward compatibility)
-			l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
+			l.Debug("baton-aws: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
 			complete = true
 		} else {
 			return nil, err
@@ -609,15 +788,15 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 		select {
 		case <-waitCtx.Done():
 			// if we couldn't verify the status during the timeout, we can't confirm success
-			return nil, fmt.Errorf("aws-connector: account assignment deletion timed out. Cannot verify if operation completed successfully: %w", waitCtx.Err())
+			return nil, fmt.Errorf("baton-aws: account assignment deletion timed out. Cannot verify if operation completed successfully: %w", waitCtx.Err())
 		case <-time.After(AccountAssignmentRetryDelay):
 		}
 
-		l.Debug("aws-connector: waiting for account assignment deletion to complete, checking status...")
+		l.Debug("baton-aws: waiting for account assignment deletion to complete, checking status...")
 		complete, err = o.checkDeleteAccountAssignmentStatus(waitCtx, l, deleteOut.AccountAssignmentDeletionStatus)
 		if err != nil {
 			if strings.Contains(err.Error(), "Received a 404 status error") {
-				l.Info("aws-connector: Grant already revoked.")
+				l.Info("baton-aws: Grant already revoked.")
 				annos.Append(&v2.GrantAlreadyRevoked{})
 				return annos, nil
 			}
@@ -625,7 +804,7 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 			var ae *awsSsoAdminTypes.AccessDeniedException
 			if errors.As(err, &ae) {
 				// we don't have permissions to verify: debug but assume complete (backward compatibility)
-				l.Debug("aws-connector: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
+				l.Debug("baton-aws: access denied while attempting to check status. Assuming account assignment deletion is complete.", zap.Error(err))
 				complete = true
 			} else {
 				return nil, err
@@ -643,6 +822,7 @@ func (o *accountResourceType) fetchPermissionSetFromAPI(ctx context.Context, per
 		InstanceArn:      o.identityInstance.InstanceArn,
 		PermissionSetArn: awsSdk.String(permissionSetId),
 	}
+
 	resp, err := o.ssoAdminClient.DescribePermissionSet(ctx, input)
 	if err != nil {
 		return nil, err
@@ -677,8 +857,9 @@ type PermissionSetBinding struct {
 func (psm *PermissionSetBinding) UnmarshalText(data []byte) error {
 	aid, psi, ok := strings.Cut(string(data), "|")
 	if !ok {
-		return errors.New("aws-connector: invalid permission set to account binding id")
+		return errors.New("baton-aws: invalid permission set to account binding id")
 	}
+
 	psm.AccountID = aid
 	psm.PermissionSetId = psi
 	return nil
@@ -691,7 +872,11 @@ func (psm *PermissionSetBinding) String() string {
 func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions.SessionStore) ([]*awsSsoAdminTypes.PermissionSet, error) {
 	if ss != nil {
 		cached, found, err := session.GetJSON[[]*awsSsoAdminTypes.PermissionSet](ctx, ss, permissionSetsCacheKey)
-		if err == nil && found {
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+		}
+
+		if found {
 			return cached, nil
 		}
 	}
@@ -700,12 +885,14 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions
 	input := &awsSsoAdmin.ListPermissionSetsInput{
 		InstanceArn: o.identityInstance.InstanceArn,
 	}
+
 	paginator := awsSsoAdmin.NewListPermissionSetsPaginator(o.ssoAdminClient, input)
 	for {
 		resp, err := paginator.NextPage(ctx)
 		if err != nil {
-			return nil, err
+			return nil, wrapAWSError(err)
 		}
+
 		permissionSetIDs = append(permissionSetIDs, resp.PermissionSets...)
 		if !paginator.HasMorePages() {
 			break
@@ -719,7 +906,12 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions
 
 	var cachedDetails map[string]*awsSsoAdminTypes.PermissionSet
 	if ss != nil {
-		cachedDetails, _ = session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKeys)
+		cachedData, err := session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKeys)
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+		}
+
+		cachedDetails = cachedData
 	}
 
 	var result []*awsSsoAdminTypes.PermissionSet
@@ -739,7 +931,7 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions
 		}
 		resp, err := o.ssoAdminClient.DescribePermissionSet(ctx, apiInput)
 		if err != nil {
-			return nil, err
+			return nil, wrapAWSError(err)
 		}
 
 		result = append(result, resp.PermissionSet)
@@ -747,17 +939,23 @@ func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions
 	}
 
 	if ss != nil && len(toCache) > 0 {
-		_ = session.SetManyJSON(ctx, ss, toCache)
+		err := session.SetManyJSON(ctx, ss, toCache)
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
+		}
 	}
 
 	if ss != nil {
-		_ = session.SetJSON(ctx, ss, permissionSetsCacheKey, result)
+		err := session.SetJSON(ctx, ss, permissionSetsCacheKey, result)
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
+		}
 	}
 
 	return result, nil
 }
 
-func accountProfile(ctx context.Context, account types.Account) map[string]interface{} {
+func accountProfile(_ context.Context, account types.Account) map[string]interface{} {
 	profile := make(map[string]interface{})
 	profile["aws_account_arn"] = awsSdk.ToString(account.Arn)
 	profile["aws_account_id"] = awsSdk.ToString(account.Id)
