@@ -12,7 +12,6 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
-	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -32,11 +31,11 @@ func (o *ssoUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -55,7 +54,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 
 	resp, err := o.identityStoreClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: sso ListUsers failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: sso ListUsers failed: %w", err)
 	}
 
 	l := ctxzap.Extract(ctx)
@@ -100,7 +99,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, userResource)
 	}
@@ -108,20 +107,20 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pa
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *ssoUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *ssoUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
-func (o *ssoUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *ssoUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
 func ssoUserBuilder(

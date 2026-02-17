@@ -1,10 +1,11 @@
-package config
+package config_test
 
 import (
 	"context"
 	"fmt"
 	"testing"
 
+	"github.com/conductorone/baton-aws/pkg/config"
 	"github.com/conductorone/baton-aws/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/test"
 	"github.com/conductorone/baton-sdk/pkg/ustrings"
@@ -19,12 +20,12 @@ const (
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
 func validateConfig(ctx context.Context, v *viper.Viper) error {
-	if v.GetBool(UseAssumeField.FieldName) {
-		err := ValidateExternalId(v.GetString(ExternalIdField.FieldName))
+	if v.GetBool(config.UseAssumeField.FieldName) {
+		err := connector.ValidateExternalID(v.GetString(config.ExternalIdField.FieldName))
 		if err != nil {
 			return err
 		}
-		err = connector.IsValidRoleARN(v.GetString(RoleArnField.FieldName))
+		err = connector.IsValidRoleARN(v.GetString(config.RoleArnField.FieldName))
 		if err != nil {
 			return err
 		}
@@ -36,7 +37,7 @@ func TestConfigs(t *testing.T) {
 	ctx := context.Background()
 	test.ExerciseTestCasesFromExpressions(
 		t,
-		Config,
+		config.Config,
 		func(viper *viper.Viper) error { return validateConfig(ctx, viper) },
 		ustrings.ParseFlags,
 		[]test.TestCaseFromExpression{

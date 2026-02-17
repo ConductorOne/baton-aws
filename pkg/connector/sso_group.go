@@ -34,11 +34,11 @@ func (o *ssoGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType 
 	return o.resourceType
 }
 
-func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -57,7 +57,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 
 	resp, err := o.identityStoreClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: sso ListGroups failed: %w", err)
+		return nil, nil, fmt.Errorf("aws-connector: sso ListGroups failed: %w", err)
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
@@ -75,7 +75,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, groupResource)
 	}
@@ -83,15 +83,15 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, pt *p
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
+func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
 	var annos annotations.Annotations
 	annos.Update(&v2.V1Identifier{
 		Id: V1MembershipEntitlementID(resource.Id),
@@ -100,7 +100,7 @@ func (o *ssoGroupResourceType) Entitlements(_ context.Context, resource *v2.Reso
 	member.Description = fmt.Sprintf("Is member of the %s SSO group in AWS", resource.DisplayName)
 	member.Annotations = annos
 	member.DisplayName = fmt.Sprintf("%s Group Member", resource.DisplayName)
-	return []*v2.Entitlement{member}, "", nil, nil
+	return []*v2.Entitlement{member}, nil, nil
 }
 
 func createUserSSOGroupMembershipGrant(
@@ -134,11 +134,11 @@ func createUserSSOGroupMembershipGrant(
 	return grant, nil
 }
 
-func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, pt *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
+func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 	rv := make([]*v2.Grant, 0, 32)
 
@@ -150,7 +150,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	groupId, err := ssoGroupIdFromARN(resource.Id.Resource)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 	input := &awsIdentityStore.ListGroupMembershipsInput{
 		GroupId:         awsSdk.String(groupId),
@@ -162,7 +162,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	resp, err := o.identityStoreClient.ListGroupMemberships(ctx, input)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err)
+		return nil, nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err)
 	}
 
 	for _, user := range resp.GroupMemberships {
@@ -178,7 +178,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 			resource,
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, grant)
 	}
@@ -186,12 +186,12 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
+			return nil, nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
 func ssoGroupBuilder(
