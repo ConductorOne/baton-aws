@@ -147,7 +147,8 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 }
 
 func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
-	rv := make([]*v2.Grant, 0, 32)
+	// Phase 1: Collect all permission set IDs provisioned to this account
+	var permissionSetIDs []string
 	psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
 		AccountId:   awsSdk.String(resource.Id.Resource),
 		InstanceArn: o.identityInstance.InstanceArn,
@@ -159,92 +160,137 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		if err != nil {
 			return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err)
 		}
-
-		for _, psId := range psBindingsResp.PermissionSets {
-			ps, err := o.getPermissionSet(ctx, opts.Session, psId)
-			if err != nil {
-				return nil, nil, fmt.Errorf("aws-connector: ssoadmin.DescribePermissionSet failed: %w", err)
-			}
-
-			bindingName := &PermissionSetBinding{
-				AccountID:       resource.Id.Resource,
-				PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
-			}
-			var annos annotations.Annotations
-			annos.Update(&v2.V1Identifier{
-				Id: bindingName.String(),
-			})
-			entitlement := &v2.Entitlement{
-				Id:          bindingName.String(),
-				DisplayName: fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name)),
-				Description: awsSdk.ToString(ps.Description),
-				Resource:    resource,
-				Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
-				GrantableTo: []*v2.ResourceType{resourceTypeSSOGroup, resourceTypeSSOUser},
-				Annotations: annos,
-			}
-
-			assignmentsInput := &awsSsoAdmin.ListAccountAssignmentsInput{
-				AccountId:        awsSdk.String(resource.Id.Resource),
-				InstanceArn:      o.identityInstance.InstanceArn,
-				PermissionSetArn: ps.PermissionSetArn,
-			}
-
-			assignmentsPaginator := awsSsoAdmin.NewListAccountAssignmentsPaginator(o.ssoAdminClient, assignmentsInput)
-			for {
-				assignmentsResp, err := assignmentsPaginator.NextPage(ctx)
-				if err != nil {
-					return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListAccountAssignments failed: %w", err)
-				}
-
-				for _, assignment := range assignmentsResp.AccountAssignments {
-					switch assignment.PrincipalType {
-					case awsSsoAdminTypes.PrincipalTypeGroup:
-						groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
-						var groupAnnos annotations.Annotations
-						groupAnnos.Update(&v2.V1Identifier{
-							Id: V1GrantID(entitlement.Id, groupARN),
-						})
-						groupAnnos.Update(&v2.GrantExpandable{
-							EntitlementIds: []string{
-								fmt.Sprintf("%s:%s:%s", resourceTypeSSOGroup.Id, groupARN, groupMemberEntitlement),
-							},
-						})
-						rv = append(rv, &v2.Grant{
-							Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
-							Entitlement: entitlement,
-							Principal: &v2.Resource{
-								Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
-							},
-							Annotations: groupAnnos,
-						})
-					case awsSsoAdminTypes.PrincipalTypeUser:
-						userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
-						var userAnnos annotations.Annotations
-						userAnnos.Update(&v2.V1Identifier{
-							Id: V1GrantID(entitlement.Id, userARN),
-						})
-						rv = append(rv, &v2.Grant{
-							Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
-							Entitlement: entitlement,
-							Principal: &v2.Resource{
-								Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
-							},
-							Annotations: userAnnos,
-						})
-					}
-				}
-				assignmentsInput.NextToken = assignmentsResp.NextToken
-				if !assignmentsPaginator.HasMorePages() {
-					break
-				}
-			} // end pagination loop for assignments
-		} // end range ange psBindingsResp.PermissionSets
-
+		permissionSetIDs = append(permissionSetIDs, psBindingsResp.PermissionSets...)
 		if !psBindingPaginator.HasMorePages() {
 			break
 		}
-	} // end pagination loop for permission set to account binding
+	}
+
+	if len(permissionSetIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	// Phase 2: Batch fetch permission sets from cache
+	cacheKeys := make([]string, len(permissionSetIDs))
+	for i, psId := range permissionSetIDs {
+		cacheKeys[i] = permissionSetDetailKeyPrefix + psId
+	}
+
+	var cachedDetails map[string]*awsSsoAdminTypes.PermissionSet
+	if opts.Session != nil {
+		cachedDetails, _ = session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, opts.Session, cacheKeys)
+	}
+
+	// Phase 3: Build permission sets map - use cached or fetch from API
+	permissionSets := make(map[string]*awsSsoAdminTypes.PermissionSet, len(permissionSetIDs))
+	toCache := make(map[string]*awsSsoAdminTypes.PermissionSet)
+
+	for i, psId := range permissionSetIDs {
+		cacheKey := cacheKeys[i]
+
+		// Check if we got it from batch cache lookup
+		if ps, found := cachedDetails[cacheKey]; found {
+			permissionSets[psId] = ps
+			continue
+		}
+
+		// Fetch from AWS API
+		ps, err := o.fetchPermissionSetFromAPI(ctx, psId)
+		if err != nil {
+			return nil, nil, fmt.Errorf("aws-connector: ssoadmin.DescribePermissionSet failed: %w", err)
+		}
+
+		permissionSets[psId] = ps
+		toCache[cacheKey] = ps
+	}
+
+	// Phase 4: Build grants for each permission set
+	rv := make([]*v2.Grant, 0, 32)
+	for _, psId := range permissionSetIDs {
+		ps := permissionSets[psId]
+
+		bindingName := &PermissionSetBinding{
+			AccountID:       resource.Id.Resource,
+			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
+		}
+
+		var annos annotations.Annotations
+		annos.Update(&v2.V1Identifier{
+			Id: bindingName.String(),
+		})
+		entitlement := &v2.Entitlement{
+			Id:          bindingName.String(),
+			DisplayName: fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name)),
+			Description: awsSdk.ToString(ps.Description),
+			Resource:    resource,
+			Purpose:     v2.Entitlement_PURPOSE_VALUE_ASSIGNMENT,
+			GrantableTo: []*v2.ResourceType{resourceTypeSSOGroup, resourceTypeSSOUser},
+			Annotations: annos,
+		}
+
+		assignmentsInput := &awsSsoAdmin.ListAccountAssignmentsInput{
+			AccountId:        awsSdk.String(resource.Id.Resource),
+			InstanceArn:      o.identityInstance.InstanceArn,
+			PermissionSetArn: ps.PermissionSetArn,
+		}
+
+		assignmentsPaginator := awsSsoAdmin.NewListAccountAssignmentsPaginator(o.ssoAdminClient, assignmentsInput)
+		for {
+			assignmentsResp, err := assignmentsPaginator.NextPage(ctx)
+			if err != nil {
+				return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListAccountAssignments failed: %w", err)
+			}
+
+			for _, assignment := range assignmentsResp.AccountAssignments {
+				switch assignment.PrincipalType {
+				case awsSsoAdminTypes.PrincipalTypeGroup:
+					groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+					var groupAnnos annotations.Annotations
+					groupAnnos.Update(&v2.V1Identifier{
+						Id: V1GrantID(entitlement.Id, groupARN),
+					})
+					groupAnnos.Update(&v2.GrantExpandable{
+						EntitlementIds: []string{
+							fmt.Sprintf("%s:%s:%s", resourceTypeSSOGroup.Id, groupARN, groupMemberEntitlement),
+						},
+					})
+					rv = append(rv, &v2.Grant{
+						Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
+						Entitlement: entitlement,
+						Principal: &v2.Resource{
+							Id: fmtResourceId(resourceTypeSSOGroup.Id, groupARN),
+						},
+						Annotations: groupAnnos,
+					})
+
+				case awsSsoAdminTypes.PrincipalTypeUser:
+					userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+					var userAnnos annotations.Annotations
+					userAnnos.Update(&v2.V1Identifier{
+						Id: V1GrantID(entitlement.Id, userARN),
+					})
+					rv = append(rv, &v2.Grant{
+						Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
+						Entitlement: entitlement,
+						Principal: &v2.Resource{
+							Id: fmtResourceId(resourceTypeSSOUser.Id, userARN),
+						},
+						Annotations: userAnnos,
+					})
+				}
+			}
+
+			assignmentsInput.NextToken = assignmentsResp.NextToken
+			if !assignmentsPaginator.HasMorePages() {
+				break
+			}
+		}
+	}
+
+	// Phase 5: Batch cache all uncached permission sets in a single operation
+	if opts.Session != nil && len(toCache) > 0 {
+		_ = session.SetManyJSON(ctx, opts.Session, toCache)
+	}
 
 	return rv, nil, nil
 }
@@ -263,7 +309,7 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 		case errors.As(err, &accessDeniedErr):
 			// We don't have organizations:DescribeAccount permission. We proceed anyway for
 			// backward compatibility with existing IAM policies. If the account is suspended,
-			// AWS will return ConflictException later and we handle it then.
+			// AWS will return ConflictException later, and we handle it then.
 			// This log is for operators/admins reviewing connector logs; adding
 			// organizations:DescribeAccount to the IAM policy improves error clarity.
 			l := ctxzap.Extract(ctx).With(zap.String("account_id", accountID))
@@ -577,16 +623,9 @@ func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (anno
 	return annos, nil
 }
 
-func (o *accountResourceType) getPermissionSet(ctx context.Context, ss sessions.SessionStore, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
-	cacheKey := permissionSetDetailKeyPrefix + permissionSetId
-
-	if ss != nil {
-		cached, found, err := session.GetJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKey)
-		if err == nil && found {
-			return cached, nil
-		}
-	}
-
+// fetchPermissionSetFromAPI fetches a permission set by ID directly from the AWS API.
+// Callers are responsible for caching.
+func (o *accountResourceType) fetchPermissionSetFromAPI(ctx context.Context, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
 	input := &awsSsoAdmin.DescribePermissionSetInput{
 		InstanceArn:      o.identityInstance.InstanceArn,
 		PermissionSetArn: awsSdk.String(permissionSetId),
@@ -595,11 +634,6 @@ func (o *accountResourceType) getPermissionSet(ctx context.Context, ss sessions.
 	if err != nil {
 		return nil, err
 	}
-
-	if ss != nil {
-		_ = session.SetJSON(ctx, ss, cacheKey, resp.PermissionSet)
-	}
-
 	return resp.PermissionSet, nil
 }
 
