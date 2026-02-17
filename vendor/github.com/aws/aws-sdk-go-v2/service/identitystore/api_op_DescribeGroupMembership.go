@@ -9,15 +9,16 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"time"
 )
 
 // Retrieves membership metadata and attributes from MembershipId in an identity
 // store.
 //
-// If you have administrator access to a member account, you can use this API from
-// the member account. Read about [member accounts]in the Organizations User Guide.
+// If you have access to a member account, you can use this API operation from the
+// member account. For more information, see [Limiting access to the identity store from member accounts]in the IAM Identity Center User Guide.
 //
-// [member accounts]: https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_accounts_access.html
+// [Limiting access to the identity store from member accounts]: https://docs.aws.amazon.com/singlesignon/latest/userguide/manage-your-accounts.html#limiting-access-from-member-accounts
 func (c *Client) DescribeGroupMembership(ctx context.Context, params *DescribeGroupMembershipInput, optFns ...func(*Options)) (*DescribeGroupMembershipOutput, error) {
 	if params == nil {
 		params = &DescribeGroupMembershipInput{}
@@ -70,6 +71,18 @@ type DescribeGroupMembershipOutput struct {
 	// This member is required.
 	MembershipId *string
 
+	// The date and time the group membership was created.
+	CreatedAt *time.Time
+
+	// The identifier of the user or system that created the group membership.
+	CreatedBy *string
+
+	// The date and time the group membership was last updated.
+	UpdatedAt *time.Time
+
+	// The identifier of the user or system that last updated the group membership.
+	UpdatedBy *string
+
 	// Metadata pertaining to the operation's result.
 	ResultMetadata middleware.Metadata
 
@@ -119,6 +132,9 @@ func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middlewar
 	if err = addRecordResponseTiming(stack); err != nil {
 		return err
 	}
+	if err = addSpanRetryLoop(stack, options); err != nil {
+		return err
+	}
 	if err = addClientUserAgent(stack, options); err != nil {
 		return err
 	}
@@ -135,6 +151,9 @@ func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middlewar
 		return err
 	}
 	if err = addUserAgentRetryMode(stack, options); err != nil {
+		return err
+	}
+	if err = addCredentialSource(stack, options); err != nil {
 		return err
 	}
 	if err = addOpDescribeGroupMembershipValidationMiddleware(stack); err != nil {
@@ -156,6 +175,15 @@ func (c *Client) addOperationDescribeGroupMembershipMiddlewares(stack *middlewar
 		return err
 	}
 	if err = addDisableHTTPSMiddleware(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptBeforeRetryLoop(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptAttempt(stack, options); err != nil {
+		return err
+	}
+	if err = addInterceptors(stack, options); err != nil {
 		return err
 	}
 	return nil

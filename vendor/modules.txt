@@ -93,8 +93,8 @@ github.com/aws/aws-sdk-go-v2/service/cloudtrail/types
 github.com/aws/aws-sdk-go-v2/service/iam
 github.com/aws/aws-sdk-go-v2/service/iam/internal/endpoints
 github.com/aws/aws-sdk-go-v2/service/iam/types
-# github.com/aws/aws-sdk-go-v2/service/identitystore v1.25.4
-## explicit; go 1.21
+# github.com/aws/aws-sdk-go-v2/service/identitystore v1.36.1
+## explicit; go 1.23
 github.com/aws/aws-sdk-go-v2/service/identitystore
 github.com/aws/aws-sdk-go-v2/service/identitystore/document
 github.com/aws/aws-sdk-go-v2/service/identitystore/internal/document

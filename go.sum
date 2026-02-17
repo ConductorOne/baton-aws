@@ -36,8 +36,8 @@ github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.55.5 h1:sSgqtZi6Kp4Pc1V4turya
 github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.55.5/go.mod h1:zweZsRPub5YhgUjoMGOeRWuXOOORt6YFiA51hpmNB4c=
 github.com/aws/aws-sdk-go-v2/service/iam v1.35.0 h1:xIjTizH74aMNQBjp9D5cvjRZmOYtnrpjOGU3xkVqrjk=
 github.com/aws/aws-sdk-go-v2/service/iam v1.35.0/go.mod h1:IdHqqRLKgxYR4IY7Omd7SuV4SJzJ8seF+U5PW+mvtP4=
-github.com/aws/aws-sdk-go-v2/service/identitystore v1.25.4 h1:icyZwij1BqzyW5yZGcfHIftrPogK9LgiWt08B1IYyWQ=
-github.com/aws/aws-sdk-go-v2/service/identitystore v1.25.4/go.mod h1:NPEyhoIDtRHby3oWpLFUdGrfbMwM8f/4u57VdtRdH8g=
+github.com/aws/aws-sdk-go-v2/service/identitystore v1.36.1 h1:XzFSBprF2qH/HU3rj0sb19fMizHBdXzNdrKJ5BaFoKc=
+github.com/aws/aws-sdk-go-v2/service/identitystore v1.36.1/go.mod h1:lVt7GOrew2aoiZQwbEYLNo12LZdonRJ3AWt6uUYp5PI=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.2 h1:D4oz8/CzT9bAEYtVhSBmFj2dNOtaHOtMKc2vHBwYizA=
 github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.2/go.mod h1:Za3IHqTQ+yNcRHxu1OFucBh0ACZT4j4VQFF0BqpZcLY=
 github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.5.3 h1:EP1ITDgYVPM2dL1bBBntJ7AW5yTjuWGz9XO+CZwpALU=

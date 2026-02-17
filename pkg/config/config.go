@@ -66,21 +66,6 @@ var (
 		field.WithDisplayName("Role ARN"),
 		field.WithDescription("The role arn for the aws account"),
 	)
-	ScimEnabledField = field.BoolField(
-		"scim-enabled",
-		field.WithDisplayName("SCIM Enabled"),
-		field.WithDescription("Enable support for pulling SSO User status from the AWS SCIM API"),
-	)
-	ScimEndpointField = field.StringField(
-		"scim-endpoint",
-		field.WithDisplayName("SCIM Endpoint"),
-		field.WithDescription("The SCIMv2 endpoint for aws identity center"),
-	)
-	ScimTokenField = field.StringField(
-		"scim-token",
-		field.WithDisplayName("SCIM Token"),
-		field.WithDescription("The SCIMv2 token for aws identity center"),
-	)
 	UseAssumeField = field.BoolField(
 		"use-assume",
 		field.WithDisplayName("Use Assume"),
@@ -151,9 +136,6 @@ var Config = field.NewConfiguration(
 		GlobalRoleArnField,
 		GlobalSecretAccessKeyField,
 		RoleArnField,
-		ScimEnabledField,
-		ScimEndpointField,
-		ScimTokenField,
 		UseAssumeField,
 		SyncSecrets,
 		IamAssumeRoleName,
