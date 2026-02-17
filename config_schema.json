@@ -155,24 +155,6 @@
       "stringField": {}
     },
     {
-      "name": "scim-enabled",
-      "displayName": "SCIM Enabled",
-      "description": "Enable support for pulling SSO User status from the AWS SCIM API",
-      "boolField": {}
-    },
-    {
-      "name": "scim-endpoint",
-      "displayName": "SCIM Endpoint",
-      "description": "The SCIMv2 endpoint for aws identity center",
-      "stringField": {}
-    },
-    {
-      "name": "scim-token",
-      "displayName": "SCIM Token",
-      "description": "The SCIMv2 token for aws identity center",
-      "stringField": {}
-    },
-    {
       "name": "use-assume",
       "displayName": "Use Assume",
       "description": "Enable support for assume role",
