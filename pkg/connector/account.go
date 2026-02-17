@@ -35,9 +35,9 @@ const (
 	AccountAssignmentRetryDelay      = 1 * time.Second
 
 	// SessionStore cache keys.
-	permissionSetsCacheKey         = "permission-sets"
 	permissionSetDetailKeyPrefix   = "permission-set:"
 	permissionSetIDsCacheKeyPrefix = "permission-set-ids:"
+	allPermissionSetIDsCacheKey    = "all-permission-set-ids"
 )
 
 // awsThrottleErrorCodes contains AWS API error codes that indicate rate limiting.
@@ -109,6 +109,37 @@ func decodeGrantsPageToken(token string) (grantsPageState, error) {
 
 func permissionSetIDsCacheKey(accountID string) string {
 	return permissionSetIDsCacheKeyPrefix + accountID
+}
+
+// entitlementsPageState tracks pagination state for the Entitlements function.
+// This allows progress to be saved between calls, reducing the "blast radius"
+// if a rate limit error occurs mid-sync.
+type entitlementsPageState struct {
+	// PermissionSetIndex is the index into the cached permission set IDs list
+	PermissionSetIndex int `json:"psi"`
+}
+
+func encodeEntitlementsPageToken(state entitlementsPageState) (string, error) {
+	data, err := json.Marshal(state)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(data), nil
+}
+
+func decodeEntitlementsPageToken(token string) (entitlementsPageState, error) {
+	if token == "" {
+		return entitlementsPageState{}, nil
+	}
+	data, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return entitlementsPageState{}, err
+	}
+	var state entitlementsPageState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return entitlementsPageState{}, err
+	}
+	return state, nil
 }
 
 type accountResourceType struct {
@@ -192,33 +223,76 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 }
 
 func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
-	// we fetch all permission sets, so that even on accounts that aren't associated with a permission set
-	// you could do a Grant Request for it -- and we'll just have an entitlement with zero entries in it in ListGrants.
-	allPS, err := o.getPermissionSets(ctx, opts.Session)
+	// Parse page state from token
+	pageState, err := decodeEntitlementsPageToken(opts.PageToken.Token)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: getPermissionSets failed: %w", err)
+		return nil, nil, fmt.Errorf("baton-aws: failed to decode page token: %w", err)
 	}
-	rv := make([]*v2.Entitlement, 0, len(allPS))
-	for _, ps := range allPS {
-		b := &PermissionSetBinding{
-			AccountID:       resource.Id.Resource,
-			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
+
+	// Step 1: Get or fetch all permission set IDs (cached globally per sync)
+	// We fetch all permission sets so that even on accounts that aren't associated with a permission set
+	// you could do a Grant Request for it -- and we'll just have an entitlement with zero entries in it in ListGrants.
+	permissionSetIDs, err := o.getOrFetchAllPermissionSetIDs(ctx, opts.Session)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// If no permission sets, we're done
+	if len(permissionSetIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	// If we've processed all permission sets, we're done
+	if pageState.PermissionSetIndex >= len(permissionSetIDs) {
+		return nil, nil, nil
+	}
+
+	// Step 2: Get the current permission set to process
+	currentPsId := permissionSetIDs[pageState.PermissionSetIndex]
+
+	// Step 3: Fetch the permission set details (with caching)
+	ps, err := o.getPermissionSetWithCache(ctx, opts.Session, currentPsId)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Step 4: Build the entitlement for this permission set
+	b := &PermissionSetBinding{
+		AccountID:       resource.Id.Resource,
+		PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
+	}
+	var annos annotations.Annotations
+	annos.Update(&v2.V1Identifier{
+		Id: b.String(),
+	})
+	displayName := fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
+	member := entitlementSdk.NewAssignmentEntitlement(resource, displayName,
+		entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
+	)
+	member.Description = awsSdk.ToString(ps.Description)
+	member.Annotations = annos
+	member.Id = b.String()
+	member.Slug = fmt.Sprintf("%s access", awsSdk.ToString(ps.Name))
+
+	// Step 5: Determine next page state
+	var nextPageToken string
+	if pageState.PermissionSetIndex+1 < len(permissionSetIDs) {
+		// More permission sets to process
+		nextState := entitlementsPageState{
+			PermissionSetIndex: pageState.PermissionSetIndex + 1,
 		}
-		var annos annotations.Annotations
-		annos.Update(&v2.V1Identifier{
-			Id: b.String(),
-		})
-		displayName := fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
-		member := entitlementSdk.NewAssignmentEntitlement(resource, displayName,
-			entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
-		)
-		member.Description = awsSdk.ToString(ps.Description)
-		member.Annotations = annos
-		member.Id = b.String()
-		member.Slug = fmt.Sprintf("%s access", awsSdk.ToString(ps.Name))
-		rv = append(rv, member)
+
+		nextPageToken, err = encodeEntitlementsPageToken(nextState)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
+		}
 	}
-	return rv, nil, nil
+	// else: nextPageToken remains empty, signaling completion
+
+	if nextPageToken != "" {
+		return []*v2.Entitlement{member}, &resourceSdk.SyncOpResults{NextPageToken: nextPageToken}, nil
+	}
+	return []*v2.Entitlement{member}, nil, nil
 }
 
 func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
@@ -350,6 +424,49 @@ func (o *accountResourceType) getOrFetchPermissionSetIDs(ctx context.Context, ss
 	// Cache the result
 	if ss != nil {
 		if err := session.SetJSON(ctx, ss, cacheKey, permissionSetIDs); err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
+		}
+	}
+
+	return permissionSetIDs, nil
+}
+
+// getOrFetchAllPermissionSetIDs retrieves all permission set IDs globally (not per-account), using cache if available.
+// This is used by Entitlements() which needs all permission sets regardless of account association.
+func (o *accountResourceType) getOrFetchAllPermissionSetIDs(ctx context.Context, ss sessions.SessionStore) ([]string, error) {
+	// Try cache first
+	if ss != nil {
+		cached, found, err := session.GetJSON[[]string](ctx, ss, allPermissionSetIDsCacheKey)
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+		}
+		if found {
+			return cached, nil
+		}
+	}
+
+	// Fetch from AWS API
+	var permissionSetIDs []string
+	input := &awsSsoAdmin.ListPermissionSetsInput{
+		InstanceArn: o.identityInstance.InstanceArn,
+	}
+
+	paginator := awsSsoAdmin.NewListPermissionSetsPaginator(o.ssoAdminClient, input)
+	for {
+		resp, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSets failed: %w", err))
+		}
+
+		permissionSetIDs = append(permissionSetIDs, resp.PermissionSets...)
+		if !paginator.HasMorePages() {
+			break
+		}
+	}
+
+	// Cache the result
+	if ss != nil {
+		if err := session.SetJSON(ctx, ss, allPermissionSetIDsCacheKey, permissionSetIDs); err != nil {
 			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
 		}
 	}
@@ -867,92 +984,6 @@ func (psm *PermissionSetBinding) UnmarshalText(data []byte) error {
 
 func (psm *PermissionSetBinding) String() string {
 	return strings.Join([]string{psm.AccountID, psm.PermissionSetId}, "|")
-}
-
-func (o *accountResourceType) getPermissionSets(ctx context.Context, ss sessions.SessionStore) ([]*awsSsoAdminTypes.PermissionSet, error) {
-	if ss != nil {
-		cached, found, err := session.GetJSON[[]*awsSsoAdminTypes.PermissionSet](ctx, ss, permissionSetsCacheKey)
-		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
-		}
-
-		if found {
-			return cached, nil
-		}
-	}
-
-	var permissionSetIDs []string
-	input := &awsSsoAdmin.ListPermissionSetsInput{
-		InstanceArn: o.identityInstance.InstanceArn,
-	}
-
-	paginator := awsSsoAdmin.NewListPermissionSetsPaginator(o.ssoAdminClient, input)
-	for {
-		resp, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, wrapAWSError(err)
-		}
-
-		permissionSetIDs = append(permissionSetIDs, resp.PermissionSets...)
-		if !paginator.HasMorePages() {
-			break
-		}
-	}
-
-	cacheKeys := make([]string, len(permissionSetIDs))
-	for i, psId := range permissionSetIDs {
-		cacheKeys[i] = permissionSetDetailKeyPrefix + psId
-	}
-
-	var cachedDetails map[string]*awsSsoAdminTypes.PermissionSet
-	if ss != nil {
-		cachedData, err := session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKeys)
-		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
-		}
-
-		cachedDetails = cachedData
-	}
-
-	var result []*awsSsoAdminTypes.PermissionSet
-	toCache := make(map[string]*awsSsoAdminTypes.PermissionSet)
-
-	for i, psId := range permissionSetIDs {
-		cacheKey := cacheKeys[i]
-
-		if ps, found := cachedDetails[cacheKey]; found {
-			result = append(result, ps)
-			continue
-		}
-
-		apiInput := &awsSsoAdmin.DescribePermissionSetInput{
-			InstanceArn:      o.identityInstance.InstanceArn,
-			PermissionSetArn: awsSdk.String(psId),
-		}
-		resp, err := o.ssoAdminClient.DescribePermissionSet(ctx, apiInput)
-		if err != nil {
-			return nil, wrapAWSError(err)
-		}
-
-		result = append(result, resp.PermissionSet)
-		toCache[cacheKey] = resp.PermissionSet
-	}
-
-	if ss != nil && len(toCache) > 0 {
-		err := session.SetManyJSON(ctx, ss, toCache)
-		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
-		}
-	}
-
-	if ss != nil {
-		err := session.SetJSON(ctx, ss, permissionSetsCacheKey, result)
-		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
-		}
-	}
-
-	return result, nil
 }
 
 func accountProfile(_ context.Context, account types.Account) map[string]interface{} {
