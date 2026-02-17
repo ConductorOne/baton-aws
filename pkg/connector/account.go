@@ -160,6 +160,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		if err != nil {
 			return nil, nil, fmt.Errorf("aws-connector: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err)
 		}
+
 		permissionSetIDs = append(permissionSetIDs, psBindingsResp.PermissionSets...)
 		if !psBindingPaginator.HasMorePages() {
 			break
@@ -178,7 +179,12 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 
 	var cachedDetails map[string]*awsSsoAdminTypes.PermissionSet
 	if opts.Session != nil {
-		cachedDetails, _ = session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, opts.Session, cacheKeys)
+		cacheResponse, err := session.GetManyJSON[*awsSsoAdminTypes.PermissionSet](ctx, opts.Session, cacheKeys)
+		if err != nil {
+			return nil, nil, fmt.Errorf("aws-connector: Session Storage reading operation failed: %w", err)
+		}
+
+		cachedDetails = cacheResponse
 	}
 
 	// Phase 3: Build permission sets map - use cached or fetch from API
@@ -245,6 +251,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 				switch assignment.PrincipalType {
 				case awsSsoAdminTypes.PrincipalTypeGroup:
 					groupARN := ssoGroupToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+
 					var groupAnnos annotations.Annotations
 					groupAnnos.Update(&v2.V1Identifier{
 						Id: V1GrantID(entitlement.Id, groupARN),
@@ -254,6 +261,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 							fmt.Sprintf("%s:%s:%s", resourceTypeSSOGroup.Id, groupARN, groupMemberEntitlement),
 						},
 					})
+
 					rv = append(rv, &v2.Grant{
 						Id:          GrantID(entitlement, &v2.ResourceId{Resource: groupARN, ResourceType: resourceTypeSSOGroup.Id}),
 						Entitlement: entitlement,
@@ -265,10 +273,12 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 
 				case awsSsoAdminTypes.PrincipalTypeUser:
 					userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(assignment.PrincipalId))
+
 					var userAnnos annotations.Annotations
 					userAnnos.Update(&v2.V1Identifier{
 						Id: V1GrantID(entitlement.Id, userARN),
 					})
+
 					rv = append(rv, &v2.Grant{
 						Id:          GrantID(entitlement, &v2.ResourceId{Resource: userARN, ResourceType: resourceTypeSSOUser.Id}),
 						Entitlement: entitlement,
@@ -289,7 +299,10 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 
 	// Phase 5: Batch cache all uncached permission sets in a single operation
 	if opts.Session != nil && len(toCache) > 0 {
-		_ = session.SetManyJSON(ctx, opts.Session, toCache)
+		err := session.SetManyJSON(ctx, opts.Session, toCache)
+		if err != nil {
+			return nil, nil, fmt.Errorf("aws-connector: Session Storage writting operation failed: %w", err)
+		}
 	}
 
 	return rv, nil, nil
