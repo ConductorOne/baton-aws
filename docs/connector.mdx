@@ -1,0 +1,822 @@
+---
+title: "Set up an AWS connector"
+description: "ConductorOne provides identity governance for AWS. Integrate your AWS instance with ConductorOne to run user access reviews (UARs) and enable just-in-time (JIT) access requests."
+og:title: "Set up an AWS connector"
+og:description: "ConductorOne provides identity governance for AWS. Integrate your AWS instance with ConductorOne to run user access reviews (UARs) and enable just-in-time (JIT) access requests."
+sidebarTitle: "AWS"
+---
+
+<Tip>
+**This is an updated and improved version of the AWS connector!** 
+
+If you're setting up AWS with ConductorOne for the first time, you're in the right place.
+</Tip>
+
+## Capabilities
+
+| Resource | Sync | Provision |
+| :--- | :--- | :--- |
+| IAM and Identity Center user accounts | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> |
+| IAM roles | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> |  |
+| IAM groups | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> |
+| IAM accounts | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> |  |
+| Identity Center groups | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> |
+| Accounts via Permission Sets | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> | <Icon icon="square-check" iconType="solid"  color="#65DE23"/>\* |
+| Secrets - Access keys | <Icon icon="square-check" iconType="solid"  color="#65DE23"/> |  |
+
+The AWS connector supports [automatic account provisioning and deprovisioning](/product/admin/account-provisioning) of IAM accounts.
+
+\*The connector can provision to accounts via permissions sets only if Identity Center is enabled.
+
+[This connector can sync secrets](/product/admin/inventory) and display them on the **Inventory** page.
+
+## Gather AWS credentials
+
+Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
+
+<Warning>
+**Important**
+
+A user with the **Connector Administrator** or **Super Administrator** role in ConductorOne and the **ability to create an IAM Role** in AWS must perform this task.
+
+ConductorOne uses an IAM Trust relationship between your AWS Account and ConductorOne's Service AWS Account. This is the [AWS recommended method of sharing access to AWS Accounts](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_common-scenarios_third-party.html). ConductorOne has a specially created and isolated AWS Account dedicated to the AWS integration. For advanced configurations, the only trusted entity should be the following ARN: `arn:aws:iam::765656841499:role/ConductorOneService`
+</Warning>
+
+Follow the relevant set of instructions below to set up the AWS connector for IAM or SSO, as your configuration dictates.
+
+<Tabs>
+<Tab title="IAM setup">
+### IAM setup: Gather credentials that support syncing child account data
+
+To sync IAM data (like users, roles, and groups) from multiple AWS child accounts, ConductorOne uses a secure, read-only mechanism called **cross-account access**. This setup works by allowing a central role in your root account to temporarily assume a specific role in each child account. This method ensures that the connector can gather the necessary data without storing credentials or requiring permanent access.
+
+If you're using this setup, make sure to click **Enable support for AWS Organizations** when setting up the connector in the ConductorOne web UI, and DO NOT click **Enable support for AWS IAM Identity Center** or **Enable usage of the AWS IAM Identity Center SCIM API**.
+
+**In order to use the connector to gather IAM AWS data, you'll need to configure each sub-account to have a role with a trust policy.** There are two options here:
+
+- Use `OrganizationAccountAccessRole`, and add the following to the management role:
+	`{ "Effect": "Allow", "Action": "sts:AssumeRole", "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole" }`
+- Create a new custom role by following the steps below
+
+#### Get a ConductorOne-provided External ID
+
+AWS [requires the use of External IDs](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) when granting third-party access to your AWS account. This security measure prevents the "confused deputy" problem and ensures that only authorized parties can assume the role.
+
+<Steps>
+    <Step>
+    In ConductorOne, navigate to **Integrations** > **Connectors** and click **Add connector**.
+    </Step>
+    <Step>
+    Search for **AWS v2** and click **Add**.
+    </Step>
+    <Step>
+    Choose how to set up the new AWS connector:
+	- Add the connector to a currently unmanaged app (select from the list of apps that were discovered in your identity, SSO, or federation provider that aren't yet managed with ConductorOne)
+	- Add the connector to a managed app (select from the list of existing managed apps)
+	- Create a new managed app
+    </Step>
+    <Step>
+    Set the owner for this connector. You can manage the connector yourself, or choose someone else from the list of ConductorOne users. Setting multiple owners is allowed.
+	If you choose someone else, ConductorOne will notify the new connector owner by email that their help is needed to complete the setup process.
+    </Step>
+    <Step>
+    Click **Next**.
+    </Step>
+    <Step>
+    Find the **Settings** area of the page and click **Edit**.
+    </Step>
+    <Step>
+    Copy and save the External ID populated in the **External ID** field.
+    </Step>
+</Steps>
+
+#### Create a custom IAM role
+
+This custom role acts as a bridge, allowing ConductorOne to securely access your child account. The trust policy you're about to create is the key to this connection.
+
+<Steps>
+    <Step>
+    Navigate to the [IAM Dashboard](https://us-east-1.console.aws.amazon.com/iamv2/home?) and select **Roles** > **Create Role**.
+    </Step>
+    <Step>
+    Select **Custom Trust Policy** and paste the following into the Trust Policy JSON editor, replacing `{ROOT_ID}` with the root ID from the main account and `EXTERNAL_ID_FROM_C1_INTEGRATIONS_PAGE` with the External ID you copied from ConductorOne.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "Statement1",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": "arn:aws:iam::{ROOT_ID}:role/ConductorOneService"
+          },
+          "Action": "sts:AssumeRole",
+          "Condition": {
+            "StringEquals": {
+              "sts:ExternalId": "EXTERNAL_ID_FROM_C1_INTEGRATIONS_PAGE"
+            }
+          }
+        }
+      ]
+    }
+    ```
+
+	**Notes on the Trust Policy:**
+	**"Action": "sts:AssumeRole"**: This is the core permission. It's the only action allowed by this policy, and it specifically allows the ConductorOne role in your root account to temporarily assume this role in the child account. Think of it like a temporary key that only the main account can use.
+	**"Principal": "arn:aws:iam::`{ROOT\_ID}`:role/ConductorOneService"**: This is the trusted entity. It specifies that only the ConductorOne role in your main root account is allowed to assume this role. This ensures that no other account can use this trust policy.
+	**"Condition": "sts:ExternalId"**: The External ID acts as a shared identifier between you and ConductorOne, confirming which trust relationship is being used. This helps prevent the "confused deputy" problem by ensuring the request is coming from the expected context. Learn more about [granting access using External IDs](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html).
+    </Step>
+    <Step>
+    Click **Next**.
+    </Step>
+    <Step>
+    *Skip* **Add permissions** and click **Next**.
+    </Step>
+    <Step>
+    Give the role a name, such as **ConductorOneIntegration**.
+        <Frame>
+        ![](/images/product/assets/AWS-3.png)
+        </Frame>
+    </Step>
+    <Step>
+    Add any tags relevant to your organization and click **Create Role**.
+    </Step>
+    <Step>
+    Find the newly created role, and click on it to view the role details page.
+        <Frame>
+        ![](/images/product/assets/AWS-5.png)
+        </Frame>
+    </Step>
+</Steps>
+
+#### Grant permission for data sync
+
+Next, you will create an inline policy to define the specific data this role can gather from the child account. These are read-only permissions that enable ConductorOne to securely sync your IAM data.
+
+<Steps>
+    <Step>
+    Under **Permissions Policies**, click **Add Permissions** and select **Create Inline Policy**.
+    </Step>
+    <Step>
+    Switch to the **JSON Editor** tab and paste the following policy into the editor:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "MinimumRequiredPermissionsSyncIAMUsersGroupsRoles",
+          "Effect": "Allow",
+          "Action": [
+            "iam:ListUsers",
+            "iam:ListGroups",
+            "iam:ListRoles",
+            "iam:GetGroup",
+            "iam:GetRole",
+            "iam:ListAccessKeys",
+            "iam:GetAccessKeyLastUsed"
+          ],
+          "Resource": "*"
+        },
+        {
+          "Sid": "OrganizationsSupport",
+          "Effect": "Allow",
+          "Action": [
+            "organizations:ListAccounts",
+            "organizations:DescribeOrganization"
+          ],
+          "Resource": "*"
+        },
+        {
+          "Sid": "UseMoreDescriptiveAccountAliases",
+          "Effect": "Allow",
+          "Action": [
+            "iam:ListAccountAliases"
+          ],
+          "Resource": "*"
+        }
+      ]
+    }
+    ```
+
+    **Explanation of permissions**
+
+    **Core IAM Permissions** These permissions allow ConductorOne to sync your basic identity structure.
+
+    * iam:ListUsers: Allows ConductorOne to retrieve a list of all IAM user accounts.
+    * iam:ListGroups: Allows ConductorOne to retrieve a list of all IAM groups.
+    * iam:ListRoles: Allows ConductorOne to retrieve a list of all IAM roles.
+    * iam:GetGroup: Required to see which users belong to which groups. ListGroups only provides the group names, while GetGroup identifies the specific members.
+    * iam:GetRole: Allows ConductorOne to retrieve detailed information about specific roles, including their trust relationships.
+
+    **Optional: Security & Audit Insights** Include these permissions if you want ConductorOne to sync access key metadata.
+
+    * iam:ListAccessKeys and iam:GetAccessKeyLastUsed: These allow ConductorOne to gather data on the status of your IAM access keys, such as when they were last used. This is useful for identifying unused or stale credentials.
+
+       Note that ConductorOne only retrieves metadata for auditing; it does not store or access the secret access keys themselves.
+
+    **Optional: AWS Organizations Support** Include these permissions if you enable the "Enable support for AWS Organizations" checkbox in the ConductorOne UI.
+
+    * organizations:ListAccounts: Allows the connector to discover all accounts within your AWS Organization.
+    * organizations:DescribeOrganization: Provides high-level details about your organization to ensure proper mapping.
+
+    **Optional: Descriptive Account Aliases**
+
+    * iam:ListAccountAliases: Include this if you prefer to use human-readable account aliases (for example, "Production-Environment") in the ConductorOne UI instead of 12-digit numeric AWS account IDs.
+    </Step>
+    <Step>
+        Click **Review Policy**.
+    </Step>
+    <Step>
+        Give the policy a name, such as **ConductorOnePermissions** and click **Create Policy**.
+        <Frame>
+        ![](/images/product/assets/AWS-7.png)
+        </Frame>
+    </Step>
+    <Step>
+        Copy the **Role ARN** for the Role we created, it should look like: `arn:aws:iam::NNNNNNNNNN:role/ConductorOneIntegration`.
+        <Frame>
+        ![](/images/product/assets/AWS-8.png)
+        </Frame>
+    </Step>
+</Steps>
+
+**That's it!** Next, move on to the connector configuration instructions.
+</Tab>
+
+<Tab title="SSO setup">
+### SSO setup: Gather credentials
+
+Follow these steps to gather the credentials needed for an AWS IAM Identity Center (SSO) setup of the AWS connector.
+
+#### Get a ConductorOne-provided External ID
+
+AWS [requires the use of External IDs](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) when granting third-party access to your AWS account. This security measure prevents the "confused deputy" problem and ensures that only authorized parties can assume the role.
+
+<Steps>
+    <Step>
+    In ConductorOne, navigate to **Integrations** > **Connectors** and click **Add connector**.
+    </Step>
+    <Step>
+    Search for **AWS v2** and click **Add**.
+    </Step>
+    <Step>
+    Choose how to set up the new AWS connector:
+	- Add the connector to a currently unmanaged app (select from the list of apps that were discovered in your identity, SSO, or federation provider that aren’t yet managed with ConductorOne)
+	- Add the connector to a managed app (select from the list of existing managed apps)
+	- Create a new managed app
+    </Step>
+    <Step>
+    Set the owner for this connector. You can manage the connector yourself, or choose someone else from the list of ConductorOne users. Setting multiple owners is allowed.
+	If you choose someone else, ConductorOne will notify the new connector owner by email that their help is needed to complete the setup process.
+    </Step>
+    <Step>
+    Click **Next**.
+    </Step>
+    <Step>
+    Find the **Settings** area of the page and click **Edit**.
+    </Step>
+    <Step>
+    Copy and save the External ID populated in the **External ID** field.
+    </Step>
+</Steps>
+
+#### Create a custom IAM role
+
+This setup allows ConductorOne to integrate with AWS IAM Identity Center (formerly SSO). It requires permissions to both read existing user, group, and permission set data, and optionally, to provision new assignments and manage related resources.
+
+The permissions policy below is broken into several sections to align with these functions. This allows you to grant only the permissions you need for your use case, following the principle of least privilege.
+
+<Steps>
+    <Step>
+    In a new browser tab, sign in to your AWS Account using your existing credentials or SSO.
+	**To support use of AWS Organizations:** You must create this IAM Role in the management (formerly called master) account of the AWS Organization.
+    </Step>
+    <Step>
+    Navigate to the [IAM Dashboard](https://us-east-1.console.aws.amazon.com/iamv2/home?) and select **Roles** > **Create Role**.
+    </Step>
+    <Step>
+    Select **Custom Trust Policy** and paste the following into the Trust Policy JSON editor, replacing `EXTERNAL_ID_FROM_C1_INTEGRATIONS_PAGE` with the External ID from ConductorOne.
+
+    ```json expandable
+	{
+	  "Version": "2012-10-17",
+	  "Statement": [
+	    {
+	      "Effect": "Allow",
+	      "Principal": {
+	        "AWS": "arn:aws:iam::765656841499:role/ConductorOneService"
+	      },
+	      "Action": "sts:AssumeRole",
+	      "Condition": {
+	        "StringEquals": {
+	          "sts:ExternalId": "EXTERNAL_ID_FROM_C1_INTEGRATIONS_PAGE"
+	        }
+	      }
+	    }
+	  ]
+    }
+    ```
+    </Step>
+    <Step>
+    Click **Next**.
+    </Step>
+    <Step>
+    *Skip* **Add permissions** and click **Next**.
+    </Step>
+    <Step>
+    Give the role a name, such as **ConductorOneIntegration**.
+        <Frame>
+        ![](/images/product/assets/AWS-3.png)
+        </Frame>
+    </Step>
+    <Step>
+    Add any tags relevant to your organization and click **Create Role**.
+    </Step>
+    <Step>
+    Find the newly created role, and click on it to view the role details page.
+        <Frame>
+        ![](/images/product/assets/AWS-5.png)
+        </Frame>
+    </Step>
+    <Step>
+    Under **Permissions Policies**, click **Add Permissions** and select **Create Inline Policy**.
+	This policy provides the necessary permissions for ConductorOne to securely integrate with your AWS IAM Identity Center setup. Below is the full policy, followed by a detailed breakdown of each section.
+    </Step>
+    <Step>
+    Switch to the **JSON Editor** tab and paste the following policy into the editor:
+
+    ```json expandable
+	{
+	  "Statement": [
+	    {
+	      "Action": [
+	        "iam:GetGroup",
+	        "iam:GetAccessKeyLastUsed",  
+	        "iam:ListAccountAliases",
+	        "iam:ListGroups",
+	        "iam:ListRoles",
+	        "iam:ListUsers",
+	        "identitystore:GetGroupMembershipId",
+	        "identitystore:ListGroupMemberships",
+	        "identitystore:ListGroups",
+	        "identitystore:ListUsers",
+	        "organizations:ListAccounts",
+	        "sso:DescribePermissionSet",
+	        "sso:ListAccountAssignments",
+	        "sso:ListInstances",
+	        "sso:ListPermissionSets",
+	        "sso:ListPermissionSetsProvisionedToAccount",
+	        "iam:GetUser",
+	        "iam:ListAccessKeys",
+	        "iam:ListSigningCertificates",
+	        "iam:ListSSHPublicKeys",
+	        "iam:ListServiceSpecificCredentials",
+	        "iam:ListMFADevices",
+	        "iam:ListUserPolicies",
+	        "iam:ListAttachedUserPolicies",
+	        "iam:ListGroupsForUser"
+	      ],
+	      "Effect": "Allow",
+	      "Resource": "*",
+	      "Sid": "ConductorOneReadAccess"
+	    },
+	    {
+	      "Action": [
+	        "iam:AddUserToGroup",
+	        "iam:RemoveUserFromGroup",
+	        "iam:CreateUser",
+	        "sso:CreateAccountAssignment",
+	        "sso:DeleteAccountAssignment",
+	        "identitystore:CreateGroupMembership",
+	        "identitystore:DeleteGroupMembership",
+	        "sso:DescribeAccountAssignmentCreationStatus",
+	        "sso:DescribeAccountAssignmentDeletionStatus",
+	        "iam:DeleteLoginProfile",
+	        "iam:DeleteAccessKey",
+	        "iam:DeleteSigningCertificate",
+	        "iam:DeleteSSHPublicKey",
+	        "iam:DeleteServiceSpecificCredential",
+	        "iam:DeactivateMFADevice",
+	        "iam:DeleteUserPolicy",
+	        "iam:DetachUserPolicy",
+	        "iam:DeleteUser",
+	        "iam:TagUser"
+	      ],
+	      "Effect": "Allow",
+	      "Resource": "*",
+	      "Sid": "ConductorOneProvisionAccess"
+	    },
+	    {
+	      "Sid": "AccessToSSOProvisionedRoles",
+	      "Effect": "Allow",
+	      "Action": [
+	        "iam:AttachRolePolicy",
+	        "iam:CreateRole",
+	        "iam:DeleteRole",
+	        "iam:DeleteRolePolicy",
+	        "iam:DetachRolePolicy",
+	        "iam:GetRole",
+	        "iam:ListAttachedRolePolicies",
+	        "iam:ListRolePolicies",
+	        "iam:PutRolePolicy",
+	        "iam:UpdateRole",
+	        "iam:UpdateRoleDescription"
+	      ],
+	      "Resource": "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*"
+	    },
+	    {
+	      "Sid": "IAMListPermissions",
+	      "Effect": "Allow",
+	      "Action": [
+	        "iam:ListRoles",
+	        "iam:ListPolicies",
+	        "iam:ListAccessKeys"
+	      ],
+	      "Resource": "*"
+	    },
+	    {
+	      "Effect": "Allow",
+	      "Action": [
+	        "iam:GetSAMLProvider"
+	      ],
+	      "Resource": "arn:aws:iam::*:saml-provider/AWSSSO_*_DO_NOT_DELETE"
+	    },
+	    {
+	      "Effect": "Allow",
+	      "Action": [
+	        "sts:AssumeRole"
+	      ],
+	      "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole"
+	    }
+	  ],
+	  "Version": "2012-10-17"
+	}
+	```
+	**Notes about permissions:**
+	**Section 1: Read-only access (“ConductorOneReadAccess”)**
+	This group of permissions is the minimum required for ConductorOne to discover and sync your SSO users, groups, and permission sets. These are strictly read-only permissions.
+	- `iam:CreateUser`: This permission is required to provision IAM user accounts.
+	- `iam:List..., iam:GetGroup`: These are standard IAM permissions for listing users, groups, and roles. They are necessary to identify resources within your AWS account. iam:GetGroup provides the members of a group.
+	- `identitystore:List...`: These permissions are specific to AWS IAM Identity Center. They allow ConductorOne to list and read information about your users and groups as they are defined within the Identity Center.
+	- `organizations:ListAccounts`: This permission is required to list all the accounts within your AWS Organization, enabling ConductorOne to understand your account structure.
+	- `sso:List..., sso:Describe...`: These permissions allow ConductorOne to list your permission sets and see how they are assigned to accounts and users.
+	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for ConductorOne to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
+	**Section 2: Provisioning access (“ConductorOneProvisionAccess”)**
+	This group of permissions is only required if you want to provision (create or delete) user assignments in AWS, including managing IAM users directly. For example, if you plan to use ConductorOne to add a user to a group, assign a permission set to a user, create an IAM user, or fully delete an IAM user, you will need to include these permissions.
+	- `iam:AddUserToGroup, iam:RemoveUserFromGroup`: These permissions are used to manage IAM group memberships directly.
+	- `sso:CreateAccountAssignment, sso:DeleteAccountAssignment`: These are the core permissions for provisioning. They allow ConductorOne to add or remove assignments of permission sets to users within your organization.
+	- `identitystore:CreateGroupMembership, identitystore:DeleteGroupMembership`: These permissions manage group membership for users and groups defined within the Identity Center.
+	- `iam:DeleteLoginProfile, iam:DeleteAccessKey, iam:DeleteUser, and other iam:Delete... and iam:Deactivate... actions`: These permissions are required to clean up all credentials and associated policies for an IAM user before the final `iam:DeleteUser` action can be successful. These are required for full user deprovisioning functionality.
+	- `iam:TagUser`: This permission is required to add tags to a newly created IAM user.
+	**Section 3: Access to SSO-provisioned roles (“AccessToSSOProvisionedRoles”)**
+	This group of permissions allows ConductorOne to inspect and manage the AWS-managed roles created by IAM Identity Center in your accounts. This is crucial for understanding how permission sets are being applied.
+	- `iam:AttachRolePolicy, iam:DeleteRole, iam:GetRole, etc.`: These are permissions to manage IAM roles. The key detail is the Resource constraint: `arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*`. This ensures that ConductorOne can only interact with roles created and managed by the AWS SSO service itself, preventing it from modifying other roles in your account.
+	**Section 4: Other permissions**
+	These are supporting permissions that enable specific features or functionality. Some of the permissions listed here can be omitted if your particular use case doesn’t require the data they pull in to ConductorOne.
+	- `IAMListPermissions`: This section allows ConductorOne to sync data on access keys. ConductorOne does not store or access the access keys. If you do not want to sync access key data, you can omit this section.
+	- `sts:AssumeRole`: **This permission is only needed for requesting child accounts when Identity Center is not configured, and can be omitted otherwise.** This permission allows ConductorOne to assume the `OrganizationAccountAccessRole` in your child accounts, which allows ConductorOne to discover and sync resources across your AWS Organization.
+	- `iam:GetSAMLProvider`: This is a necessary permission to read the configuration of the SAML provider that AWS SSO uses for single sign-on.
+	- The permissions listed in the `"Sid": "IAMListPermissions"` and `"Sid": "AccessToSSOProvisiondRoles"` sections are required only if you want to use ConductorOne to create assignments in the AWS Organization’s management account. In certain cases, you may also need to add `iam:UpdateSAMLProvider` to these sections.
+	- The `iam:GetAccessKeyLastUsed` permission is only needed if you want ConductorOne to sync access key secret data.
+    </Step>
+    <Step>
+    Click **Review Policy**.
+    </Step>
+    <Step>
+    Give the policy a name, such as **ConductorOnePermissions** and click **Create Policy**.
+    <Frame>
+    ![](/images/product/assets/AWS-7.png)
+    </Frame>
+    </Step>
+    <Step>
+    Copy the **Role ARN** for the Role we created, it should look like: `arn:aws:iam::NNNNNNNNNN:role/ConductorOneIntegration`.
+    <Frame>
+    ![](/images/product/assets/AWS-8.png)
+    </Frame>
+    </Step>
+</Steps>
+
+**That’s it!** Next, move on to the connector configuration instructions.
+</Tab>
+</Tabs>
+
+## Configure the AWS connector
+
+<Warning>
+**To complete this task, you'll need:**
+
+- The **Connector Administrator** or **Super Administrator** role in ConductorOne
+- Access to the set of AWS credentials generated by following the instructions above
+</Warning>
+
+<Tabs>
+<Tab title="Cloud-hosted">
+**Follow these instructions to use a built-in, no-code connector hosted by ConductorOne.**
+
+<Steps>
+    <Step>
+    Return to the AWS v2 connector setup page in ConductorOne.
+    </Step>
+    <Step>
+    Find the **Settings** area of the page and click **Edit**.
+    </Step>
+    <Step>
+    Paste the AWS Role ARN into the **Role ARN** field.
+    </Step>
+    <Step>
+    **Optional.** Click to **Enable support for AWS Organizations**.
+	If support for AWS Organizations is enabled, the IAM Role (as described in Step 2) must be created in the management (formerly called master) account of the AWS Organization. If the IAM Role is created on a member account and support for AWS Organizations is enabled, the integration will return a 400 error.
+    </Step>
+    <Step>
+    **Optional.** Click to **Enable support for AWS IAM Identity Center** and select the region for AWS IAM Identity Center from the dropdown.
+    </Step>
+    <Step>
+    **Optional.** To enable ConductorOne to sync the statuses of SSO accounts, click to **Enable usage of the AWS IAM Identity Center SCIM API** and enter the SCIM endpoint and access token in the relevant fields.
+    </Step>
+    <Step>
+    **Optional.** Enable **Sync secrets** to display them on the [Inventory page](/product/admin/inventory).
+    </Step>
+    <Step>
+    Click **Save**.
+    </Step>
+    <Step>
+    The connector's label changes to **Syncing**, followed by **Connected**. You can view the logs to ensure that information is syncing.
+    </Step>
+</Steps>
+
+**That's it!** Your AWS connector is now pulling access data into ConductorOne.
+</Tab>
+<Tab title="Self-hosted">
+**Follow these instructions to use the Amazon Web Services connector, hosted and run in your own environment.**
+
+When running in service mode on Kubernetes, a self-hosted connector maintains an ongoing connection with ConductorOne, automatically syncing and uploading data at regular intervals. This data is immediately available in the ConductorOne UI for access reviews and access requests.
+
+### Resources
+
+* [Official download center](https://dist.conductorone.com/ConductorOne/baton-aws): For stable binaries (Windows/Linux/macOS) and container images.
+
+* [GitHub repository](https://github.com/ConductorOne/baton-aws): Access the source code, report issues, or contribute to the project.
+
+### Step 1: Set up a new AWS connector
+
+<Steps>
+    <Step>
+    In ConductorOne, navigate to **Integrations** > **Connectors** > **Add connector**.
+    </Step>
+    <Step>
+    Search for **Baton** and click **Add**.
+    </Step>
+    <Step>
+    Choose how to set up the new AWS connector:
+
+	- Add the connector to a currently unmanaged app (select from the list of apps that were discovered in your identity, SSO, or federation provider that aren't yet managed with ConductorOne)
+	- Add the connector to a managed app (select from the list of existing managed apps)
+	- Create a new managed app
+    </Step>
+    <Step>
+    Set the owner for this connector. You can manage the connector yourself, or choose someone else from the list of ConductorOne users. Setting multiple owners is allowed.
+	If you choose someone else, ConductorOne will notify the new connector owner by email that their help is needed to complete the setup process.
+    </Step>
+    <Step>
+    Click **Next**.
+    </Step>
+    <Step>
+    In the **Settings** area of the page, click **Edit**.
+    </Step>
+    <Step>
+    Click **Rotate** to generate a new Client ID and Secret.
+	Carefully copy and save these credentials. We'll use them in Step 2.
+    </Step>
+</Steps>
+
+### Step 2: Create Kubernetes configuration files
+
+Create two Kubernetes manifest files for your AWS connector deployment:
+
+#### Secrets configuration
+
+```yaml expandable
+# baton-aws-secrets.yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: baton-aws-secrets
+type: Opaque
+stringData:
+  # ConductorOne credentials
+  BATON_CLIENT_ID: <ConductorOne client ID>
+  BATON_CLIENT_SECRET: <ConductorOne client secret>
+  
+  # AWS credentials
+  BATON_EXTERNAL_ID: <External ID for the AWS account, generated by ConductorOne>
+  BATON_ROLE_ARN: <AWS Role ARN>
+
+  # Optional: Include if you want ConductorOne to provision access using this connector
+  BATON_PROVISIONING: true
+
+  # Optional: Include if you want to enable support for AWS Organizations (see note below)
+  BATON_GLOBAL_AWS_ORGS_ENABLED: true
+
+  # Optional: Include if you want to enable support for AWS IAM Identity Center
+  BATON_GLOBAL_AWS_SSO_ENABLED: true
+  BATON_GLOBAL_AWS_SSO_REGION: <Region for SSO identities (default is "us-east-1")>
+
+  # Optional: Include to enable ConductorOne to sync the statuses of SSO accounts
+  BATON_SCIM_ENABLED: true
+  BATON_SCIM_ENDPOINT: <SCIM endpoint>
+  BATON_SCIM_TOKEN: <SCIM access token>
+```
+
+If support for AWS Organizations is enabled, the IAM Role must be created in the management (formerly called master) account of the AWS Organization. If the IAM Role is created on a member account and support for AWS Organizations is enabled, the integration will return a 400 error.
+
+See the connector's README or run `--help` to see all available configuration flags and environment variables.
+
+#### Deployment configuration
+
+```yaml expandable
+# baton-aws.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: baton-aws
+  labels:
+    app: baton-aws
+spec:
+  selector:
+    matchLabels:
+      app: baton-aws
+  template:
+    metadata:
+      labels:
+        app: baton-aws
+        baton: true
+        baton-app: aws
+    spec:
+      containers:
+      - name: baton-aws
+        image: ghcr.io/conductorone/baton-aws:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: BATON_HOST_ID
+          value: baton-aws
+        envFrom:
+        - secretRef:
+            name: baton-aws-secrets
+```
+
+### Step 3: Deploy the connector
+
+<Steps>
+    <Step>
+    Create a namespace in which to run ConductorOne connectors (if desired), then apply the secret config and deployment config files.
+    </Step>
+    <Step>
+    Check that the connector data uploaded correctly. In ConductorOne, click **Apps**. On the **Managed apps** tab, locate and click the name of the application you added the AWS connector to. AWS data should be found on the **Entitlements** and **Accounts** tabs.
+    </Step>
+</Steps>
+
+**That's it!** Your AWS connector is now pulling access data into ConductorOne.
+</Tab>
+<Tab title="Terraform">
+## Configure the AWS connector using Terraform
+
+**Use the following Terraform script to integrate your AWS instance with ConductorOne.**
+
+### Step 1: Get ConductorOne-provided External ID for AWS IAM Role
+
+<Steps>
+    <Step>
+    Log into [ConductorOne](https://accounts.conductor.one/accounts).
+    </Step>
+    <Step>
+    Click **Connectors** > **AWS Connector**.
+    </Step>
+    <Step>
+    Copy and save the **External ID** populated in the **External ID** field. We'll use this in Step 2.
+    </Step>
+</Steps>
+
+### Step 2: Use a Terraform script to set up the AWS integration
+
+```hcl expandable
+variable "EXTERNAL_ID_FROM_C1_INTEGRATIONS_PAGE" {
+  description = "ConductorOne-provided External ID for AWS IAM Role from Step 1"
+  type        = string
+}
+
+resource "aws_iam_role" "ConductorOneIntegration" {
+  name = "ConductorOneIntegration"
+  assume_role_policy = jsonencode(
+    {
+      "Version" : "2012-10-17",
+      "Statement" : [
+        {
+          "Effect" : "Allow",
+          "Principal" : {
+            "AWS" : "arn:aws:iam::765656841499:role/ConductorOneService"
+          },
+          "Action" : "sts:AssumeRole",
+          "Condition" : {
+            "StringEquals" : {
+              "sts:ExternalId" : var.EXTERNAL_ID_FROM_C1_INTEGRATIONS_PAGE
+            }
+          }
+        }
+      ]
+    })
+
+  inline_policy {
+    name = "ConductorOnePermissions"
+    policy = jsonencode({
+      "Statement" : [
+        {
+          "Action" : [
+            "iam:GetGroup",
+            "iam:ListAccountAliases",
+            "iam:ListGroups",
+            "iam:ListRoles",
+            "iam:ListUsers",
+            "identitystore:ListGroupMemberships",
+            "identitystore:GetGroupMembershipId",
+            "identitystore:ListGroups",
+            "identitystore:ListUsers",
+            "organizations:ListAccounts",
+            "sso:DescribePermissionSet",
+            "sso:ListAccountAssignments",
+            "sso:ListInstances",
+            "sso:ListPermissionSets",
+            "sso:ListPermissionSetsProvisionedToAccount"
+          ],
+          "Effect" : "Allow",
+          "Resource" : "*",
+          "Sid" : "ConductorOneReadAccess"
+        },
+        {
+          "Action" : [
+            "iam:AddUserToGroup",
+            "iam:RemoveUserFromGroup",
+            "sso:CreateAccountAssignment",
+            "sso:DeleteAccountAssignment",
+            "identitystore:CreateGroupMembership",
+            "identitystore:DeleteGroupMembership",
+            "sso:DescribeAccountAssignmentCreationStatus",
+            "sso:DescribeAccountAssignmentDeletionStatus"
+          ],
+          "Effect" : "Allow",
+          "Resource" : "*",
+          "Sid" : "ConductorOneProvisionAccess"
+        },
+        {
+          "Sid" : "AccessToSSOProvisionedRoles",
+          "Effect" : "Allow",
+          "Action" : [
+            "iam:AttachRolePolicy",
+            "iam:CreateRole",
+            "iam:DeleteRole",
+            "iam:DeleteRolePolicy",
+            "iam:DetachRolePolicy",
+            "iam:GetRole",
+            "iam:ListAttachedRolePolicies",
+            "iam:ListRolePolicies",
+            "iam:PutRolePolicy",
+            "iam:UpdateRole",
+            "iam:UpdateRoleDescription"
+          ],
+          "Resource" : "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*"
+        },
+        {
+          "Sid" : "IAMListPermissions",
+          "Effect" : "Allow",
+          "Action" : [
+            "iam:ListRoles",
+            "iam:ListPolicies"
+          ],
+          "Resource" : "*"
+        },
+        {
+          "Effect" : "Allow",
+          "Action" : [
+            "iam:GetSAMLProvider"
+          ],
+          "Resource" : "arn:aws:iam::*:saml-provider/AWSSSO_*_DO_NOT_DELETE"
+        },
+        # OPTIONAL: This statement is only needed if requesting child accounts when Identity Center is not configured
+        {
+          "Effect": "Allow",
+          "Action": [
+            "sts:AssumeRole"
+          ],
+          "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole"
+        }
+      ],
+      "Version" : "2012-10-17"
+    })
+  }
+}
+```
+</Tab>
+</Tabs>
+
+
