@@ -75,8 +75,9 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, pt 
 			Id: awsSdk.ToString(account.Id),
 		}
 		profile := accountProfile(ctx, account)
+		displayName := fmt.Sprintf("%s (%s)", awsSdk.ToString(account.Name), awsSdk.ToString(account.Id))
 		userResource, err := resourceSdk.NewAppResource(
-			awsSdk.ToString(account.Name),
+			displayName,
 			resourceTypeAccountIam,
 			awsSdk.ToString(account.Id),
 			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
