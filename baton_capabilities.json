@@ -12,6 +12,23 @@
           {
             "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
             "id":  "group"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "iam:ListGroups"
+              },
+              {
+                "permission":  "iam:GetGroup"
+              },
+              {
+                "permission":  "iam:AddUserToGroup"
+              },
+              {
+                "permission":  "iam:RemoveUserFromGroup"
+              }
+            ]
           }
         ]
       },
@@ -19,7 +36,22 @@
         "CAPABILITY_SYNC",
         "CAPABILITY_PROVISION"
       ],
-      "permissions":  {}
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "iam:ListGroups"
+          },
+          {
+            "permission":  "iam:GetGroup"
+          },
+          {
+            "permission":  "iam:AddUserToGroup"
+          },
+          {
+            "permission":  "iam:RemoveUserFromGroup"
+          }
+        ]
+      }
     },
     {
       "resourceType":  {
@@ -35,6 +67,77 @@
           {
             "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
             "id":  "iam_user"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "iam:ListUsers"
+              },
+              {
+                "permission":  "iam:GetUser"
+              },
+              {
+                "permission":  "iam:ListAccessKeys"
+              },
+              {
+                "permission":  "iam:GetAccessKeyLastUsed"
+              },
+              {
+                "permission":  "iam:ListSigningCertificates"
+              },
+              {
+                "permission":  "iam:ListSSHPublicKeys"
+              },
+              {
+                "permission":  "iam:ListServiceSpecificCredentials"
+              },
+              {
+                "permission":  "iam:ListMFADevices"
+              },
+              {
+                "permission":  "iam:ListUserPolicies"
+              },
+              {
+                "permission":  "iam:ListAttachedUserPolicies"
+              },
+              {
+                "permission":  "iam:ListGroupsForUser"
+              },
+              {
+                "permission":  "iam:CreateUser"
+              },
+              {
+                "permission":  "iam:DeleteLoginProfile"
+              },
+              {
+                "permission":  "iam:DeleteAccessKey"
+              },
+              {
+                "permission":  "iam:DeleteSigningCertificate"
+              },
+              {
+                "permission":  "iam:DeleteSSHPublicKey"
+              },
+              {
+                "permission":  "iam:DeleteServiceSpecificCredential"
+              },
+              {
+                "permission":  "iam:DeactivateMFADevice"
+              },
+              {
+                "permission":  "iam:DeleteUserPolicy"
+              },
+              {
+                "permission":  "iam:DetachUserPolicy"
+              },
+              {
+                "permission":  "iam:DeleteUser"
+              },
+              {
+                "permission":  "iam:TagUser"
+              }
+            ]
           }
         ]
       },
@@ -43,7 +146,76 @@
         "CAPABILITY_ACCOUNT_PROVISIONING",
         "CAPABILITY_RESOURCE_DELETE"
       ],
-      "permissions":  {}
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "iam:ListUsers"
+          },
+          {
+            "permission":  "iam:GetUser"
+          },
+          {
+            "permission":  "iam:ListAccessKeys"
+          },
+          {
+            "permission":  "iam:GetAccessKeyLastUsed"
+          },
+          {
+            "permission":  "iam:ListSigningCertificates"
+          },
+          {
+            "permission":  "iam:ListSSHPublicKeys"
+          },
+          {
+            "permission":  "iam:ListServiceSpecificCredentials"
+          },
+          {
+            "permission":  "iam:ListMFADevices"
+          },
+          {
+            "permission":  "iam:ListUserPolicies"
+          },
+          {
+            "permission":  "iam:ListAttachedUserPolicies"
+          },
+          {
+            "permission":  "iam:ListGroupsForUser"
+          },
+          {
+            "permission":  "iam:CreateUser"
+          },
+          {
+            "permission":  "iam:DeleteLoginProfile"
+          },
+          {
+            "permission":  "iam:DeleteAccessKey"
+          },
+          {
+            "permission":  "iam:DeleteSigningCertificate"
+          },
+          {
+            "permission":  "iam:DeleteSSHPublicKey"
+          },
+          {
+            "permission":  "iam:DeleteServiceSpecificCredential"
+          },
+          {
+            "permission":  "iam:DeactivateMFADevice"
+          },
+          {
+            "permission":  "iam:DeleteUserPolicy"
+          },
+          {
+            "permission":  "iam:DetachUserPolicy"
+          },
+          {
+            "permission":  "iam:DeleteUser"
+          },
+          {
+            "permission":  "iam:TagUser"
+          }
+        ]
+      }
     },
     {
       "resourceType":  {
@@ -56,13 +228,33 @@
           {
             "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
             "id":  "role"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "iam:ListRoles"
+              },
+              {
+                "permission":  "iam:GetRole"
+              }
+            ]
           }
         ]
       },
       "capabilities":  [
         "CAPABILITY_SYNC"
       ],
-      "permissions":  {}
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "iam:ListRoles"
+          },
+          {
+            "permission":  "iam:GetRole"
+          }
+        ]
+      }
     }
   ],
   "connectorCapabilities":  [
