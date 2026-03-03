@@ -18,6 +18,7 @@ var (
 		"global-access-key-id",
 		field.WithDisplayName("Global Access Key"),
 		field.WithDescription("The global-access-key-id for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalAwsOrgsEnabledField = field.BoolField(
 		"global-aws-orgs-enabled",
@@ -39,21 +40,25 @@ var (
 		"global-binding-external-id",
 		field.WithDisplayName("Global Binding External ID"),
 		field.WithDescription("The global external id for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalRegionField = field.StringField(
 		"global-region",
 		field.WithDisplayName("Global Region"),
 		field.WithDescription("The region for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalRoleArnField = field.StringField(
 		"global-role-arn",
 		field.WithDisplayName("Global Role ARN"),
 		field.WithDescription("The role arn for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalSecretAccessKeyField = field.StringField(
 		"global-secret-access-key",
 		field.WithDisplayName("Global Secret Access Key"),
 		field.WithDescription("The global-secret-access-key for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	RoleArnField = field.StringField(
 		"role-arn",
