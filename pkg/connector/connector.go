@@ -204,16 +204,15 @@ func ValidateExternalID(input string) error {
 }
 
 func validateConfig(awsc *cfg.Aws) error {
-	if awsc.GetBool(cfg.UseAssumeField.FieldName) {
-		err := IsValidRoleARN(awsc.GetString(cfg.RoleArnField.FieldName))
+	if awsc.UseAssume {
+		err := IsValidRoleARN(awsc.RoleArn)
 		if err != nil {
 			return err
 		}
 		// Only validate external-id for two-hop mode (when global-role-arn is set)
 		// Single-hop mode (IRSA → target role) doesn't require external-id
-		globalRoleArn := awsc.GetString(cfg.GlobalRoleArnField.FieldName)
-		if globalRoleArn != "" {
-			err = ValidateExternalID(awsc.GetString(cfg.ExternalIdField.FieldName))
+		if awsc.GlobalRoleArn != "" {
+			err = ValidateExternalID(awsc.ExternalId)
 			if err != nil {
 				return err
 			}
@@ -235,20 +234,20 @@ func New(ctx context.Context, awsc *cfg.Aws, opts *cli.ConnectorOpts) (connector
 	}
 
 	config := Config{
-		GlobalBindingExternalID: awsc.GetString(cfg.GlobalBindingExternalIdField.FieldName),
-		GlobalRegion:            awsc.GetString(cfg.GlobalRegionField.FieldName),
-		GlobalRoleARN:           awsc.GetString(cfg.GlobalRoleArnField.FieldName),
-		GlobalSecretAccessKey:   awsc.GetString(cfg.GlobalSecretAccessKeyField.FieldName),
-		GlobalAccessKeyID:       awsc.GetString(cfg.GlobalAccessKeyIdField.FieldName),
-		GlobalAwsSsoRegion:      awsc.GetString(cfg.GlobalAwsSsoRegionField.FieldName),
-		GlobalAwsOrgsEnabled:    awsc.GetBool(cfg.GlobalAwsOrgsEnabledField.FieldName),
-		GlobalAwsSsoEnabled:     awsc.GetBool(cfg.GlobalAwsSsoEnabledField.FieldName),
-		ExternalID:              awsc.GetString(cfg.ExternalIdField.FieldName),
-		RoleARN:                 awsc.GetString(cfg.RoleArnField.FieldName),
-		UseAssumeRole:           awsc.GetBool(cfg.UseAssumeField.FieldName),
-		SyncSecrets:             awsc.GetBool(cfg.SyncSecrets.FieldName),
-		IamAssumeRoleName:       awsc.GetString(cfg.IamAssumeRoleName.FieldName),
-		SyncSSOUserLastLogin:    awsc.GetBool(cfg.SyncSSOUserLastLogin.FieldName),
+		GlobalBindingExternalID: awsc.GlobalBindingExternalId,
+		GlobalRegion:            awsc.GlobalRegion,
+		GlobalRoleARN:           awsc.GlobalRoleArn,
+		GlobalSecretAccessKey:   awsc.GlobalSecretAccessKey,
+		GlobalAccessKeyID:       awsc.GlobalAccessKeyId,
+		GlobalAwsSsoRegion:      awsc.GlobalAwsSsoRegion,
+		GlobalAwsOrgsEnabled:    awsc.GlobalAwsOrgsEnabled,
+		GlobalAwsSsoEnabled:     awsc.GlobalAwsSsoEnabled,
+		ExternalID:              awsc.ExternalId,
+		RoleARN:                 awsc.RoleArn,
+		UseAssumeRole:           awsc.UseAssume,
+		SyncSecrets:             awsc.SyncSecrets,
+		IamAssumeRoleName:       awsc.IamAssumeRoleName,
+		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
 	}
 
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
