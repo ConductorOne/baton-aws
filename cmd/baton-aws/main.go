@@ -19,6 +19,6 @@ func main() {
 		cfg.Config,
 		connector.New,
 		connectorrunner.WithSessionStoreEnabled(),
-		connectorrunner.WithDefaultCapabilitiesConnectorBuilderV2(&connector.AWS{}),
+		connectorrunner.WithDefaultCapabilitiesConnectorBuilderV2(connector.DefaultCapabilitiesBuilder()),
 	)
 }

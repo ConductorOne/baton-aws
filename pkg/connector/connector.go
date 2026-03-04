@@ -456,6 +456,35 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	return rs
 }
 
+// DefaultCapabilitiesBuilder returns all resource types unconditionally so that
+// the generated capabilities are always complete regardless of connector configuration
+func DefaultCapabilitiesBuilder() connectorbuilder.ConnectorBuilderV2 {
+	return &defaultCapabilitiesBuilder{}
+}
+
+type defaultCapabilitiesBuilder struct{}
+
+func (d *defaultCapabilitiesBuilder) Metadata(_ context.Context) (*v2.ConnectorMetadata, error) {
+	return &v2.ConnectorMetadata{DisplayName: "AWS"}, nil
+}
+
+func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.Annotations, error) {
+	return nil, nil
+}
+
+func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
+	return []connectorbuilder.ResourceSyncerV2{
+		iamUserBuilder(nil, nil),
+		iamRoleBuilder(nil, nil),
+		iamGroupBuilder(nil, nil),
+		ssoUserBuilder("", nil, nil, nil),
+		ssoGroupBuilder("", nil, nil, nil),
+		accountBuilder(nil, "", nil, nil, "", nil),
+		accountIAMBuilder(nil, nil, nil),
+		secretBuilder(nil, nil),
+	}
+}
+
 func (c *AWS) EventFeeds(ctx context.Context) []connectorbuilder.EventFeed {
 	l := ctxzap.Extract(ctx)
 	if !c.syncSSOUserLastLogin || c.cloudTrailClient == nil {
