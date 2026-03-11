@@ -85,7 +85,7 @@ type grantsPageState struct {
 	AssignmentPageToken string `json:"apt,omitempty"`
 }
 
-func encodeGrantsPageToken(state grantsPageState) (string, error) {
+func encodePageToken[T any](state T) (string, error) {
 	data, err := json.Marshal(state)
 	if err != nil {
 		return "", err
@@ -93,17 +93,18 @@ func encodeGrantsPageToken(state grantsPageState) (string, error) {
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func decodeGrantsPageToken(token string) (grantsPageState, error) {
+func decodePageToken[T any](token string) (T, error) {
+	var zero T
 	if token == "" {
-		return grantsPageState{}, nil
+		return zero, nil
 	}
 	data, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return grantsPageState{}, err
+		return zero, err
 	}
-	var state grantsPageState
+	var state T
 	if err := json.Unmarshal(data, &state); err != nil {
-		return grantsPageState{}, err
+		return zero, err
 	}
 	return state, nil
 }
@@ -118,29 +119,6 @@ func permissionSetIDsCacheKey(accountID string) string {
 type entitlementsPageState struct {
 	// PermissionSetIndex is the index into the cached permission set IDs list
 	PermissionSetIndex int `json:"psi"`
-}
-
-func encodeEntitlementsPageToken(state entitlementsPageState) (string, error) {
-	data, err := json.Marshal(state)
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(data), nil
-}
-
-func decodeEntitlementsPageToken(token string) (entitlementsPageState, error) {
-	if token == "" {
-		return entitlementsPageState{}, nil
-	}
-	data, err := base64.StdEncoding.DecodeString(token)
-	if err != nil {
-		return entitlementsPageState{}, err
-	}
-	var state entitlementsPageState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return entitlementsPageState{}, err
-	}
-	return state, nil
 }
 
 type accountResourceType struct {
@@ -225,7 +203,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
 	// Parse page state from token
-	pageState, err := decodeEntitlementsPageToken(opts.PageToken.Token)
+	pageState, err := decodePageToken[entitlementsPageState](opts.PageToken.Token)
 	if err != nil {
 		return nil, nil, fmt.Errorf("baton-aws: failed to decode page token: %w", err)
 	}
@@ -288,7 +266,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		nextState := entitlementsPageState{
 			PermissionSetIndex: batchEnd,
 		}
-		nextPageToken, err = encodeEntitlementsPageToken(nextState)
+		nextPageToken, err = encodePageToken(nextState)
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
 		}
@@ -304,7 +282,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 
 func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	// Parse page state from token
-	pageState, err := decodeGrantsPageToken(opts.PageToken.Token)
+	pageState, err := decodePageToken[grantsPageState](opts.PageToken.Token)
 	if err != nil {
 		return nil, nil, fmt.Errorf("baton-aws: failed to decode page token: %w", err)
 	}
@@ -369,7 +347,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 			AssignmentPageToken: nextAssignmentToken,
 		}
 
-		nextPageToken, err = encodeGrantsPageToken(nextState)
+		nextPageToken, err = encodePageToken(nextState)
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
 		}
@@ -380,7 +358,7 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 			AssignmentPageToken: "",
 		}
 
-		nextPageToken, err = encodeGrantsPageToken(nextState)
+		nextPageToken, err = encodePageToken(nextState)
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
 		}
