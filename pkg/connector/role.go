@@ -61,7 +61,7 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 
 	resp, err := iamClient.ListRoles(ctx, listRolesInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: iam.ListRoles failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.ListRoles failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
