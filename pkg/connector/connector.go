@@ -221,7 +221,7 @@ func validateConfig(awsc *cfg.Aws) error {
 	return nil
 }
 
-func New(ctx context.Context, awsc *cfg.Aws, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
 	l := ctxzap.Extract(ctx)
 
 	err := field.Validate(cfg.Config, awsc)
@@ -380,11 +380,11 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	}, nil
 }
 
-func (c *AWS) Validate(ctx context.Context) (annotations.Annotations, error) {
+func (c *AWS) Validate(_ context.Context) (annotations.Annotations, error) {
 	return nil, nil
 }
 
-func (c *AWS) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadCloser, error) {
+func (c *AWS) Asset(_ context.Context, _ *v2.AssetRef) (string, io.ReadCloser, error) {
 	return "", nil, nil
 }
 
@@ -457,7 +457,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 }
 
 // DefaultCapabilitiesBuilder returns all resource types unconditionally so that
-// the generated capabilities are always complete regardless of connector configuration
+// the generated capabilities are always complete regardless of connector configuration.
 func DefaultCapabilitiesBuilder() connectorbuilder.ConnectorBuilderV2 {
 	return &defaultCapabilitiesBuilder{}
 }
