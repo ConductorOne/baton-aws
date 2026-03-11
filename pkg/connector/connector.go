@@ -33,7 +33,7 @@ import (
 )
 
 const (
-	externalIDLengthMaximum = 65
+	externalIDLengthMaximum = 65 // TODO: this might be a bug. Error message says max 64 but this allows 65.
 	externalIDLengthMinimum = 32
 )
 
