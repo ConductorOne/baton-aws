@@ -38,6 +38,12 @@ const (
 	permissionSetDetailKeyPrefix   = "permission-set:"
 	permissionSetIDsCacheKeyPrefix = "permission-set-ids:"
 	allPermissionSetIDsCacheKey    = "all-permission-set-ids"
+
+	// entitlementsBatchSize controls how many permission sets are processed per
+	// Entitlements() call. Batching reduces SDK pagination overhead (token
+	// serialization, round-trips) while keeping the blast radius on rate-limit
+	// errors small enough to resume quickly from a checkpoint.
+	entitlementsBatchSize = 25
 )
 
 // awsThrottleErrorCodes contains AWS API error codes that indicate rate limiting.
@@ -247,41 +253,46 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		return nil, nil, nil
 	}
 
-	// Step 2: Get the current permission set to process
-	currentPsId := permissionSetIDs[pageState.PermissionSetIndex]
-
-	// Step 3: Fetch the permission set details (with caching)
-	ps, err := o.getPermissionSetWithCache(ctx, opts.Session, currentPsId)
-	if err != nil {
-		return nil, nil, err
+	// Step 2: Calculate the end of the current batch.
+	batchEnd := pageState.PermissionSetIndex + entitlementsBatchSize
+	if batchEnd > len(permissionSetIDs) {
+		batchEnd = len(permissionSetIDs)
 	}
 
-	// Step 4: Build the entitlement for this permission set
-	b := &PermissionSetBinding{
-		AccountID:       resource.Id.Resource,
-		PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
-	}
-	var annos annotations.Annotations
-	annos.Update(&v2.V1Identifier{
-		Id: b.String(),
-	})
-	displayName := fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
-	member := entitlementSdk.NewAssignmentEntitlement(resource, displayName,
-		entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
-	)
-	member.Description = awsSdk.ToString(ps.Description)
-	member.Annotations = annos
-	member.Id = b.String()
-	member.Slug = fmt.Sprintf("%s access", awsSdk.ToString(ps.Name))
-
-	// Step 5: Determine next page state
-	var nextPageToken string
-	if pageState.PermissionSetIndex+1 < len(permissionSetIDs) {
-		// More permission sets to process
-		nextState := entitlementsPageState{
-			PermissionSetIndex: pageState.PermissionSetIndex + 1,
+	// Step 3: Build entitlements for each permission set in the batch.
+	entitlements := make([]*v2.Entitlement, 0, batchEnd-pageState.PermissionSetIndex)
+	for i := pageState.PermissionSetIndex; i < batchEnd; i++ {
+		ps, err := o.getPermissionSetWithCache(ctx, opts.Session, permissionSetIDs[i])
+		if err != nil {
+			return nil, nil, err
 		}
 
+		b := &PermissionSetBinding{
+			AccountID:       resource.Id.Resource,
+			PermissionSetId: awsSdk.ToString(ps.PermissionSetArn),
+		}
+
+		var annos annotations.Annotations
+		annos.Update(&v2.V1Identifier{
+			Id: b.String(),
+		})
+		displayName := fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
+		member := entitlementSdk.NewAssignmentEntitlement(resource, displayName,
+			entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
+		)
+		member.Description = awsSdk.ToString(ps.Description)
+		member.Annotations = annos
+		member.Id = b.String()
+		member.Slug = fmt.Sprintf("%s access", awsSdk.ToString(ps.Name))
+		entitlements = append(entitlements, member)
+	}
+
+	// Step 4: Determine next page state.
+	var nextPageToken string
+	if batchEnd < len(permissionSetIDs) {
+		nextState := entitlementsPageState{
+			PermissionSetIndex: batchEnd,
+		}
 		nextPageToken, err = encodeEntitlementsPageToken(nextState)
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
@@ -290,9 +301,10 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 	// else: nextPageToken remains empty, signaling completion
 
 	if nextPageToken != "" {
-		return []*v2.Entitlement{member}, &resourceSdk.SyncOpResults{NextPageToken: nextPageToken}, nil
+		return entitlements, &resourceSdk.SyncOpResults{NextPageToken: nextPageToken}, nil
 	}
-	return []*v2.Entitlement{member}, nil, nil
+
+	return entitlements, nil, nil
 }
 
 func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
