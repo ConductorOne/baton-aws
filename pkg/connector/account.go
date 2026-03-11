@@ -63,6 +63,36 @@ var awsThrottleErrorCodes = map[string]struct{}{
 	"EC2ThrottledException":                  {},
 }
 
+// getOrSetCache retrieves a value from the session store if present; otherwise
+// it calls fetch, stores the result, and returns it. Both read and write errors
+// are returned as hard failures so callers always know the value is trustworthy.
+func getOrSetCache[T any](ctx context.Context, ss sessions.SessionStore, cacheKey string, fetch func() (T, error)) (T, error) {
+	if ss != nil {
+		cached, found, err := session.GetJSON[T](ctx, ss, cacheKey)
+		if err != nil {
+			var zero T
+			return zero, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+		}
+		if found {
+			return cached, nil
+		}
+	}
+
+	result, err := fetch()
+	if err != nil {
+		return result, err
+	}
+
+	if ss != nil {
+		if err := session.SetJSON(ctx, ss, cacheKey, result); err != nil {
+			var zero T
+			return zero, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
+		}
+	}
+
+	return result, nil
+}
+
 // wrapAWSError checks if the error is an AWS throttling error and wraps it
 // with codes.Unavailable so the baton-sdk sync engine can handle rate limiting.
 func wrapAWSError(err error) error {
@@ -400,121 +430,59 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 
 // getOrFetchPermissionSetIDs retrieves permission set IDs for an account, using cache if available.
 func (o *accountResourceType) getOrFetchPermissionSetIDs(ctx context.Context, ss sessions.SessionStore, accountID string) ([]string, error) {
-	cacheKey := permissionSetIDsCacheKey(accountID)
-
-	// Try cache first
-	if ss != nil {
-		cached, found, err := session.GetJSON[[]string](ctx, ss, cacheKey)
-		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+	return getOrSetCache(ctx, ss, permissionSetIDsCacheKey(accountID), func() ([]string, error) {
+		var permissionSetIDs []string
+		psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
+			AccountId:   awsSdk.String(accountID),
+			InstanceArn: o.identityInstance.InstanceArn,
 		}
-		if found {
-			return cached, nil
+		psBindingPaginator := awsSsoAdmin.NewListPermissionSetsProvisionedToAccountPaginator(o.ssoAdminClient, psBindingInput)
+		for {
+			psBindingsResp, err := psBindingPaginator.NextPage(ctx)
+			if err != nil {
+				return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err))
+			}
+			permissionSetIDs = append(permissionSetIDs, psBindingsResp.PermissionSets...)
+			if !psBindingPaginator.HasMorePages() {
+				break
+			}
 		}
-	}
-
-	// Fetch from AWS API
-	var permissionSetIDs []string
-	psBindingInput := &awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput{
-		AccountId:   awsSdk.String(accountID),
-		InstanceArn: o.identityInstance.InstanceArn,
-	}
-
-	psBindingPaginator := awsSsoAdmin.NewListPermissionSetsProvisionedToAccountPaginator(o.ssoAdminClient, psBindingInput)
-	for {
-		psBindingsResp, err := psBindingPaginator.NextPage(ctx)
-		if err != nil {
-			return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSetsProvisionedToAccount failed: %w", err))
-		}
-
-		permissionSetIDs = append(permissionSetIDs, psBindingsResp.PermissionSets...)
-		if !psBindingPaginator.HasMorePages() {
-			break
-		}
-	}
-
-	// Cache the result
-	if ss != nil {
-		if err := session.SetJSON(ctx, ss, cacheKey, permissionSetIDs); err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
-		}
-	}
-
-	return permissionSetIDs, nil
+		return permissionSetIDs, nil
+	})
 }
 
 // getOrFetchAllPermissionSetIDs retrieves all permission set IDs globally (not per-account), using cache if available.
 // This is used by Entitlements() which needs all permission sets regardless of account association.
 func (o *accountResourceType) getOrFetchAllPermissionSetIDs(ctx context.Context, ss sessions.SessionStore) ([]string, error) {
-	// Try cache first
-	if ss != nil {
-		cached, found, err := session.GetJSON[[]string](ctx, ss, allPermissionSetIDsCacheKey)
-		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+	return getOrSetCache(ctx, ss, allPermissionSetIDsCacheKey, func() ([]string, error) {
+		var permissionSetIDs []string
+		input := &awsSsoAdmin.ListPermissionSetsInput{
+			InstanceArn: o.identityInstance.InstanceArn,
 		}
-		if found {
-			return cached, nil
+		paginator := awsSsoAdmin.NewListPermissionSetsPaginator(o.ssoAdminClient, input)
+		for {
+			resp, err := paginator.NextPage(ctx)
+			if err != nil {
+				return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSets failed: %w", err))
+			}
+			permissionSetIDs = append(permissionSetIDs, resp.PermissionSets...)
+			if !paginator.HasMorePages() {
+				break
+			}
 		}
-	}
-
-	// Fetch from AWS API
-	var permissionSetIDs []string
-	input := &awsSsoAdmin.ListPermissionSetsInput{
-		InstanceArn: o.identityInstance.InstanceArn,
-	}
-
-	paginator := awsSsoAdmin.NewListPermissionSetsPaginator(o.ssoAdminClient, input)
-	for {
-		resp, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSets failed: %w", err))
-		}
-
-		permissionSetIDs = append(permissionSetIDs, resp.PermissionSets...)
-		if !paginator.HasMorePages() {
-			break
-		}
-	}
-
-	// Cache the result
-	if ss != nil {
-		if err := session.SetJSON(ctx, ss, allPermissionSetIDsCacheKey, permissionSetIDs); err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
-		}
-	}
-
-	return permissionSetIDs, nil
+		return permissionSetIDs, nil
+	})
 }
 
 // getPermissionSetWithCache fetches a permission set by ID, using cache if available.
 func (o *accountResourceType) getPermissionSetWithCache(ctx context.Context, ss sessions.SessionStore, permissionSetId string) (*awsSsoAdminTypes.PermissionSet, error) {
-	cacheKey := permissionSetDetailKeyPrefix + permissionSetId
-
-	// Try cache first
-	if ss != nil {
-		cached, found, err := session.GetJSON[*awsSsoAdminTypes.PermissionSet](ctx, ss, cacheKey)
+	return getOrSetCache(ctx, ss, permissionSetDetailKeyPrefix+permissionSetId, func() (*awsSsoAdminTypes.PermissionSet, error) {
+		ps, err := o.fetchPermissionSetFromAPI(ctx, permissionSetId)
 		if err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage reading operation failed: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.DescribePermissionSet failed: %w", err))
 		}
-		if found {
-			return cached, nil
-		}
-	}
-
-	// Fetch from AWS API
-	ps, err := o.fetchPermissionSetFromAPI(ctx, permissionSetId)
-	if err != nil {
-		return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.DescribePermissionSet failed: %w", err))
-	}
-
-	// Cache the result
-	if ss != nil {
-		if err := session.SetJSON(ctx, ss, cacheKey, ps); err != nil {
-			return nil, fmt.Errorf("baton-aws: Session Storage writing operation failed: %w", err)
-		}
-	}
-
-	return ps, nil
+		return ps, nil
+	})
 }
 
 // fetchGrantsForPermissionSet fetches one page of grants for a permission set.
