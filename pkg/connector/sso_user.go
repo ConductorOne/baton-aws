@@ -51,7 +51,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 	resp, err := o.identityStoreClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: sso ListUsers failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: sso ListUsers failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))

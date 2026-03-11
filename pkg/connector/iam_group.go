@@ -52,13 +52,13 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.ListGroups failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListGroups failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
@@ -128,13 +128,13 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	if resource.ParentResourceId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.GetGroup(ctx, input)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetGroup failed: %w", err))
 	}
 
 	var rv []*v2.Grant
