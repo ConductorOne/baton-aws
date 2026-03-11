@@ -58,7 +58,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 
 	resp, err := iamClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: iam.ListGroups failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.ListGroups failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
@@ -134,7 +134,7 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	resp, err := iamClient.GetGroup(ctx, input)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.GetGroup failed: %w", err))
 	}
 
 	var rv []*v2.Grant
@@ -208,7 +208,7 @@ func (o *iamGroupResourceType) Grant(ctx context.Context, principal *v2.Resource
 		UserName:  awsSdk.String(userName),
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("baton-aws: error adding iam user to iam group: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: error adding iam user to iam group: %w", err))
 	}
 
 	grant := grantSdk.NewGrant(
@@ -252,7 +252,7 @@ func (o *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		UserName:  awsSdk.String(userName),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err)
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err))
 	}
 
 	annos := annotations.New()

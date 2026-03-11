@@ -14,7 +14,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
-	"github.com/aws/smithy-go"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -46,23 +45,6 @@ const (
 	entitlementsBatchSize = 25
 )
 
-// awsThrottleErrorCodes contains AWS API error codes that indicate rate limiting.
-// These codes are from the AWS SDK (aws/retry/standard.go).
-var awsThrottleErrorCodes = map[string]struct{}{
-	"Throttling":                             {},
-	"ThrottlingException":                    {},
-	"ThrottledException":                     {},
-	"RequestThrottledException":              {},
-	"TooManyRequestsException":               {},
-	"ProvisionedThroughputExceededException": {},
-	"RequestLimitExceeded":                   {},
-	"BandwidthLimitExceeded":                 {},
-	"LimitExceededException":                 {},
-	"RequestThrottled":                       {},
-	"SlowDown":                               {},
-	"EC2ThrottledException":                  {},
-}
-
 // getOrSetCache retrieves a value from the session store if present; otherwise
 // it calls fetch, stores the result, and returns it. Both read and write errors
 // are returned as hard failures so callers always know the value is trustworthy.
@@ -91,23 +73,6 @@ func getOrSetCache[T any](ctx context.Context, ss sessions.SessionStore, cacheKe
 	}
 
 	return result, nil
-}
-
-// wrapAWSError checks if the error is an AWS throttling error and wraps it
-// with codes.Unavailable so the baton-sdk sync engine can handle rate limiting.
-func wrapAWSError(err error) error {
-	if err == nil {
-		return nil
-	}
-
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		if _, isThrottle := awsThrottleErrorCodes[apiErr.ErrorCode()]; isThrottle {
-			return status.Error(codes.Unavailable, err.Error())
-		}
-	}
-
-	return err
 }
 
 // grantsPageState tracks pagination state for the Grants function.

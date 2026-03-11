@@ -60,7 +60,7 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 
 	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
