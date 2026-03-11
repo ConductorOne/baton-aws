@@ -57,7 +57,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, opts 
 
 	resp, err := o.identityStoreClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: sso ListGroups failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: sso ListGroups failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
@@ -162,7 +162,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	resp, err := o.identityStoreClient.ListGroupMemberships(ctx, input)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err))
 	}
 
 	for _, user := range resp.GroupMemberships {
@@ -186,7 +186,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
+			return nil, nil, fmt.Errorf("baton-aws: failed to marshal pagination bag [%s]: %w", awsSdk.ToString(input.GroupId), err)
 		}
 		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
@@ -330,7 +330,7 @@ func (g *ssoGroupResourceType) Grant(
 
 	membership, annotationsFromGet, err := g.createOrGetMembership(ctx, groupID, userID)
 	if err != nil {
-		l.Error("aws-connector: Failed to create group membership", zap.Error(err))
+		l.Error("baton-aws: Failed to create group membership", zap.Error(err))
 		return nil, nil, fmt.Errorf("baton-aws: error adding sso user to sso group: %w", err)
 	}
 
@@ -346,7 +346,7 @@ func (g *ssoGroupResourceType) Grant(
 		)
 		if err != nil {
 			l.Error(
-				"aws-connector: Failed to create grant",
+				"baton-aws: Failed to create grant",
 				zap.Error(err),
 				zap.String("membership_id", awsSdk.ToString(membership.MembershipId)),
 			)
@@ -391,7 +391,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		return annos, nil
 	}
 
-	l.Info("aws-connector: Failed to delete group membership. Trying to fetch group membership in case grant ID is incorrect", zap.Error(err))
+	l.Info("baton-aws: Failed to delete group membership. Trying to fetch group membership in case grant ID is incorrect", zap.Error(err))
 	groupId, err := ssoGroupIdFromARN(grant.Entitlement.Resource.Id.Resource)
 	if err != nil {
 		return annos, err
@@ -411,7 +411,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 			return annos, nil
 		}
 
-		l.Error("aws-connector: Failed to get group membership", zap.Error(getErr))
+		l.Error("baton-aws: Failed to get group membership", zap.Error(getErr))
 		return nil, fmt.Errorf("baton-aws: error removing sso user from sso group: %w %w", err, getErr)
 	}
 
@@ -424,7 +424,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		},
 	)
 	if err != nil {
-		l.Error("aws-connector: Failed to delete group membership", zap.Error(err), zap.String("membership_id", membershipId))
+		l.Error("baton-aws: Failed to delete group membership", zap.Error(err), zap.String("membership_id", membershipId))
 		return nil, wrapAWSError(err)
 	}
 

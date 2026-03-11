@@ -55,13 +55,13 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListRoles(ctx, listRolesInput)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.ListRoles failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListRoles failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
@@ -131,7 +131,7 @@ func (o *roleResourceType) Grants(
 		var err error
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 	if iamClient == nil {

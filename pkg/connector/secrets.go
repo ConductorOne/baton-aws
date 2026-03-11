@@ -54,13 +54,13 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListUsers failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))

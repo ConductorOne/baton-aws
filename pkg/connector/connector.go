@@ -122,7 +122,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 			// This supports self-hosted deployments (e.g., EKS with IRSA) that don't need
 			// an intermediate binding account.
 			if o.globalRoleARN == "" && o.roleARN != "" {
-				l.Debug("aws-connector: using single-hop assume role mode",
+				l.Debug("baton-aws: using single-hop assume role mode",
 					zap.String("role_arn", o.roleARN),
 				)
 				stsSvc := sts.NewFromConfig(o.baseConfig)
@@ -134,7 +134,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 
 				_, err := callingCreds.Retrieve(ctx)
 				if err != nil {
-					return awsSdk.Config{}, fmt.Errorf("aws-connector: failed to assume role into '%s': %w", o.roleARN, err)
+					return awsSdk.Config{}, fmt.Errorf("baton-aws: failed to assume role into '%s': %w", o.roleARN, err)
 				}
 
 				return awsSdk.Config{
@@ -156,13 +156,13 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 
 			_, err := bindingCreds.Retrieve(ctx)
 			if err != nil {
-				l.Error("aws-connector: internal binding error",
+				l.Error("baton-aws: internal binding error",
 					zap.Error(err),
 					zap.String("binding_role_arn", o.globalRoleARN),
 					zap.String("binding_external_id", o.globalBindingExternalID),
 				)
 				// we don't want to leak our assume role from our instance identity to a customer visible error
-				return awsSdk.Config{}, fmt.Errorf("aws-connector: internal binding error")
+				return awsSdk.Config{}, fmt.Errorf("baton-aws: internal binding error")
 			}
 
 			// ok, now we have a working binding credentials.... lets go.
@@ -183,7 +183,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 			// this is ok, since the cache will keep them.  we want to centralize error handling for this.
 			_, err = callingConfig.Credentials.Retrieve(ctx)
 			if err != nil {
-				return awsSdk.Config{}, fmt.Errorf("aws-connector: unable to assume role into '%s': %w", o.roleARN, err)
+				return awsSdk.Config{}, fmt.Errorf("baton-aws: unable to assume role into '%s': %w", o.roleARN, err)
 			}
 			return callingConfig, nil
 		}()
@@ -286,7 +286,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
-		return nil, nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
+		return nil, nil, fmt.Errorf("baton-aws: SSO Support requires Org support to also be enabled. Please enable both")
 	}
 
 	err = rv.SetupClients(ctx)
@@ -306,14 +306,14 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 
 	_, err = stsSvc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to validate assume role: %w", err)
+		return nil, fmt.Errorf("baton-aws: failed to validate assume role: %w", err)
 	}
 
 	var accountId string
 	if c.roleARN != "" {
 		accountId, err = AccountIdFromARN(c.roleARN)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to validate ARN: %w", err)
+			return nil, fmt.Errorf("baton-aws: failed to validate ARN: %w", err)
 		}
 	}
 
@@ -526,10 +526,10 @@ func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Cl
 	}
 
 	if len(c._identityInstancesCache) >= 2 {
-		ctxzap.Extract(ctx).Warn("aws-connector: AWS Account contains >=2 identity instances")
+		ctxzap.Extract(ctx).Warn("baton-aws: AWS Account contains >=2 identity instances")
 	}
 	if len(c._identityInstancesCache) == 0 {
-		return nil, errors.New("aws-connector: no Identity Instance found")
+		return nil, errors.New("baton-aws: no Identity Instance found")
 	}
 
 	return c._identityInstancesCache[0], nil
