@@ -51,7 +51,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 	resp, err := o.identityStoreClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: sso ListUsers failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: sso ListUsers failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
@@ -145,7 +145,7 @@ func getSsoUserEmail(user awsIdentityStoreTypes.User) string {
 	return email
 }
 
-func ssoUserProfile(ctx context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
+func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
 	profile := make(map[string]interface{})
 	profile["aws_user_type"] = "sso"
 	profile["aws_user_name"] = awsSdk.ToString(user.DisplayName)

@@ -57,7 +57,7 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, opts 
 
 	resp, err := o.identityStoreClient.ListGroups(ctx, listGroupsInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: sso ListGroups failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: sso ListGroups failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Groups))
@@ -162,7 +162,7 @@ func (o *ssoGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	resp, err := o.identityStoreClient.ListGroupMemberships(ctx, input)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err)
+		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: identitystore.ListGroupMemberships failed [%s]: %w", awsSdk.ToString(input.GroupId), err))
 	}
 
 	for _, user := range resp.GroupMemberships {
@@ -225,7 +225,7 @@ func (g *ssoGroupResourceType) getGroupMembership(ctx context.Context, groupId s
 	}
 	foundMembership, err := g.identityStoreClient.GetGroupMembershipId(ctx, &getInput)
 	if err != nil {
-		return nil, err
+		return nil, wrapAWSError(err)
 	}
 
 	return foundMembership, nil
@@ -271,7 +271,7 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	// Forward along the error if it is an unknown type.
 	var conflictException *awsIdentityStoreTypes.ConflictException
 	if !errors.As(err, &conflictException) {
-		return nil, nil, err
+		return nil, nil, wrapAWSError(err)
 	}
 
 	outputAnnotations.Append(&v2.GrantAlreadyExists{})
@@ -425,7 +425,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 	)
 	if err != nil {
 		l.Error("aws-connector: Failed to delete group membership", zap.Error(err), zap.String("membership_id", membershipId))
-		return nil, err
+		return nil, wrapAWSError(err)
 	}
 
 	l.Debug("revoked grant", zap.String("membership_id", membershipId))
