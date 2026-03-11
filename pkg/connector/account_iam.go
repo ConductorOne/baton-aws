@@ -49,12 +49,12 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 
 	resp, err := o.orgClient.ListAccounts(ctx, listAccountsInput)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: listAccounts failed: %w", err)
+		return nil, nil, fmt.Errorf("baton-aws: listAccounts failed: %w", err)
 	}
 
 	stsClient, err := o.aws.getSTSClient(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("aws-connector: getSTSClient failed: %w", err)
+		return nil, nil, fmt.Errorf("baton-aws: getSTSClient failed: %w", err)
 	}
 
 	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})

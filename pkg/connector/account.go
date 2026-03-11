@@ -157,7 +157,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 	resp, err := o.orgClient.ListAccounts(ctx, listAccountsInput)
 	if err != nil {
-		return nil, nil, wrapAWSError(fmt.Errorf("aws-connector: listAccounts failed: %w", err))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: listAccounts failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
@@ -171,10 +171,10 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		status := account.Status
 
 		if status != types.AccountStatusActive {
-			l.Debug("aws-connector: account is not active, skipping", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
+			l.Debug("baton-aws: account is not active, skipping", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 			continue
 		}
-		l.Debug("aws-connector: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
+		l.Debug("baton-aws: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
 		userResource, err := resourceSdk.NewAppResource(
