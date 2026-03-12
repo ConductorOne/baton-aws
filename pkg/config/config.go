@@ -84,6 +84,7 @@ var (
 		field.WithDisplayName("Global Secret Access Key"),
 		field.WithDescription("The global-secret-access-key for the aws account"),
 		field.WithExportTarget(field.ExportTargetOps),
+		field.WithIsSecret(true),
 	)
 	RoleArnField = field.StringField(
 		"role-arn",

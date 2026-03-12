@@ -194,11 +194,11 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 func ValidateExternalID(input string) error {
 	fieldLength := len(input)
 	if fieldLength <= 0 {
-		return fmt.Errorf("external id is missing")
+		return fmt.Errorf("baton-aws: external id is missing")
 	}
 
 	if fieldLength < externalIDLengthMinimum || fieldLength > externalIDLengthMaximum {
-		return fmt.Errorf("aws_external_id must be between 32 and 64 bytes")
+		return fmt.Errorf("baton-aws: aws_external_id must be between 32 and 64 bytes")
 	}
 	return nil
 }
