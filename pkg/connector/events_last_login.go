@@ -104,7 +104,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 ) ([]*v2.Event, *pagination.StreamState, annotations.Annotations, error) {
 	l := ctxzap.Extract(ctx)
 
-	l.Debug("aws-connector: listing last login events", zap.Any("startAt", startAt), zap.Any("pToken", pToken))
+	l.Debug("baton-aws: listing last login events", zap.Any("startAt", startAt), zap.Any("pToken", pToken))
 	if f.cloudTrailClient == nil {
 		return nil, &pagination.StreamState{HasMore: false}, nil, nil
 	}
@@ -116,13 +116,13 @@ func (f *ssoLoginEventFeed) ListEvents(
 
 	startTime, err := time.Parse(time.RFC3339, cursor.StartAt)
 	if err != nil {
-		l.Debug("aws-connector: failed to parse start time, using default", zap.Error(err))
+		l.Debug("baton-aws: failed to parse start time, using default", zap.Error(err))
 		startTime = time.Now().Add(-1 * time.Hour)
 	}
 
 	endTime, err := time.Parse(time.RFC3339, cursor.EndAt)
 	if err != nil {
-		l.Debug("aws-connector: failed to parse end time, using default", zap.Error(err))
+		l.Debug("baton-aws: failed to parse end time, using default", zap.Error(err))
 		endTime = time.Now()
 	}
 	input := &cloudtrail.LookupEventsInput{
@@ -158,7 +158,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 
 		var ctEvent cloudTrailEvent
 		if err := json.Unmarshal([]byte(*event.CloudTrailEvent), &ctEvent); err != nil {
-			l.Debug("aws-connector: failed to unmarshal CloudTrail event", zap.Error(err))
+			l.Debug("baton-aws: failed to unmarshal CloudTrail event", zap.Error(err))
 			continue
 		}
 
@@ -231,7 +231,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 				},
 			},
 		}
-		l.Debug("aws-connector: created v2Event", zap.Any("v2Event", v2Event))
+		l.Debug("baton-aws: created v2Event", zap.Any("v2Event", v2Event))
 
 		events = append(events, v2Event)
 	}
@@ -256,7 +256,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 		HasMore: resp.NextToken != nil && *resp.NextToken != "",
 	}
 
-	l.Debug("aws-connector: processed events from CloudTrail",
+	l.Debug("baton-aws: processed events from CloudTrail",
 		zap.Int("event_count", len(events)),
 		zap.Bool("has_more", streamState.HasMore),
 	)

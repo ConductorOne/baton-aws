@@ -19,15 +19,22 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	cfg "github.com/conductorone/baton-aws/pkg/config"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/cli"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/structpb"
+)
 
-	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+const (
+	externalIDLengthMaximum = 65 // TODO: this might be a bug. Error message says max 64 but this allows 65.
+	externalIDLengthMinimum = 32
 )
 
 type Config struct {
@@ -115,7 +122,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 			// This supports self-hosted deployments (e.g., EKS with IRSA) that don't need
 			// an intermediate binding account.
 			if o.globalRoleARN == "" && o.roleARN != "" {
-				l.Debug("aws-connector: using single-hop assume role mode",
+				l.Debug("baton-aws: using single-hop assume role mode",
 					zap.String("role_arn", o.roleARN),
 				)
 				stsSvc := sts.NewFromConfig(o.baseConfig)
@@ -127,7 +134,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 
 				_, err := callingCreds.Retrieve(ctx)
 				if err != nil {
-					return awsSdk.Config{}, fmt.Errorf("aws-connector: failed to assume role into '%s': %w", o.roleARN, err)
+					return awsSdk.Config{}, fmt.Errorf("baton-aws: failed to assume role into '%s': %w", o.roleARN, err)
 				}
 
 				return awsSdk.Config{
@@ -149,13 +156,13 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 
 			_, err := bindingCreds.Retrieve(ctx)
 			if err != nil {
-				l.Error("aws-connector: internal binding error",
+				l.Error("baton-aws: internal binding error",
 					zap.Error(err),
 					zap.String("binding_role_arn", o.globalRoleARN),
 					zap.String("binding_external_id", o.globalBindingExternalID),
 				)
 				// we don't want to leak our assume role from our instance identity to a customer visible error
-				return awsSdk.Config{}, fmt.Errorf("aws-connector: internal binding error")
+				return awsSdk.Config{}, fmt.Errorf("baton-aws: internal binding error")
 			}
 
 			// ok, now we have a working binding credentials.... lets go.
@@ -176,7 +183,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 			// this is ok, since the cache will keep them.  we want to centralize error handling for this.
 			_, err = callingConfig.Credentials.Retrieve(ctx)
 			if err != nil {
-				return awsSdk.Config{}, fmt.Errorf("aws-connector: unable to assume role into '%s': %w", o.roleARN, err)
+				return awsSdk.Config{}, fmt.Errorf("baton-aws: unable to assume role into '%s': %w", o.roleARN, err)
 			}
 			return callingConfig, nil
 		}()
@@ -184,17 +191,75 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	return o._callingConfig[region], o._callingConfigError[region]
 }
 
-func New(ctx context.Context, config Config) (*AWS, error) {
-	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, ctxzap.Extract(ctx)))
-	if err != nil {
-		return nil, err
+func ValidateExternalID(input string) error {
+	fieldLength := len(input)
+	if fieldLength <= 0 {
+		return fmt.Errorf("baton-aws: external id is missing")
 	}
 
-	opts := GetAwsConfigOptions(httpClient, config)
+	if fieldLength < externalIDLengthMinimum || fieldLength > externalIDLengthMaximum {
+		return fmt.Errorf("baton-aws: aws_external_id must be between 32 and 64 bytes")
+	}
+	return nil
+}
 
-	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, opts...)
+func validateConfig(awsc *cfg.Aws) error {
+	if awsc.UseAssume {
+		err := IsValidRoleARN(awsc.RoleArn)
+		if err != nil {
+			return err
+		}
+		// Only validate external-id for two-hop mode (when global-role-arn is set)
+		// Single-hop mode (IRSA → target role) doesn't require external-id
+		if awsc.GlobalRoleArn != "" {
+			err = ValidateExternalID(awsc.ExternalId)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+	l := ctxzap.Extract(ctx)
+
+	err := field.Validate(cfg.Config, awsc)
 	if err != nil {
-		return nil, fmt.Errorf("aws connector: config load failure: %w", err)
+		return nil, nil, err
+	}
+	err = validateConfig(awsc)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	config := Config{
+		GlobalBindingExternalID: awsc.GlobalBindingExternalId,
+		GlobalRegion:            awsc.GlobalRegion,
+		GlobalRoleARN:           awsc.GlobalRoleArn,
+		GlobalSecretAccessKey:   awsc.GlobalSecretAccessKey,
+		GlobalAccessKeyID:       awsc.GlobalAccessKeyId,
+		GlobalAwsSsoRegion:      awsc.GlobalAwsSsoRegion,
+		GlobalAwsOrgsEnabled:    awsc.GlobalAwsOrgsEnabled,
+		GlobalAwsSsoEnabled:     awsc.GlobalAwsSsoEnabled,
+		ExternalID:              awsc.ExternalId,
+		RoleARN:                 awsc.RoleArn,
+		UseAssumeRole:           awsc.UseAssume,
+		SyncSecrets:             awsc.SyncSecrets,
+		IamAssumeRoleName:       awsc.IamAssumeRoleName,
+		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
+	}
+
+	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	awsOpts := GetAwsConfigOptions(httpClient, config)
+
+	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, awsOpts...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("aws connector: config load failure: %w", err)
 	}
 
 	rv := &AWS{
@@ -221,15 +286,16 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
-		return nil, fmt.Errorf("aws-connector: SSO Support requires Org support to also be enabled. Please enable both")
+		return nil, nil, fmt.Errorf("baton-aws: SSO Support requires Org support to also be enabled. Please enable both")
 	}
 
 	err = rv.SetupClients(ctx)
 	if err != nil {
-		return nil, err
+		l.Error("error creating connector", zap.Error(err))
+		return nil, nil, err
 	}
 
-	return rv, nil
+	return rv, nil, nil
 }
 
 func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
@@ -240,14 +306,14 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 
 	_, err = stsSvc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to validate assume role: %w", err)
+		return nil, fmt.Errorf("baton-aws: failed to validate assume role: %w", err)
 	}
 
 	var accountId string
 	if c.roleARN != "" {
 		accountId, err = AccountIdFromARN(c.roleARN)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to validate ARN: %w", err)
+			return nil, fmt.Errorf("baton-aws: failed to validate ARN: %w", err)
 		}
 	}
 
@@ -314,11 +380,11 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 	}, nil
 }
 
-func (c *AWS) Validate(ctx context.Context) (annotations.Annotations, error) {
+func (c *AWS) Validate(_ context.Context) (annotations.Annotations, error) {
 	return nil, nil
 }
 
-func (c *AWS) Asset(ctx context.Context, asset *v2.AssetRef) (string, io.ReadCloser, error) {
+func (c *AWS) Asset(_ context.Context, _ *v2.AssetRef) (string, io.ReadCloser, error) {
 	return "", nil, nil
 }
 
@@ -360,9 +426,9 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 	return nil
 }
 
-func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncer {
+func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
-	rs := []connectorbuilder.ResourceSyncer{
+	rs := []connectorbuilder.ResourceSyncerV2{
 		iamUserBuilder(c.iamClient, c.awsClientFactory),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
@@ -388,6 +454,35 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
 	return rs
+}
+
+// DefaultCapabilitiesBuilder returns all resource types unconditionally so that
+// the generated capabilities are always complete regardless of connector configuration.
+func DefaultCapabilitiesBuilder() connectorbuilder.ConnectorBuilderV2 {
+	return &defaultCapabilitiesBuilder{}
+}
+
+type defaultCapabilitiesBuilder struct{}
+
+func (d *defaultCapabilitiesBuilder) Metadata(_ context.Context) (*v2.ConnectorMetadata, error) {
+	return &v2.ConnectorMetadata{DisplayName: "AWS"}, nil
+}
+
+func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.Annotations, error) {
+	return nil, nil
+}
+
+func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
+	return []connectorbuilder.ResourceSyncerV2{
+		iamUserBuilder(nil, nil),
+		iamRoleBuilder(nil, nil),
+		iamGroupBuilder(nil, nil),
+		ssoUserBuilder("", nil, nil, nil),
+		ssoGroupBuilder("", nil, nil, nil),
+		accountBuilder(nil, "", nil, nil, "", nil),
+		accountIAMBuilder(nil, nil, nil),
+		secretBuilder(nil, nil),
+	}
 }
 
 func (c *AWS) EventFeeds(ctx context.Context) []connectorbuilder.EventFeed {
@@ -431,10 +526,10 @@ func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Cl
 	}
 
 	if len(c._identityInstancesCache) >= 2 {
-		ctxzap.Extract(ctx).Warn("aws-connector: AWS Account contains >=2 identity instances")
+		ctxzap.Extract(ctx).Warn("baton-aws: AWS Account contains >=2 identity instances")
 	}
 	if len(c._identityInstancesCache) == 0 {
-		return nil, errors.New("aws-connector: no Identity Instance found")
+		return nil, errors.New("baton-aws: no Identity Instance found")
 	}
 
 	return c._identityInstancesCache[0], nil
