@@ -54,7 +54,7 @@ func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (aws
 	})
 
 	if err != nil {
-		l.Error("Failed to assume role", zap.Error(err), zap.String("roleArn", roleArn))
+		l.Warn("Failed to assume role", zap.Error(err), zap.String("roleArn", roleArn))
 		return awsSdk.Config{}, err
 	}
 
