@@ -205,7 +205,7 @@ func (o *roleResourceType) Grants(
 
 		principal, errCreateResource := resourceSdk.NewResourceID(principalResourceType, principalID)
 		if errCreateResource != nil {
-			l.Error("baton-aws: failed to create principal resource, skipping grant",
+			l.Warn("baton-aws: failed to create principal resource, skipping grant",
 				zap.Error(errCreateResource),
 				zap.String("principal_arn", principalARN),
 			)
