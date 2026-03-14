@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"sync/atomic"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -28,8 +27,6 @@ type roleResourceType struct {
 	resourceType     *v2.ResourceType
 	iamClient        *iam.Client
 	awsClientFactory *AWSClientFactory
-
-	getRoleFailures atomic.Int64
 }
 
 func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -155,20 +152,10 @@ func (o *roleResourceType) Grants(
 		RoleName: awsSdk.String(roleName),
 	})
 	if err != nil {
-		failures := o.getRoleFailures.Add(1)
-		switch {
-		case failures == 1:
-			l.Warn("baton-aws: failed to get role details, skipping grants for this role",
-				zap.String("role_name", roleName),
-				zap.Error(err),
-			)
-		case failures == 10, failures == 100, failures%1000 == 0:
-			l.Warn("baton-aws: failed to get role details for multiple roles",
-				zap.Int64("total_failures", failures),
-				zap.String("latest_role_name", roleName),
-				zap.Error(err),
-			)
-		}
+		l.Warn("baton-aws: failed to get role details, skipping grants for this role",
+			zap.String("role_name", roleName),
+			zap.Error(err),
+		)
 		return nil, "", nil, nil
 	}
 
