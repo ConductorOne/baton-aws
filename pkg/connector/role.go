@@ -152,7 +152,7 @@ func (o *roleResourceType) Grants(
 		RoleName: awsSdk.String(roleName),
 	})
 	if err != nil {
-		l.Error("baton-aws: failed to get role details, skipping grants for this role",
+		l.Warn("baton-aws: failed to get role details, skipping grants for this role",
 			zap.String("role_name", roleName),
 			zap.Error(err),
 		)
@@ -192,7 +192,7 @@ func (o *roleResourceType) Grants(
 
 		principal, errCreateResource := resourceSdk.NewResourceID(principalResourceType, principalID)
 		if errCreateResource != nil {
-			l.Error("baton-aws: failed to create principal resource, skipping grant",
+			l.Warn("baton-aws: failed to create principal resource, skipping grant",
 				zap.Error(errCreateResource),
 				zap.String("principal_arn", principalARN),
 			)

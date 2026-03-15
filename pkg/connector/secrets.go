@@ -141,13 +141,13 @@ func getAccessKeyLastUsedDate(ctx context.Context, iamClient *iam.Client, access
 		AccessKeyId: awsSdk.String(accessKeyId),
 	})
 	if err != nil {
-		logger.Error("Error getting access key last used", zap.Error(err))
+		logger.Warn("Error getting access key last used", zap.Error(err))
 		return nil
 	}
 	if accessKeyLastUsed.AccessKeyLastUsed == nil ||
 		accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate == nil ||
 		accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate.IsZero() {
-		logger.Error("Access key last used date is nil or zero", zap.String("access_key_id", accessKeyId))
+		logger.Debug("Access key last used date is nil or zero", zap.String("access_key_id", accessKeyId))
 		return nil
 	}
 	return accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate
