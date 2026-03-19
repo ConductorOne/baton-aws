@@ -9,7 +9,7 @@ const (
 )
 
 var (
-	ExternalIdField = field.StringField(
+	ExternalIdField = field.RandomField(
 		"external-id",
 		field.WithDisplayName("External ID"),
 		field.WithDescription("The external id for the aws account"),
