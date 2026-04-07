@@ -107,7 +107,10 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	o._onceCallingConfig[region].Do(func() {
 		o._callingConfig[region], o._callingConfigError[region] = func() (awsSdk.Config, error) {
 			if !o.useAssumeRole {
-				return o.baseConfig, nil
+				cfg := o.baseConfig.Copy()
+				cfg.RetryMaxAttempts = 10
+				cfg.RetryMode = awsSdk.RetryModeAdaptive
+				return cfg, nil
 			}
 			l := ctxzap.Extract(ctx)
 
@@ -131,10 +134,12 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 				}
 
 				return awsSdk.Config{
-					HTTPClient:   o.baseClient,
-					Region:       region,
-					DefaultsMode: awsSdk.DefaultsModeInRegion,
-					Credentials:  callingCreds,
+					HTTPClient:       o.baseClient,
+					Region:           region,
+					DefaultsMode:     awsSdk.DefaultsModeInRegion,
+					Credentials:      callingCreds,
+					RetryMaxAttempts: 10,
+					RetryMode:        awsSdk.RetryModeAdaptive,
 				}, nil
 			}
 
@@ -171,6 +176,8 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 				Credentials: awsSdk.NewCredentialsCache(stscreds.NewAssumeRoleProvider(callingSTSService, o.roleARN, func(aro *stscreds.AssumeRoleOptions) {
 					aro.ExternalID = awsSdk.String(o.externalID)
 				})),
+				RetryMaxAttempts: 10,
+				RetryMode:        awsSdk.RetryModeAdaptive,
 			}
 
 			// this is ok, since the cache will keep them.  we want to centralize error handling for this.
