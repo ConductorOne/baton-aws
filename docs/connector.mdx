@@ -50,7 +50,7 @@ Follow the relevant set of instructions below to set up the AWS connector for IA
 
 To sync IAM data (like users, roles, and groups) from multiple AWS child accounts, C1 uses a secure, read-only mechanism called **cross-account access**. This setup works by allowing a central role in your root account to temporarily assume a specific role in each child account. This method ensures that the connector can gather the necessary data without storing credentials or requiring permanent access.
 
-If you're using this setup, make sure to click **Enable support for AWS Organizations** when setting up the connector in the C1 web UI, and DO NOT click **Enable support for AWS IAM Identity Center** or **Enable usage of the AWS IAM Identity Center SCIM API**.
+If you're using this setup, make sure to click **Enable support for AWS Organizations** when setting up the connector in the C1 web UI, and DO NOT click **Enable support for AWS IAM Identity Center**.
 
 **In order to use the connector to gather IAM AWS data, you'll need to configure each sub-account to have a role with a trust policy.** There are two options here:
 
@@ -533,9 +533,6 @@ The permissions policy below is broken into several sections to align with these
     **Optional.** Click to **Enable support for AWS IAM Identity Center** and select the region for AWS IAM Identity Center from the dropdown.
     </Step>
     <Step>
-    **Optional.** To enable C1 to sync the statuses of SSO accounts, click to **Enable usage of the AWS IAM Identity Center SCIM API** and enter the SCIM endpoint and access token in the relevant fields.
-    </Step>
-    <Step>
     **Optional.** Enable **Sync secrets** to display them on the [Inventory page](/product/admin/inventory).
     </Step>
     <Step>
@@ -623,10 +620,6 @@ stringData:
   BATON_GLOBAL_AWS_SSO_ENABLED: true
   BATON_GLOBAL_AWS_SSO_REGION: <Region for SSO identities (default is "us-east-1")>
 
-  # Optional: Include to enable C1 to sync the statuses of SSO accounts
-  BATON_SCIM_ENABLED: true
-  BATON_SCIM_ENDPOINT: <SCIM endpoint>
-  BATON_SCIM_TOKEN: <SCIM access token>
 ```
 
 If support for AWS Organizations is enabled, the IAM Role must be created in the management (formerly called master) account of the AWS Organization. If the IAM Role is created on a member account and support for AWS Organizations is enabled, the integration will return a 400 error.
