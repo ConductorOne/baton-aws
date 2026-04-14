@@ -45,7 +45,7 @@ func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (aws
 
 	stsClient, err := f.aws.getSTSClient(ctx)
 	if err != nil {
-		return awsSdk.Config{}, fmt.Errorf("aws-connector: getSTSClient failed: %w", err)
+		return awsSdk.Config{}, fmt.Errorf("baton-aws: getSTSClient failed: %w", err)
 	}
 
 	output, err := stsClient.AssumeRole(ctx, &sts.AssumeRoleInput{

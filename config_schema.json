@@ -96,12 +96,15 @@
       "name": "external-id",
       "displayName": "External ID",
       "description": "The external id for the aws account",
-      "stringField": {}
+      "stringField": {
+        "type": "STRING_FIELD_TYPE_RANDOM"
+      }
     },
     {
       "name": "global-access-key-id",
       "displayName": "Global Access Key",
       "description": "The global-access-key-id for the aws account",
+      "isOps": true,
       "stringField": {}
     },
     {
@@ -121,31 +124,63 @@
       "displayName": "Global AWS SSO Region",
       "description": "The region for the sso identities",
       "stringField": {
-        "defaultValue": "us-east-1"
+        "defaultValue": "us-east-1",
+        "rules": {
+          "in": [
+            "us-east-2",
+            "us-east-1",
+            "us-west-1",
+            "us-west-2",
+            "af-south-1",
+            "ap-east-1",
+            "ap-southeast-3",
+            "ap-south-1",
+            "ap-northeast-3",
+            "ap-northeast-2",
+            "ap-southeast-1",
+            "ap-southeast-2",
+            "ap-northeast-1",
+            "ca-central-1",
+            "eu-central-1",
+            "eu-west-1",
+            "eu-west-2",
+            "eu-south-1",
+            "eu-west-3",
+            "eu-north-1",
+            "me-south-1",
+            "me-central-1",
+            "sa-east-1"
+          ]
+        }
       }
     },
     {
       "name": "global-binding-external-id",
       "displayName": "Global Binding External ID",
       "description": "The global external id for the aws account",
+      "isOps": true,
       "stringField": {}
     },
     {
       "name": "global-region",
       "displayName": "Global Region",
       "description": "The region for the aws account",
+      "isOps": true,
       "stringField": {}
     },
     {
       "name": "global-role-arn",
       "displayName": "Global Role ARN",
       "description": "The role arn for the aws account",
+      "isOps": true,
       "stringField": {}
     },
     {
       "name": "global-secret-access-key",
       "displayName": "Global Secret Access Key",
       "description": "The global-secret-access-key for the aws account",
+      "isOps": true,
+      "isSecret": true,
       "stringField": {}
     },
     {

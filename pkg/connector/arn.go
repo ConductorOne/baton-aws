@@ -24,25 +24,25 @@ func IsValidRoleARN(input string) error {
 	}
 	parsedArn, err := arn.Parse(input)
 	if err != nil {
-		return fmt.Errorf("aws-connector: invalid role ARN: %w", err)
+		return fmt.Errorf("baton-aws: invalid role ARN: %w", err)
 	}
 	if parsedArn.Partition != "aws" {
-		return fmt.Errorf("aws-connector: invalid role ARN: only aws partition supported")
+		return fmt.Errorf("baton-aws: invalid role ARN: only aws partition supported")
 	}
 	if parsedArn.Service != iamType {
-		return fmt.Errorf("aws-connector: invalid role ARN: invalid service: must be 'iam'")
+		return fmt.Errorf("baton-aws: invalid role ARN: invalid service: must be 'iam'")
 	}
 	if parsedArn.Region != "" {
-		return fmt.Errorf("aws-connector: invalid role ARN: invalid region: must be empty")
+		return fmt.Errorf("baton-aws: invalid role ARN: invalid region: must be empty")
 	}
 	if len(parsedArn.AccountID) != 12 {
-		return fmt.Errorf("aws-connector: invalid role ARN: invalid account id: must be 12 characters long")
+		return fmt.Errorf("baton-aws: invalid role ARN: invalid account id: must be 12 characters long")
 	}
 	if !strings.HasPrefix(parsedArn.Resource, "role/") {
-		return fmt.Errorf("aws-connector: invalid role ARN: invalid resource: must start with 'role/'")
+		return fmt.Errorf("baton-aws: invalid role ARN: invalid resource: must start with 'role/'")
 	}
 	if roleNameRE.MatchString(parsedArn.Resource) {
-		return fmt.Errorf("aws-connector: invalid role ARN: invalid resource: must match regexp '%s'", roleNameRE.String())
+		return fmt.Errorf("baton-aws: invalid role ARN: invalid resource: must match regexp '%s'", roleNameRE.String())
 	}
 	return nil
 }
