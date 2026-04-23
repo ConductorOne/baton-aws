@@ -42,9 +42,6 @@ type Config struct {
 	GlobalAwsSsoEnabled     bool
 	ExternalID              string
 	RoleARN                 string
-	SCIMToken               string
-	SCIMEndpoint            string
-	SCIMEnabled             bool
 	SyncSecrets             bool
 	IamAssumeRoleName       string
 	SyncSSOUserLastLogin    bool
