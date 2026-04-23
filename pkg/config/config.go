@@ -1,21 +1,15 @@
 package config
 
 import (
-	"context"
-	"fmt"
-
-	"github.com/conductorone/baton-aws/pkg/connector"
 	"github.com/conductorone/baton-sdk/pkg/field"
 )
 
 const (
-	ExternalIDLengthMaximum = 65 // TODO(marcos): this might be a bug.
-	ExternalIDLengthMinimum = 32
-	RegionDefault           = "us-east-1"
+	RegionDefault = "us-east-1"
 )
 
 var (
-	ExternalIdField = field.StringField(
+	ExternalIdField = field.RandomField(
 		"external-id",
 		field.WithDisplayName("External ID"),
 		field.WithDescription("The external id for the aws account"),
@@ -24,6 +18,7 @@ var (
 		"global-access-key-id",
 		field.WithDisplayName("Global Access Key"),
 		field.WithDescription("The global-access-key-id for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalAwsOrgsEnabledField = field.BoolField(
 		"global-aws-orgs-enabled",
@@ -35,8 +30,33 @@ var (
 		field.WithDisplayName("Global AWS SSO Enabled"),
 		field.WithDescription("Enable support for AWS IAM Identity Center"),
 	)
-	GlobalAwsSsoRegionField = field.StringField(
+	GlobalAwsSsoRegionField = field.SelectField(
 		"global-aws-sso-region",
+		[]string{
+			"us-east-2",
+			"us-east-1",
+			"us-west-1",
+			"us-west-2",
+			"af-south-1",
+			"ap-east-1",
+			"ap-southeast-3",
+			"ap-south-1",
+			"ap-northeast-3",
+			"ap-northeast-2",
+			"ap-southeast-1",
+			"ap-southeast-2",
+			"ap-northeast-1",
+			"ca-central-1",
+			"eu-central-1",
+			"eu-west-1",
+			"eu-west-2",
+			"eu-south-1",
+			"eu-west-3",
+			"eu-north-1",
+			"me-south-1",
+			"me-central-1",
+			"sa-east-1",
+		},
 		field.WithDisplayName("Global AWS SSO Region"),
 		field.WithDescription("The region for the sso identities"),
 		field.WithDefaultValue(RegionDefault),
@@ -45,21 +65,26 @@ var (
 		"global-binding-external-id",
 		field.WithDisplayName("Global Binding External ID"),
 		field.WithDescription("The global external id for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalRegionField = field.StringField(
 		"global-region",
 		field.WithDisplayName("Global Region"),
 		field.WithDescription("The region for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalRoleArnField = field.StringField(
 		"global-role-arn",
 		field.WithDisplayName("Global Role ARN"),
 		field.WithDescription("The role arn for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalSecretAccessKeyField = field.StringField(
 		"global-secret-access-key",
 		field.WithDisplayName("Global Secret Access Key"),
 		field.WithDescription("The global-secret-access-key for the aws account"),
+		field.WithExportTarget(field.ExportTargetOps),
+		field.WithIsSecret(true),
 	)
 	RoleArnField = field.StringField(
 		"role-arn",
@@ -90,38 +115,6 @@ var (
 		field.WithDefaultValue(false),
 	)
 )
-
-func ValidateExternalId(input string) error {
-	fieldLength := len(input)
-	if fieldLength <= 0 {
-		return fmt.Errorf("external id is missing")
-	}
-
-	if fieldLength < ExternalIDLengthMinimum || fieldLength > ExternalIDLengthMaximum {
-		return fmt.Errorf("aws_external_id must be between 32 and 64 bytes")
-	}
-	return nil
-}
-
-// validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
-func ValidateConfig(ctx context.Context, awsc *Aws) error {
-	if awsc.GetBool(UseAssumeField.FieldName) {
-		err := connector.IsValidRoleARN(awsc.GetString(RoleArnField.FieldName))
-		if err != nil {
-			return err
-		}
-		// Only validate external-id for two-hop mode (when global-role-arn is set)
-		// Single-hop mode (IRSA → target role) doesn't require external-id
-		globalRoleArn := awsc.GetString(GlobalRoleArnField.FieldName)
-		if globalRoleArn != "" {
-			err = ValidateExternalId(awsc.GetString(ExternalIdField.FieldName))
-			if err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
 
 //go:generate go run ./gen
 var Config = field.NewConfiguration(

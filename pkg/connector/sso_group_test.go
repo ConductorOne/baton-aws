@@ -12,6 +12,7 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	testSdk "github.com/conductorone/baton-sdk/pkg/test"
 	"github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,21 +51,22 @@ func TestSSOGroups(t *testing.T) {
 		test.ResetMock()
 		test.SetStore(test.MockSSOGroupID, []string{"1", "2", "3"})
 		resources := make([]*v2.Grant, 0)
-		pToken := pagination.Token{
-			Token: "",
-			Size:  1,
+		opts := resourceSdk.SyncOpAttrs{
+			PageToken: pagination.Token{
+				Token: "",
+				Size:  1,
+			},
 		}
 		for {
-			nextResources, nextToken, listAnnotations, err := c.Grants(ctx, group, &pToken)
+			nextResources, syncResults, err := c.Grants(ctx, group, opts)
 			resources = append(resources, nextResources...)
 
 			require.Nil(t, err)
-			testSdk.AssertNoRatelimitAnnotations(t, listAnnotations)
-			if nextToken == "" {
+			if syncResults == nil || syncResults.NextPageToken == "" {
 				break
 			}
 
-			pToken.Token = nextToken
+			opts.PageToken.Token = syncResults.NextPageToken
 		}
 
 		require.NotNil(t, resources)
