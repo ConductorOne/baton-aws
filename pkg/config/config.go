@@ -22,12 +22,12 @@ var (
 	)
 	GlobalAwsOrgsEnabledField = field.BoolField(
 		"global-aws-orgs-enabled",
-		field.WithDisplayName("Global AWS Orgs Enabled"),
+		field.WithDisplayName("Enable support for AWS Organizations"),
 		field.WithDescription("Enable support for AWS Organizations"),
 	)
 	GlobalAwsSsoEnabledField = field.BoolField(
 		"global-aws-sso-enabled",
-		field.WithDisplayName("Global AWS SSO Enabled"),
+		field.WithDisplayName("Enable support for AWS IAM Identity Center (successor to AWS Single Sign-On)"),
 		field.WithDescription("Enable support for AWS IAM Identity Center"),
 	)
 	GlobalAwsSsoRegionField = field.SelectField(
@@ -57,7 +57,7 @@ var (
 			"me-central-1",
 			"sa-east-1",
 		},
-		field.WithDisplayName("Global AWS SSO Region"),
+		field.WithDisplayName("Region for AWS IAM Identity Center (successor to AWS Single Sign-On)"),
 		field.WithDescription("The region for the sso identities"),
 		field.WithDefaultValue(RegionDefault),
 	)
@@ -95,6 +95,7 @@ var (
 		"use-assume",
 		field.WithDisplayName("Use Assume"),
 		field.WithDescription("Enable support for assume role"),
+		field.WithExportTarget(field.ExportTargetOps),
 	)
 	SyncSecrets = field.BoolField(
 		"sync-secrets",
@@ -104,7 +105,7 @@ var (
 
 	IamAssumeRoleName = field.StringField(
 		"iam-assume-role-name",
-		field.WithDisplayName("IAM Assume Role Name"),
+		field.WithDisplayName("IAM assume role name (child IAM accounts)"),
 		field.WithDescription("Role name for the IAM role to assume when using the AWS connector"),
 		field.WithDefaultValue("OrganizationAccountAccessRole"),
 	)

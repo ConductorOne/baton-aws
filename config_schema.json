@@ -109,19 +109,19 @@
     },
     {
       "name": "global-aws-orgs-enabled",
-      "displayName": "Global AWS Orgs Enabled",
+      "displayName": "Enable support for AWS Organizations",
       "description": "Enable support for AWS Organizations",
       "boolField": {}
     },
     {
       "name": "global-aws-sso-enabled",
-      "displayName": "Global AWS SSO Enabled",
+      "displayName": "Enable support for AWS IAM Identity Center (successor to AWS Single Sign-On)",
       "description": "Enable support for AWS IAM Identity Center",
       "boolField": {}
     },
     {
       "name": "global-aws-sso-region",
-      "displayName": "Global AWS SSO Region",
+      "displayName": "Region for AWS IAM Identity Center (successor to AWS Single Sign-On)",
       "description": "The region for the sso identities",
       "stringField": {
         "defaultValue": "us-east-1",
@@ -193,6 +193,7 @@
       "name": "use-assume",
       "displayName": "Use Assume",
       "description": "Enable support for assume role",
+      "isOps": true,
       "boolField": {}
     },
     {
@@ -203,7 +204,7 @@
     },
     {
       "name": "iam-assume-role-name",
-      "displayName": "IAM Assume Role Name",
+      "displayName": "IAM assume role name (child IAM accounts)",
       "description": "Role name for the IAM role to assume when using the AWS connector",
       "stringField": {
         "defaultValue": "OrganizationAccountAccessRole"
