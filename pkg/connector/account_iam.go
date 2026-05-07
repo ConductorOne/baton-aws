@@ -59,7 +59,7 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 
 	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: sts.GetCallerIdentity failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0)
