@@ -2,6 +2,7 @@ package connector
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
@@ -10,9 +11,12 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	aws_middleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -307,4 +311,44 @@ func (principal *Principal) UnmarshalJSON(data []byte) error {
 
 	// No AWS field = service/federated principal, ignore (valid case)
 	return nil
+}
+
+// awsThrottleErrorCodes contains AWS API error codes that indicate rate limiting.
+// These codes mirror the retry list in the AWS SDK (aws/retry/standard.go).
+var awsThrottleErrorCodes = map[string]struct{}{
+	"Throttling":                             {},
+	"ThrottlingException":                    {},
+	"ThrottledException":                     {},
+	"RequestThrottledException":              {},
+	"TooManyRequestsException":               {},
+	"ProvisionedThroughputExceededException": {},
+	"RequestLimitExceeded":                   {},
+	"BandwidthLimitExceeded":                 {},
+	"LimitExceededException":                 {},
+	"RequestThrottled":                       {},
+	"SlowDown":                               {},
+	"EC2ThrottledException":                  {},
+}
+
+// wrapAWSError converts AWS throttling errors into gRPC codes.Unavailable so
+// the baton-sdk sync engine can identify them as retryable. Non-throttle errors
+// are returned unchanged.
+//
+// Note: status.Error intentionally converts the error to a message string,
+// breaking the errors.As/errors.Is chain. This is acceptable because the SDK
+// only inspects the gRPC status code to decide whether to retry; it does not
+// unwrap the underlying AWS error.
+func wrapAWSError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		if _, isThrottle := awsThrottleErrorCodes[apiErr.ErrorCode()]; isThrottle {
+			return status.Error(codes.Unavailable, err.Error())
+		}
+	}
+
+	return err
 }

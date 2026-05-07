@@ -7,13 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
-
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
@@ -26,17 +25,17 @@ type iamUserResourceType struct {
 	awsClientFactory *AWSClientFactory
 }
 
-var _ connectorbuilder.AccountManager = &iamUserResourceType{}
+var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
 
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	return o.resourceType
 }
 
-func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId, pt *pagination.Token) ([]*v2.Resource, string, annotations.Annotations, error) {
+func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	bag := &pagination.Bag{}
-	err := bag.Unmarshal(pt.Token)
+	err := bag.Unmarshal(opts.PageToken.Token)
 	if err != nil {
-		return nil, "", nil, err
+		return nil, nil, err
 	}
 
 	if bag.Current() == nil {
@@ -54,13 +53,13 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 	if parentId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentId.Resource)
 		if err != nil {
-			return nil, "", nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 
 	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
-		return nil, "", nil, fmt.Errorf("aws-connector: iam.ListUsers failed: %w", err)
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListUsers failed: %w", err))
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
@@ -88,32 +87,32 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
-			return nil, "", nil, err
+			return nil, nil, err
 		}
 		rv = append(rv, userResource)
 	}
 
 	if !resp.IsTruncated {
-		return rv, "", nil, nil
+		return rv, nil, nil
 	}
 
 	if resp.Marker != nil {
 		token, err := bag.NextToken(*resp.Marker)
 		if err != nil {
-			return rv, "", nil, err
+			return rv, nil, err
 		}
-		return rv, token, nil, nil
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
-	return rv, "", nil, nil
+	return rv, nil, nil
 }
 
-func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Entitlement, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
-func (o *iamUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ *pagination.Token) ([]*v2.Grant, string, annotations.Annotations, error) {
-	return nil, "", nil, nil
+func (o *iamUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	return nil, nil, nil
 }
 
 func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamUserResourceType {
@@ -234,7 +233,7 @@ func (o *iamUserResourceType) CreateAccount(
 	if result, err := o.iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsSdk.String(username)}); err == nil {
 		var noSuchEntity *iamTypes.NoSuchEntityException
 		if errors.As(err, &noSuchEntity) {
-			return nil, nil, nil, fmt.Errorf("aws-connector: iam.GetUser failed: %w", err)
+			return nil, nil, nil, fmt.Errorf("baton-aws: iam.GetUser failed: %w", err)
 		}
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(result.User.Arn),
@@ -267,7 +266,7 @@ func (o *iamUserResourceType) CreateAccount(
 
 	result, err := o.iamClient.CreateUser(ctx, createUserInput)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("aws-connector: iam.CreateUser failed: %w", err)
+		return nil, nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.CreateUser failed: %w", err))
 	}
 
 	annos := &v2.V1Identifier{
@@ -293,7 +292,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	var noSuchEntity *iamTypes.NoSuchEntityException
 	l := ctxzap.Extract(ctx)
 	if resourceId.ResourceType != resourceTypeIAMUser.Id {
-		return nil, fmt.Errorf("aws-connector: only IAM user resources can be deleted")
+		return nil, fmt.Errorf("baton-aws: only IAM user resources can be deleted")
 	}
 	userName, err := iamUserNameFromARN(resourceId.Resource)
 	if err != nil {
@@ -305,7 +304,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	if parentResourceID != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, parentResourceID.Resource)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: GetIAMClient failed: %w", err)
+			return nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
 	}
 
@@ -316,11 +315,11 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 			l.Info("User not found, returning success for delete operation")
 			return nil, nil
 		}
-		return nil, fmt.Errorf("aws-connector: iam.GetUser failed: %w", err)
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetUser failed: %w", err))
 	}
 
 	if user.User == nil {
-		return nil, fmt.Errorf("aws-connector: user not found")
+		return nil, fmt.Errorf("baton-aws: user not found")
 	}
 
 	// To delete a user through the API we'll need to manually delete information associated with it,
@@ -331,7 +330,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	_, err = iamClient.DeleteLoginProfile(ctx, &iam.DeleteLoginProfileInput{UserName: awsStringUserName})
 	if err != nil {
 		if !errors.As(err, &noSuchEntity) {
-			return nil, fmt.Errorf("aws-connector: failed to delete login profile: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete login profile: %w", err))
 		}
 		l.Info("login profile not found, skipping")
 	}
@@ -343,7 +342,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		keys, err := iamClient.ListAccessKeys(ctx, listKeysInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list access keys: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list access keys: %w", err))
 		}
 		accessKeyMetadata = append(accessKeyMetadata, keys.AccessKeyMetadata...)
 		if keys.Marker == nil || len(*keys.Marker) == 0 {
@@ -355,7 +354,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, key := range accessKeyMetadata {
 		_, err = iamClient.DeleteAccessKey(ctx, &iam.DeleteAccessKeyInput{UserName: awsStringUserName, AccessKeyId: key.AccessKeyId})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to delete access key: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete access key: %w", err))
 		}
 	}
 
@@ -366,7 +365,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		certs, err := iamClient.ListSigningCertificates(ctx, listCertificatesInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list signing certificates: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list signing certificates: %w", err))
 		}
 		certificates = append(certificates, certs.Certificates...)
 		if certs.Marker == nil || len(*certs.Marker) == 0 {
@@ -378,7 +377,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, certificate := range certificates {
 		_, err = iamClient.DeleteSigningCertificate(ctx, &iam.DeleteSigningCertificateInput{UserName: awsStringUserName, CertificateId: certificate.CertificateId})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to delete signing certificate: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete signing certificate: %w", err))
 		}
 	}
 
@@ -389,7 +388,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		keys, err := iamClient.ListSSHPublicKeys(ctx, listSSHKeysInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list SSH public keys: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list SSH public keys: %w", err))
 		}
 		sshKeys = append(sshKeys, keys.SSHPublicKeys...)
 		if keys.Marker == nil || len(*keys.Marker) == 0 {
@@ -401,7 +400,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, key := range sshKeys {
 		_, err = iamClient.DeleteSSHPublicKey(ctx, &iam.DeleteSSHPublicKeyInput{UserName: awsStringUserName, SSHPublicKeyId: key.SSHPublicKeyId})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to delete SSH public key: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete SSH public key: %w", err))
 		}
 	}
 
@@ -409,7 +408,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	// Permission needed: iam:ListServiceSpecificCredentials, iam:DeleteServiceSpecificCredential
 	ssCredentials, err := iamClient.ListServiceSpecificCredentials(ctx, &iam.ListServiceSpecificCredentialsInput{UserName: awsStringUserName})
 	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to list service specific credentials: %w", err)
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list service specific credentials: %w", err))
 	}
 
 	for _, credential := range ssCredentials.ServiceSpecificCredentials {
@@ -421,7 +420,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 			},
 		)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to delete service specific credential: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete service specific credential: %w", err))
 		}
 	}
 
@@ -432,7 +431,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		devices, err := iamClient.ListMFADevices(ctx, listMFADevicesInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list MFA devices: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list MFA devices: %w", err))
 		}
 		mfaDevices = append(mfaDevices, devices.MFADevices...)
 		if devices.Marker == nil || len(*devices.Marker) == 0 {
@@ -444,7 +443,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, device := range mfaDevices {
 		_, err = iamClient.DeactivateMFADevice(ctx, &iam.DeactivateMFADeviceInput{UserName: awsStringUserName, SerialNumber: device.SerialNumber})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to deactivate MFA device: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to deactivate MFA device: %w", err))
 		}
 	}
 
@@ -455,7 +454,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		policies, err := iamClient.ListUserPolicies(ctx, listUserPoliciesInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list user policies: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list user policies: %w", err))
 		}
 		userPolicies = append(userPolicies, policies.PolicyNames...)
 		if policies.Marker == nil || len(*policies.Marker) == 0 {
@@ -467,7 +466,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, policy := range userPolicies {
 		_, err = iamClient.DeleteUserPolicy(ctx, &iam.DeleteUserPolicyInput{UserName: awsStringUserName, PolicyName: awsSdk.String(policy)})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to delete user policy: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete user policy: %w", err))
 		}
 	}
 
@@ -478,7 +477,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		policies, err := iamClient.ListAttachedUserPolicies(ctx, listAttachedPoliciesInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list attached user policies: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list attached user policies: %w", err))
 		}
 		attachedPolicies = append(attachedPolicies, policies.AttachedPolicies...)
 		if policies.Marker == nil || len(*policies.Marker) == 0 {
@@ -490,7 +489,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, policy := range attachedPolicies {
 		_, err = iamClient.DetachUserPolicy(ctx, &iam.DetachUserPolicyInput{UserName: awsStringUserName, PolicyArn: policy.PolicyArn})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to detach user policy: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to detach user policy: %w", err))
 		}
 	}
 
@@ -501,7 +500,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for {
 		groups, err := iamClient.ListGroupsForUser(ctx, listUserGroupsInput)
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to list groups for user: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to list groups for user: %w", err))
 		}
 		userGroups = append(userGroups, groups.Groups...)
 		if groups.Marker == nil || len(*groups.Marker) == 0 {
@@ -513,7 +512,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	for _, group := range userGroups {
 		_, err = iamClient.RemoveUserFromGroup(ctx, &iam.RemoveUserFromGroupInput{UserName: awsStringUserName, GroupName: group.GroupName})
 		if err != nil {
-			return nil, fmt.Errorf("aws-connector: failed to remove user from group: %w", err)
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to remove user from group: %w", err))
 		}
 	}
 
@@ -521,7 +520,7 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	// Permission needed: iam:DeleteUser
 	_, err = iamClient.DeleteUser(ctx, &iam.DeleteUserInput{UserName: awsStringUserName})
 	if err != nil {
-		return nil, fmt.Errorf("aws-connector: failed to delete user: %w", err)
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: failed to delete user: %w", err))
 	}
 
 	return nil, nil

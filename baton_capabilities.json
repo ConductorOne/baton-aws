@@ -1,274 +1,626 @@
 {
-  "@type": "type.googleapis.com/c1.connector.v2.ConnectorCapabilities",
-  "resourceTypeCapabilities": [
+  "@type":  "type.googleapis.com/c1.connector.v2.ConnectorCapabilities",
+  "resourceTypeCapabilities":  [
     {
-      "resourceType": {
-        "id": "group",
-        "displayName": "Group",
-        "traits": [
-          "TRAIT_GROUP"
+      "resourceType":  {
+        "id":  "access-key",
+        "displayName":  "Access Key",
+        "traits":  [
+          "TRAIT_SECRET"
         ],
-        "annotations": [
+        "annotations":  [
           {
-            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
-            "id": "group"
+            "@type":  "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
           },
           {
-            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
-            "permissions": [
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
               {
-                "permission": "iam:ListGroups"
+                "permission":  "iam:ListAccessKeys"
               },
               {
-                "permission": "iam:GetGroup"
-              },
-              {
-                "permission": "iam:AddUserToGroup"
-              },
-              {
-                "permission": "iam:RemoveUserFromGroup"
+                "permission":  "iam:GetAccessKeyLastUsed"
               }
             ]
           }
         ]
       },
-      "capabilities": [
-        "CAPABILITY_SYNC",
-        "CAPABILITY_PROVISION"
+      "capabilities":  [
+        "CAPABILITY_SYNC"
       ],
-      "permissions": {
-        "permissions": [
+      "permissions":  {
+        "permissions":  [
           {
-            "permission": "iam:ListGroups"
+            "permission":  "iam:ListAccessKeys"
           },
           {
-            "permission": "iam:GetGroup"
-          },
-          {
-            "permission": "iam:AddUserToGroup"
-          },
-          {
-            "permission": "iam:RemoveUserFromGroup"
+            "permission":  "iam:GetAccessKeyLastUsed"
           }
         ]
       }
     },
     {
-      "resourceType": {
-        "id": "iam_user",
-        "displayName": "IAM User",
-        "traits": [
-          "TRAIT_USER"
+      "resourceType":  {
+        "id":  "account",
+        "displayName":  "Account",
+        "traits":  [
+          "TRAIT_APP"
         ],
-        "annotations": [
+        "annotations":  [
           {
-            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "account"
           },
           {
-            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
-            "id": "iam_user"
-          },
-          {
-            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
-            "permissions": [
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
               {
-                "permission": "iam:ListUsers"
+                "permission":  "organizations:ListAccounts"
               },
               {
-                "permission": "iam:GetUser"
+                "permission":  "organizations:DescribeOrganization"
               },
               {
-                "permission": "iam:ListAccessKeys"
+                "permission":  "sso:ListPermissionSets"
               },
               {
-                "permission": "iam:GetAccessKeyLastUsed"
+                "permission":  "sso:DescribePermissionSet"
               },
               {
-                "permission": "iam:ListSigningCertificates"
+                "permission":  "sso:ListPermissionSetsProvisionedToAccount"
               },
               {
-                "permission": "iam:ListSSHPublicKeys"
+                "permission":  "sso:ListAccountAssignments"
               },
               {
-                "permission": "iam:ListServiceSpecificCredentials"
+                "permission":  "sso:ListInstances"
               },
               {
-                "permission": "iam:ListMFADevices"
+                "permission":  "sso:CreateAccountAssignment"
               },
               {
-                "permission": "iam:ListUserPolicies"
+                "permission":  "sso:DeleteAccountAssignment"
               },
               {
-                "permission": "iam:ListAttachedUserPolicies"
+                "permission":  "sso:DescribeAccountAssignmentCreationStatus"
               },
               {
-                "permission": "iam:ListGroupsForUser"
+                "permission":  "sso:DescribeAccountAssignmentDeletionStatus"
               },
               {
-                "permission": "iam:CreateUser"
+                "permission":  "iam:ListPolicies"
               },
               {
-                "permission": "iam:DeleteLoginProfile"
+                "permission":  "iam:AttachRolePolicy"
               },
               {
-                "permission": "iam:DeleteAccessKey"
+                "permission":  "iam:CreateRole"
               },
               {
-                "permission": "iam:DeleteSigningCertificate"
+                "permission":  "iam:DeleteRole"
               },
               {
-                "permission": "iam:DeleteSSHPublicKey"
+                "permission":  "iam:DeleteRolePolicy"
               },
               {
-                "permission": "iam:DeleteServiceSpecificCredential"
+                "permission":  "iam:DetachRolePolicy"
               },
               {
-                "permission": "iam:DeactivateMFADevice"
+                "permission":  "iam:GetRole"
               },
               {
-                "permission": "iam:DeleteUserPolicy"
+                "permission":  "iam:ListAttachedRolePolicies"
               },
               {
-                "permission": "iam:DetachUserPolicy"
+                "permission":  "iam:ListRolePolicies"
               },
               {
-                "permission": "iam:DeleteUser"
+                "permission":  "iam:PutRolePolicy"
               },
               {
-                "permission": "iam:TagUser"
+                "permission":  "iam:UpdateRole"
+              },
+              {
+                "permission":  "iam:UpdateRoleDescription"
+              },
+              {
+                "permission":  "iam:GetSAMLProvider"
               }
             ]
           }
         ]
       },
-      "capabilities": [
+      "capabilities":  [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
+      ],
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "organizations:ListAccounts"
+          },
+          {
+            "permission":  "organizations:DescribeOrganization"
+          },
+          {
+            "permission":  "sso:ListPermissionSets"
+          },
+          {
+            "permission":  "sso:DescribePermissionSet"
+          },
+          {
+            "permission":  "sso:ListPermissionSetsProvisionedToAccount"
+          },
+          {
+            "permission":  "sso:ListAccountAssignments"
+          },
+          {
+            "permission":  "sso:ListInstances"
+          },
+          {
+            "permission":  "sso:CreateAccountAssignment"
+          },
+          {
+            "permission":  "sso:DeleteAccountAssignment"
+          },
+          {
+            "permission":  "sso:DescribeAccountAssignmentCreationStatus"
+          },
+          {
+            "permission":  "sso:DescribeAccountAssignmentDeletionStatus"
+          },
+          {
+            "permission":  "iam:ListPolicies"
+          },
+          {
+            "permission":  "iam:AttachRolePolicy"
+          },
+          {
+            "permission":  "iam:CreateRole"
+          },
+          {
+            "permission":  "iam:DeleteRole"
+          },
+          {
+            "permission":  "iam:DeleteRolePolicy"
+          },
+          {
+            "permission":  "iam:DetachRolePolicy"
+          },
+          {
+            "permission":  "iam:GetRole"
+          },
+          {
+            "permission":  "iam:ListAttachedRolePolicies"
+          },
+          {
+            "permission":  "iam:ListRolePolicies"
+          },
+          {
+            "permission":  "iam:PutRolePolicy"
+          },
+          {
+            "permission":  "iam:UpdateRole"
+          },
+          {
+            "permission":  "iam:UpdateRoleDescription"
+          },
+          {
+            "permission":  "iam:GetSAMLProvider"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType":  {
+        "id":  "account_iam",
+        "displayName":  "Account IAM",
+        "traits":  [
+          "TRAIT_APP"
+        ],
+        "annotations":  [
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "account_iam"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "iam:ListAccountAliases"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities":  [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "iam:ListAccountAliases"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType":  {
+        "id":  "group",
+        "displayName":  "Group",
+        "traits":  [
+          "TRAIT_GROUP"
+        ],
+        "annotations":  [
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "group"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "iam:ListGroups"
+              },
+              {
+                "permission":  "iam:GetGroup"
+              },
+              {
+                "permission":  "iam:AddUserToGroup"
+              },
+              {
+                "permission":  "iam:RemoveUserFromGroup"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities":  [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
+      ],
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "iam:ListGroups"
+          },
+          {
+            "permission":  "iam:GetGroup"
+          },
+          {
+            "permission":  "iam:AddUserToGroup"
+          },
+          {
+            "permission":  "iam:RemoveUserFromGroup"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType":  {
+        "id":  "iam_user",
+        "displayName":  "IAM User",
+        "traits":  [
+          "TRAIT_USER"
+        ],
+        "annotations":  [
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "iam_user"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "iam:ListUsers"
+              },
+              {
+                "permission":  "iam:GetUser"
+              },
+              {
+                "permission":  "iam:ListAccessKeys"
+              },
+              {
+                "permission":  "iam:GetAccessKeyLastUsed"
+              },
+              {
+                "permission":  "iam:ListSigningCertificates"
+              },
+              {
+                "permission":  "iam:ListSSHPublicKeys"
+              },
+              {
+                "permission":  "iam:ListServiceSpecificCredentials"
+              },
+              {
+                "permission":  "iam:ListMFADevices"
+              },
+              {
+                "permission":  "iam:ListUserPolicies"
+              },
+              {
+                "permission":  "iam:ListAttachedUserPolicies"
+              },
+              {
+                "permission":  "iam:ListGroupsForUser"
+              },
+              {
+                "permission":  "iam:CreateUser"
+              },
+              {
+                "permission":  "iam:DeleteLoginProfile"
+              },
+              {
+                "permission":  "iam:DeleteAccessKey"
+              },
+              {
+                "permission":  "iam:DeleteSigningCertificate"
+              },
+              {
+                "permission":  "iam:DeleteSSHPublicKey"
+              },
+              {
+                "permission":  "iam:DeleteServiceSpecificCredential"
+              },
+              {
+                "permission":  "iam:DeactivateMFADevice"
+              },
+              {
+                "permission":  "iam:DeleteUserPolicy"
+              },
+              {
+                "permission":  "iam:DetachUserPolicy"
+              },
+              {
+                "permission":  "iam:DeleteUser"
+              },
+              {
+                "permission":  "iam:TagUser"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities":  [
         "CAPABILITY_SYNC",
         "CAPABILITY_ACCOUNT_PROVISIONING",
         "CAPABILITY_RESOURCE_DELETE"
       ],
-      "permissions": {
-        "permissions": [
+      "permissions":  {
+        "permissions":  [
           {
-            "permission": "iam:ListUsers"
+            "permission":  "iam:ListUsers"
           },
           {
-            "permission": "iam:GetUser"
+            "permission":  "iam:GetUser"
           },
           {
-            "permission": "iam:ListAccessKeys"
+            "permission":  "iam:ListAccessKeys"
           },
           {
-            "permission": "iam:GetAccessKeyLastUsed"
+            "permission":  "iam:GetAccessKeyLastUsed"
           },
           {
-            "permission": "iam:ListSigningCertificates"
+            "permission":  "iam:ListSigningCertificates"
           },
           {
-            "permission": "iam:ListSSHPublicKeys"
+            "permission":  "iam:ListSSHPublicKeys"
           },
           {
-            "permission": "iam:ListServiceSpecificCredentials"
+            "permission":  "iam:ListServiceSpecificCredentials"
           },
           {
-            "permission": "iam:ListMFADevices"
+            "permission":  "iam:ListMFADevices"
           },
           {
-            "permission": "iam:ListUserPolicies"
+            "permission":  "iam:ListUserPolicies"
           },
           {
-            "permission": "iam:ListAttachedUserPolicies"
+            "permission":  "iam:ListAttachedUserPolicies"
           },
           {
-            "permission": "iam:ListGroupsForUser"
+            "permission":  "iam:ListGroupsForUser"
           },
           {
-            "permission": "iam:CreateUser"
+            "permission":  "iam:CreateUser"
           },
           {
-            "permission": "iam:DeleteLoginProfile"
+            "permission":  "iam:DeleteLoginProfile"
           },
           {
-            "permission": "iam:DeleteAccessKey"
+            "permission":  "iam:DeleteAccessKey"
           },
           {
-            "permission": "iam:DeleteSigningCertificate"
+            "permission":  "iam:DeleteSigningCertificate"
           },
           {
-            "permission": "iam:DeleteSSHPublicKey"
+            "permission":  "iam:DeleteSSHPublicKey"
           },
           {
-            "permission": "iam:DeleteServiceSpecificCredential"
+            "permission":  "iam:DeleteServiceSpecificCredential"
           },
           {
-            "permission": "iam:DeactivateMFADevice"
+            "permission":  "iam:DeactivateMFADevice"
           },
           {
-            "permission": "iam:DeleteUserPolicy"
+            "permission":  "iam:DeleteUserPolicy"
           },
           {
-            "permission": "iam:DetachUserPolicy"
+            "permission":  "iam:DetachUserPolicy"
           },
           {
-            "permission": "iam:DeleteUser"
+            "permission":  "iam:DeleteUser"
           },
           {
-            "permission": "iam:TagUser"
+            "permission":  "iam:TagUser"
           }
         ]
       }
     },
     {
-      "resourceType": {
-        "id": "role",
-        "displayName": "IAM Role",
-        "traits": [
+      "resourceType":  {
+        "id":  "role",
+        "displayName":  "IAM Role",
+        "traits":  [
           "TRAIT_ROLE"
         ],
-        "annotations": [
+        "annotations":  [
           {
-            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
-            "id": "role"
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "role"
           },
           {
-            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
-            "permissions": [
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
               {
-                "permission": "iam:ListRoles"
+                "permission":  "iam:ListRoles"
               },
               {
-                "permission": "iam:GetRole"
+                "permission":  "iam:GetRole"
               }
             ]
           }
         ]
       },
-      "capabilities": [
+      "capabilities":  [
         "CAPABILITY_SYNC"
       ],
-      "permissions": {
-        "permissions": [
+      "permissions":  {
+        "permissions":  [
           {
-            "permission": "iam:ListRoles"
+            "permission":  "iam:ListRoles"
           },
           {
-            "permission": "iam:GetRole"
+            "permission":  "iam:GetRole"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType":  {
+        "id":  "sso_group",
+        "displayName":  "SSO Group",
+        "traits":  [
+          "TRAIT_GROUP"
+        ],
+        "annotations":  [
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "sso_group"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "sso:ListInstances"
+              },
+              {
+                "permission":  "identitystore:ListGroups"
+              },
+              {
+                "permission":  "identitystore:ListGroupMemberships"
+              },
+              {
+                "permission":  "identitystore:GetGroupMembershipId"
+              },
+              {
+                "permission":  "identitystore:CreateGroupMembership"
+              },
+              {
+                "permission":  "identitystore:DeleteGroupMembership"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities":  [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
+      ],
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "sso:ListInstances"
+          },
+          {
+            "permission":  "identitystore:ListGroups"
+          },
+          {
+            "permission":  "identitystore:ListGroupMemberships"
+          },
+          {
+            "permission":  "identitystore:GetGroupMembershipId"
+          },
+          {
+            "permission":  "identitystore:CreateGroupMembership"
+          },
+          {
+            "permission":  "identitystore:DeleteGroupMembership"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType":  {
+        "id":  "sso_user",
+        "displayName":  "SSO User",
+        "traits":  [
+          "TRAIT_USER"
+        ],
+        "annotations":  [
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id":  "sso_user"
+          },
+          {
+            "@type":  "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions":  [
+              {
+                "permission":  "identitystore:ListUsers"
+              },
+              {
+                "permission":  "sso:ListInstances"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities":  [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions":  {
+        "permissions":  [
+          {
+            "permission":  "identitystore:ListUsers"
+          },
+          {
+            "permission":  "sso:ListInstances"
           }
         ]
       }
     }
   ],
-  "connectorCapabilities": [
+  "connectorCapabilities":  [
     "CAPABILITY_PROVISION",
     "CAPABILITY_SYNC",
     "CAPABILITY_ACCOUNT_PROVISIONING",
     "CAPABILITY_RESOURCE_DELETE"
   ],
-  "credentialDetails": {
-    "capabilityAccountProvisioning": {
-      "supportedCredentialOptions": [
+  "credentialDetails":  {
+    "capabilityAccountProvisioning":  {
+      "supportedCredentialOptions":  [
         "CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD"
       ],
-      "preferredCredentialOption": "CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD"
+      "preferredCredentialOption":  "CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD"
     }
   }
 }
