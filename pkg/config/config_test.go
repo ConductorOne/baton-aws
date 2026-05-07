@@ -19,15 +19,19 @@ const (
 )
 
 // validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
+// This mirrors the production validateConfig in pkg/connector/connector.go: external-id is only
+// required for two-hop assume-role mode (when global-role-arn is set).
 func validateConfig(ctx context.Context, v *viper.Viper) error {
 	if v.GetBool(config.UseAssumeField.FieldName) {
-		err := connector.ValidateExternalID(v.GetString(config.ExternalIdField.FieldName))
+		err := connector.IsValidRoleARN(v.GetString(config.RoleArnField.FieldName))
 		if err != nil {
 			return err
 		}
-		err = connector.IsValidRoleARN(v.GetString(config.RoleArnField.FieldName))
-		if err != nil {
-			return err
+		if v.GetString(config.GlobalRoleArnField.FieldName) != "" {
+			err = connector.ValidateExternalID(v.GetString(config.ExternalIdField.FieldName))
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -49,7 +53,7 @@ func TestConfigs(t *testing.T) {
 			{
 				"--use-assume",
 				false,
-				"externalID + ARN missing",
+				"ARN missing",
 			},
 			{
 				fmt.Sprintf("--use-assume --external-id %s", exampleExternalID),
@@ -58,13 +62,13 @@ func TestConfigs(t *testing.T) {
 			},
 			{
 				fmt.Sprintf("--use-assume --role-arn %s", exampleARN),
-				false,
-				"external ID missing",
+				true,
+				"single-hop assume: external-id not required",
 			},
 			{
 				fmt.Sprintf("--use-assume --external-id 1 --role-arn %s", exampleARN),
-				false,
-				"externalID too short",
+				true,
+				"single-hop assume: short external-id ignored",
 			},
 			{
 
@@ -83,7 +87,35 @@ func TestConfigs(t *testing.T) {
 					exampleARN,
 				),
 				true,
-				"all",
+				"single-hop assume: all valid",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --role-arn %s --global-role-arn %s",
+					exampleARN,
+					exampleARN,
+				),
+				false,
+				"two-hop assume: external-id missing",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --external-id 1 --role-arn %s --global-role-arn %s",
+					exampleARN,
+					exampleARN,
+				),
+				false,
+				"two-hop assume: external-id too short",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --external-id %s --role-arn %s --global-role-arn %s",
+					exampleExternalID,
+					exampleARN,
+					exampleARN,
+				),
+				true,
+				"two-hop assume: all valid",
 			},
 			{
 				"--sync-secrets",
