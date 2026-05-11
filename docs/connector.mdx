@@ -134,19 +134,13 @@ This custom role acts as a bridge, allowing C1 to securely access your child acc
     *Skip* **Add permissions** and click **Next**.
     </Step>
     <Step>
-    Give the role a name, such as **ConductorOneIntegration**.
-        <Frame>
-        ![](/images/product/assets/AWS-3.png)
-        </Frame>
+    Give the role a name, such as **C1Integration**.
     </Step>
     <Step>
     Add any tags relevant to your organization and click **Create Role**.
     </Step>
     <Step>
     Find the newly created role, and click on it to view the role details page.
-        <Frame>
-        ![](/images/product/assets/AWS-5.png)
-        </Frame>
     </Step>
 </Steps>
 
@@ -229,20 +223,14 @@ Next, you will create an inline policy to define the specific data this role can
         Click **Review Policy**.
     </Step>
     <Step>
-        Give the policy a name, such as **ConductorOnePermissions** and click **Create Policy**.
-        <Frame>
-        ![](/images/product/assets/AWS-7.png)
-        </Frame>
+        Give the policy a name, such as **C1Permissions** and click **Create Policy**.
     </Step>
     <Step>
         Copy the **Role ARN** for the Role we created, it should look like: `arn:aws:iam::NNNNNNNNNN:role/ConductorOneIntegration`.
-        <Frame>
-        ![](/images/product/assets/AWS-8.png)
-        </Frame>
     </Step>
 </Steps>
 
-**That's it!** Next, move on to the connector configuration instructions.
+**Done.** Next, move on to the connector configuration instructions.
 </Tab>
 
 <Tab title="SSO setup">
@@ -326,19 +314,13 @@ The permissions policy below is broken into several sections to align with these
     *Skip* **Add permissions** and click **Next**.
     </Step>
     <Step>
-    Give the role a name, such as **ConductorOneIntegration**.
-        <Frame>
-        ![](/images/product/assets/AWS-3.png)
-        </Frame>
+    Give the role a name, such as **C1Integration**.
     </Step>
     <Step>
     Add any tags relevant to your organization and click **Create Role**.
     </Step>
     <Step>
     Find the newly created role, and click on it to view the role details page.
-        <Frame>
-        ![](/images/product/assets/AWS-5.png)
-        </Frame>
     </Step>
     <Step>
     Under **Permissions Policies**, click **Add Permissions** and select **Create Inline Policy**.
@@ -455,7 +437,7 @@ The permissions policy below is broken into several sections to align with these
 	}
 	```
 	**Notes about permissions:**
-	**Section 1: Read-only access (“ConductorOneReadAccess”)**
+	**Section 1: Read-only access (“C1ReadAccess”)**
 	This group of permissions is the minimum required for C1 to discover and sync your SSO users, groups, and permission sets. These are strictly read-only permissions.
 	- `iam:CreateUser`: This permission is required to provision IAM user accounts.
 	- `iam:List..., iam:GetGroup`: These are standard IAM permissions for listing users, groups, and roles. They are necessary to identify resources within your AWS account. iam:GetGroup provides the members of a group.
@@ -463,7 +445,7 @@ The permissions policy below is broken into several sections to align with these
 	- `organizations:ListAccounts`: This permission is required to list all the accounts within your AWS Organization, enabling C1 to understand your account structure.
 	- `sso:List..., sso:Describe...`: These permissions allow C1 to list your permission sets and see how they are assigned to accounts and users.
 	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for C1 to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
-	**Section 2: Provisioning access (“ConductorOneProvisionAccess”)**
+	**Section 2: Provisioning access (“C1ProvisionAccess”)**
 	This group of permissions is only required if you want to provision (create or delete) user assignments in AWS, including managing IAM users directly. For example, if you plan to use C1 to add a user to a group, assign a permission set to a user, create an IAM user, or fully delete an IAM user, you will need to include these permissions.
 	- `iam:AddUserToGroup, iam:RemoveUserFromGroup`: These permissions are used to manage IAM group memberships directly.
 	- `sso:CreateAccountAssignment, sso:DeleteAccountAssignment`: These are the core permissions for provisioning. They allow C1 to add or remove assignments of permission sets to users within your organization.
@@ -485,20 +467,14 @@ The permissions policy below is broken into several sections to align with these
     Click **Review Policy**.
     </Step>
     <Step>
-    Give the policy a name, such as **ConductorOnePermissions** and click **Create Policy**.
-    <Frame>
-    ![](/images/product/assets/AWS-7.png)
-    </Frame>
+    Give the policy a name, such as **C1Permissions** and click **Create Policy**.
     </Step>
     <Step>
     Copy the **Role ARN** for the Role we created, it should look like: `arn:aws:iam::NNNNNNNNNN:role/ConductorOneIntegration`.
-    <Frame>
-    ![](/images/product/assets/AWS-8.png)
-    </Frame>
     </Step>
 </Steps>
 
-**That’s it!** Next, move on to the connector configuration instructions.
+**Done.** Next, move on to the connector configuration instructions.
 </Tab>
 </Tabs>
 
@@ -546,7 +522,7 @@ The permissions policy below is broken into several sections to align with these
     </Step>
 </Steps>
 
-**That's it!** Your AWS connector is now pulling access data into C1.
+**Done.** Your AWS connector is now pulling access data into C1.
 </Tab>
 <Tab title="Self-hosted">
 **Follow these instructions to use the Amazon Web Services connector, hosted and run in your own environment.**
@@ -677,7 +653,7 @@ spec:
     </Step>
 </Steps>
 
-**That's it!** Your AWS connector is now pulling access data into C1.
+**Done.** Your AWS connector is now pulling access data into C1.
 </Tab>
 <Tab title="Terraform">
 ## Configure the AWS connector using Terraform
@@ -820,3 +796,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
 </Tabs>
 
 
+
+<Tip>
+If your users work from the command line, see [Use Cone with AWS SSO](/product/how-to/cone-aws-sso-integration) to request and retrieve AWS credentials directly from the AWS CLI.
+</Tip>
