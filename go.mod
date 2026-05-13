@@ -3,16 +3,17 @@ module github.com/conductorone/baton-aws
 go 1.25.2
 
 require (
-	github.com/aws/aws-sdk-go-v2 v1.41.1
+	github.com/aws/aws-sdk-go-v2 v1.41.7
 	github.com/aws/aws-sdk-go-v2/config v1.29.2
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.55
+	github.com/aws/aws-sdk-go-v2/service/accessanalyzer v1.47.2
 	github.com/aws/aws-sdk-go-v2/service/cloudtrail v1.55.5
 	github.com/aws/aws-sdk-go-v2/service/iam v1.35.0
 	github.com/aws/aws-sdk-go-v2/service/identitystore v1.36.1
 	github.com/aws/aws-sdk-go-v2/service/organizations v1.31.0
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.27.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.10
-	github.com/aws/smithy-go v1.24.0
+	github.com/aws/smithy-go v1.25.1
 	github.com/conductorone/baton-sdk v0.9.5
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
@@ -32,8 +33,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.6.10 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.25 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.17.55 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.17 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.17 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.4.23 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.7.23 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/ini v1.8.2 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.3.29 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.12.2 // indirect

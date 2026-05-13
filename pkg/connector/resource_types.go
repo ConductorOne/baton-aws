@@ -166,4 +166,16 @@ var (
 			),
 		),
 	}
+	resourceTypeAccessAnalyzerFinding = &v2.ResourceType{
+		Id:          "access-analyzer-finding",
+		DisplayName: "Access Analyzer Finding",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_SECURITY_INSIGHT},
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			capabilityPermissions(
+				"access-analyzer:ListAnalyzers",
+				"access-analyzer:ListFindings",
+			),
+		),
+	}
 )

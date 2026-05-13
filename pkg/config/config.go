@@ -116,6 +116,12 @@ var (
 		field.WithDefaultValue(false),
 		field.WithExportTarget(field.ExportTargetCLIOnly),
 	)
+	SyncAccessAnalyzer = field.BoolField(
+		"sync-access-analyzer",
+		field.WithDisplayName("Sync IAM Access Analyzer Findings"),
+		field.WithDescription("Enable syncing IAM Access Analyzer findings as security insights (requires access-analyzer:ListAnalyzers and access-analyzer:ListFindings permissions)"),
+		field.WithDefaultValue(false),
+	)
 )
 
 //go:generate go run ./gen
@@ -135,6 +141,7 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		SyncAccessAnalyzer,
 	},
 	field.WithConstraints(
 		field.FieldsDependentOn(

@@ -12,6 +12,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/accessanalyzer"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -55,6 +56,7 @@ type Config struct {
 	SyncSecrets             bool
 	IamAssumeRoleName       string
 	SyncSSOUserLastLogin    bool
+	SyncAccessAnalyzer      bool
 }
 
 type AWS struct {
@@ -79,16 +81,18 @@ type AWS struct {
 	_identityInstancesCacheErr error
 	_identityInstancesCache    []*awsSsoAdminTypes.InstanceMetadata
 
-	iamClient           *iam.Client
-	orgClient           *awsOrgs.Client
-	ssoAdminClient      *awsSsoAdmin.Client
-	identityStoreClient client.IdentityStoreClient
-	identityInstance    *awsSsoAdminTypes.InstanceMetadata
-	awsClientFactory    *AWSClientFactory
-	cloudTrailClient    *cloudtrail.Client
+	iamClient            *iam.Client
+	orgClient            *awsOrgs.Client
+	ssoAdminClient       *awsSsoAdmin.Client
+	identityStoreClient  client.IdentityStoreClient
+	identityInstance     *awsSsoAdminTypes.InstanceMetadata
+	awsClientFactory     *AWSClientFactory
+	cloudTrailClient     *cloudtrail.Client
+	accessAnalyzerClient *accessanalyzer.Client
 
 	syncSecrets          bool
 	syncSSOUserLastLogin bool
+	syncAccessAnalyzer   bool
 }
 
 func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
@@ -248,6 +252,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		SyncSecrets:             awsc.SyncSecrets,
 		IamAssumeRoleName:       awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
+		SyncAccessAnalyzer:      awsc.SyncAccessAnalyzer,
 	}
 
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
@@ -281,6 +286,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
 		syncSSOUserLastLogin:    config.SyncSSOUserLastLogin,
+		syncAccessAnalyzer:      config.SyncAccessAnalyzer,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -423,6 +429,11 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 		c.identityInstance = identityInstance
 	}
 
+	if c.syncAccessAnalyzer {
+		l.Debug("syncAccessAnalyzer enabled. creating accessAnalyzerClient")
+		c.accessAnalyzerClient = accessanalyzer.NewFromConfig(globalCallingConfig)
+	}
+
 	return nil
 }
 
@@ -453,6 +464,11 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		l.Debug("syncSecrets. creating secretBuilder")
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
+
+	if c.syncAccessAnalyzer {
+		l.Debug("syncAccessAnalyzer enabled. creating accessAnalyzerBuilder")
+		rs = append(rs, accessAnalyzerBuilder(c.accessAnalyzerClient))
+	}
 	return rs
 }
 
@@ -482,6 +498,7 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		accountBuilder(nil, "", nil, nil, "", nil),
 		accountIAMBuilder(nil, nil, nil),
 		secretBuilder(nil, nil),
+		accessAnalyzerBuilder(nil),
 	}
 }
 
