@@ -228,6 +228,17 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
+        "identitystore:CreateUser",
+        "identitystore:DeleteUser"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Enable account provisioning and deprovisioning of Identity Center (SSO) users.
+      // NOTE: Identity Store has no disable / deactivate operation; deprovisioning is a hard delete.
+      "Sid": "SSOUserAccountProvisioning"
+    },
+    {
+      "Action": [
         "sso:CreateAccountAssignment",
         "sso:DeleteAccountAssignment",
         "sso:DescribeAccountAssignmentCreationStatus",
