@@ -349,25 +349,55 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 
 	accountCreationSchema := &v2.ConnectorAccountCreationSchema{
 		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+			"user_name": {
+				DisplayName: "Username",
+				Required:    true,
+				Description: "The Identity Center user name (login).",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "jdoe@example.com",
+				Order:       1,
+			},
+			"given_name": {
+				DisplayName: "First Name",
+				Required:    true,
+				Description: "The user's given name.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "Jane",
+				Order:       2,
+			},
+			"family_name": {
+				DisplayName: "Last Name",
+				Required:    true,
+				Description: "The user's family name.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "Doe",
+				Order:       3,
+			},
 			"email": {
 				DisplayName: "Email",
 				Required:    true,
-				Description: "User's email address",
+				Description: "The user's primary work email.",
 				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
 					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
 				},
-				Placeholder: "user@example.com",
-				Order:       1,
+				Placeholder: "jdoe@example.com",
+				Order:       4,
 			},
-			"username": {
-				DisplayName: "Username",
+			"display_name": {
+				DisplayName: "Display Name",
 				Required:    false,
-				Description: "If set email is added as a tag",
+				Description: "Optional display name. Defaults to \"<given> <family>\" if empty.",
 				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
 					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
 				},
-				Placeholder: "user",
-				Order:       2,
+				Placeholder: "Jane Doe",
+				Order:       5,
 			},
 		},
 	}

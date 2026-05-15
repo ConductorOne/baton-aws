@@ -46,6 +46,8 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
+`baton-aws` also supports account provisioning and deprovisioning for AWS IAM Identity Center (SSO) users via the Identity Store API. See the "Syncing and Provisioning all supported objects" IAM policy below for the required permissions.
+
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
 # Contributing, Support and Issues

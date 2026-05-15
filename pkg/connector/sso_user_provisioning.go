@@ -74,9 +74,10 @@ func (o *ssoUserResourceType) CreateAccount(
 	if err != nil {
 		var conflict *awsIdentityStoreTypes.ConflictException
 		if errors.As(err, &conflict) {
-			return &v2.CreateAccountResponse_ActionRequiredResult{
-				Message: fmt.Sprintf("aws-connector: identity center user %q already exists", profile.UserName),
-			}, nil, nil, nil
+			return v2.CreateAccountResponse_ActionRequiredResult_builder{
+				Message:               fmt.Sprintf("aws-connector: identity center user %q already exists", profile.UserName),
+				IsCreateAccountResult: true,
+			}.Build(), nil, nil, nil
 		}
 		return nil, nil, nil, fmt.Errorf("aws-connector: create identity center user failed: %w", err)
 	}
@@ -101,9 +102,10 @@ func (o *ssoUserResourceType) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("aws-connector: build sso user resource: %w", err)
 	}
 
-	return &v2.CreateAccountResponse_SuccessResult{
-		Resource: userResource,
-	}, nil, nil, nil
+	return v2.CreateAccountResponse_SuccessResult_builder{
+		Resource:              userResource,
+		IsCreateAccountResult: true,
+	}.Build(), nil, nil, nil
 }
 
 func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
