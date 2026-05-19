@@ -361,8 +361,8 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 			},
 			"given_name": {
 				DisplayName: "First Name",
-				Required:    true,
-				Description: "The user's given name.",
+				Required:    false,
+				Description: "The user's given name. Required for Identity Center users.",
 				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
 					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
 				},
@@ -371,8 +371,8 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 			},
 			"family_name": {
 				DisplayName: "Last Name",
-				Required:    true,
-				Description: "The user's family name.",
+				Required:    false,
+				Description: "The user's family name. Required for Identity Center users.",
 				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
 					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
 				},
