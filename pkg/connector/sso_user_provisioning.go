@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	ssoUserProfileKeyUserName    = "user_name"
+	ssoUserProfileKeyUserName    = "username"
 	ssoUserProfileKeyGivenName   = "given_name"
 	ssoUserProfileKeyFamilyName  = "family_name"
 	ssoUserProfileKeyDisplayName = "display_name"

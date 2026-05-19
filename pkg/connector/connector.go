@@ -349,7 +349,7 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 
 	accountCreationSchema := &v2.ConnectorAccountCreationSchema{
 		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
-			"user_name": {
+			"username": {
 				DisplayName: "Username",
 				Required:    true,
 				Description: "The Identity Center user name (login).",

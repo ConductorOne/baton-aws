@@ -225,7 +225,7 @@ func (o *iamUserResourceType) CreateAccount(
 		return nil, nil, nil, fmt.Errorf("email is required")
 	}
 
-	username, ok := profile["user_name"].(string)
+	username, ok := profile["username"].(string)
 	if !ok || username == "" {
 		username = email
 	}
