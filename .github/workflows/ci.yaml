@@ -35,6 +35,8 @@ jobs:
           baton-principal: ${{ vars.BATON_SSO_PRINCIPAL}}
           baton-principal-type: 'sso_user'
       - name: Test IAM user provisioning and deprovisioning
+        env:
+          BATON_GLOBAL_AWS_SSO_ENABLED: 'false'
         uses: ConductorOne/github-workflows/actions/account-provisioning@v3
         with:
           connector: ./baton-aws
