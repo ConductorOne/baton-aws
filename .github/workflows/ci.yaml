@@ -42,6 +42,6 @@ jobs:
           connector: ./baton-aws
           account-email: 'testci-userci@test.com'
           account-display-name: 'test-user-ci'
-          account-profile: '{"username": "test-user-ci", "email": "testci-userci@test.com"}'
+          account-profile: '{"user_name": "test-user-ci", "email": "testci-userci@test.com"}'
           account-type: 'iam_user'
           search-method: 'display_name'
