@@ -147,7 +147,7 @@ func getSsoUserEmail(user awsIdentityStoreTypes.User) string {
 
 func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
 	profile := make(map[string]interface{})
-	profile["aws_user_type"] = "sso"
+	profile["aws_user_type"] = ssoType
 	profile["aws_user_name"] = awsSdk.ToString(user.DisplayName)
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 

@@ -74,8 +74,12 @@ func (o *ssoUserResourceType) CreateAccount(
 	if err != nil {
 		var conflict *awsIdentityStoreTypes.ConflictException
 		if errors.As(err, &conflict) {
-			return v2.CreateAccountResponse_ActionRequiredResult_builder{
-				Message:               fmt.Sprintf("aws-connector: identity center user %q already exists", profile.UserName),
+			existing, lookupErr := o.findSsoUserByUserName(ctx, identityStoreID, profile.UserName)
+			if lookupErr != nil {
+				return nil, nil, nil, fmt.Errorf("aws-connector: identity center user %q already exists but lookup failed: %w", profile.UserName, lookupErr)
+			}
+			return v2.CreateAccountResponse_AlreadyExistsResult_builder{
+				Resource:              existing,
 				IsCreateAccountResult: true,
 			}.Build(), nil, nil, nil
 		}
@@ -89,7 +93,7 @@ func (o *ssoUserResourceType) CreateAccount(
 		userARN,
 		[]resourceSdk.UserTraitOption{
 			resourceSdk.WithUserProfile(map[string]interface{}{
-				"aws_user_type": "sso",
+				"aws_user_type": ssoType,
 				"aws_user_name": profile.DisplayName,
 				"aws_user_id":   awsSdk.ToString(out.UserId),
 			}),
@@ -188,4 +192,45 @@ func requireStringProfileField(pMap map[string]interface{}, key string) (string,
 		return "", fmt.Errorf("aws-connector: %q must be a non-empty string", key)
 	}
 	return s, nil
+}
+
+func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identityStoreID, userName string) (*v2.Resource, error) {
+	out, err := o.identityStoreClient.ListUsers(ctx, &awsIdentityStore.ListUsersInput{
+		IdentityStoreId: awsSdk.String(identityStoreID),
+		Filters: []awsIdentityStoreTypes.Filter{{
+			AttributePath:  awsSdk.String("UserName"),
+			AttributeValue: awsSdk.String(userName),
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("aws-connector: list identity center users: %w", err)
+	}
+	if len(out.Users) == 0 {
+		return nil, fmt.Errorf("aws-connector: identity center user %q not found after ConflictException", userName)
+	}
+	existing := out.Users[0]
+	email := ""
+	for _, e := range existing.Emails {
+		if e.Primary {
+			email = awsSdk.ToString(e.Value)
+			break
+		}
+	}
+	displayName := awsSdk.ToString(existing.DisplayName)
+	userARN := ssoUserToARN(o.region, identityStoreID, awsSdk.ToString(existing.UserId))
+	return resourceSdk.NewUserResource(
+		awsSdk.ToString(existing.UserName),
+		resourceTypeSSOUser,
+		userARN,
+		[]resourceSdk.UserTraitOption{
+			resourceSdk.WithUserProfile(map[string]interface{}{
+				"aws_user_type": ssoType,
+				"aws_user_name": displayName,
+				"aws_user_id":   awsSdk.ToString(existing.UserId),
+			}),
+			resourceSdk.WithEmail(email, true),
+			resourceSdk.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
+		},
+		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
+	)
 }

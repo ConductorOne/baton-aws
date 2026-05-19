@@ -373,6 +373,8 @@ The permissions policy below is broken into several sections to align with these
 	        "sso:DeleteAccountAssignment",
 	        "identitystore:CreateGroupMembership",
 	        "identitystore:DeleteGroupMembership",
+	        "identitystore:CreateUser",
+	        "identitystore:DeleteUser",
 	        "sso:DescribeAccountAssignmentCreationStatus",
 	        "sso:DescribeAccountAssignmentDeletionStatus",
 	        "iam:DeleteLoginProfile",
@@ -450,6 +452,7 @@ The permissions policy below is broken into several sections to align with these
 	- `iam:AddUserToGroup, iam:RemoveUserFromGroup`: These permissions are used to manage IAM group memberships directly.
 	- `sso:CreateAccountAssignment, sso:DeleteAccountAssignment`: These are the core permissions for provisioning. They allow C1 to add or remove assignments of permission sets to users within your organization.
 	- `identitystore:CreateGroupMembership, identitystore:DeleteGroupMembership`: These permissions manage group membership for users and groups defined within the Identity Center.
+	- `identitystore:CreateUser, identitystore:DeleteUser`: Required to provision and deprovision Identity Center user accounts (separate from IAM users). Identity Store has no disable/deactivate operation, so deprovisioning is a hard delete.
 	- `iam:DeleteLoginProfile, iam:DeleteAccessKey, iam:DeleteUser, and other iam:Delete... and iam:Deactivate... actions`: These permissions are required to clean up all credentials and associated policies for an IAM user before the final `iam:DeleteUser` action can be successful. These are required for full user deprovisioning functionality.
 	- `iam:TagUser`: This permission is required to add tags to a newly created IAM user.
 	**Section 3: Access to SSO-provisioned roles (“AccessToSSOProvisionedRoles”)**
@@ -737,6 +740,8 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "sso:DeleteAccountAssignment",
             "identitystore:CreateGroupMembership",
             "identitystore:DeleteGroupMembership",
+            "identitystore:CreateUser",
+            "identitystore:DeleteUser",
             "sso:DescribeAccountAssignmentCreationStatus",
             "sso:DescribeAccountAssignmentDeletionStatus"
           ],
