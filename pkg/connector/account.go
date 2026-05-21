@@ -249,7 +249,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		annos.Update(&v2.V1Identifier{
 			Id: b.String(),
 		})
-		displayName := fmt.Sprintf("%s Permission Set", awsSdk.ToString(ps.Name))
+		displayName := fmt.Sprintf("%s - %s Permission Set", resource.DisplayName, awsSdk.ToString(ps.Name))
 		member := entitlementSdk.NewAssignmentEntitlement(resource, displayName,
 			entitlementSdk.WithGrantableTo(resourceTypeSSOUser, resourceTypeSSOGroup),
 		)
@@ -913,6 +913,7 @@ func accountProfile(_ context.Context, account types.Account) map[string]interfa
 	profile := make(map[string]interface{})
 	profile["aws_account_arn"] = awsSdk.ToString(account.Arn)
 	profile["aws_account_id"] = awsSdk.ToString(account.Id)
+	profile["aws_account_name"] = awsSdk.ToString(account.Name)
 
 	return profile
 }
