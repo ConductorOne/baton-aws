@@ -120,9 +120,9 @@ func (o *accountIAMResourceType) Entitlements(_ context.Context, resource *v2.Re
 
 func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	accountID := resource.Id.Resource
-	iamClient, err := o.getIAMClientForAccount(ctx, accountID)
-	if err != nil {
-		return nil, nil, err
+	iamClient := o.getIAMClientForAccount(ctx, accountID)
+	if iamClient == nil {
+		return nil, nil, nil
 	}
 
 	report := fetchCredentialReportBestEffort(ctx, iamClient)
@@ -151,17 +151,17 @@ func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resour
 	return rv, nil, nil
 }
 
-func (o *accountIAMResourceType) getIAMClientForAccount(ctx context.Context, accountID string) (*iam.Client, error) {
+func (o *accountIAMResourceType) getIAMClientForAccount(ctx context.Context, accountID string) *iam.Client {
 	if o.awsClientFactory != nil {
 		client, err := o.awsClientFactory.GetIAMClient(ctx, accountID)
 		if err != nil {
 			ctxzap.Extract(ctx).Warn("baton-aws: failed to get IAM client for account, falling back to default",
 				zap.String("account_id", accountID), zap.Error(err))
-			return o.iamClient, nil
+			return o.iamClient
 		}
-		return client, nil
+		return client
 	}
-	return o.iamClient, nil
+	return o.iamClient
 }
 
 func (o *accountIAMResourceType) parseAssumeRole(
