@@ -116,6 +116,18 @@ var (
 		field.WithDefaultValue(false),
 		field.WithExportTarget(field.ExportTargetCLIOnly),
 	)
+	GlobalAwsAccountProvisioningTargetField = field.SelectField(
+		"global-aws-account-provisioning-target",
+		[]string{"iam", "identity-center"},
+		field.WithDisplayName("Account Provisioning Target"),
+		field.WithDescription(
+			"Which AWS user type C1 should create when provisioning accounts. "+
+				"'iam' (default) creates IAM users; 'identity-center' creates AWS Identity Center (SSO) users. "+
+				"Only one path can be active at a time per connector instance.",
+		),
+		field.WithDefaultValue("iam"),
+		field.WithExportTarget(field.ExportTargetGUI),
+	)
 )
 
 //go:generate go run ./gen
@@ -135,6 +147,7 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		GlobalAwsAccountProvisioningTargetField,
 	},
 	field.WithConstraints(
 		field.FieldsDependentOn(

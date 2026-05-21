@@ -12,14 +12,16 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
-	ssoUserProfileKeyUserName    = "username"
-	ssoUserProfileKeyGivenName   = "given_name"
-	ssoUserProfileKeyFamilyName  = "family_name"
-	ssoUserProfileKeyDisplayName = "display_name"
-	ssoUserProfileKeyEmail       = "email"
+	profileKeyUserName    = "username"
+	profileKeyGivenName   = "given_name"
+	profileKeyFamilyName  = "family_name"
+	profileKeyDisplayName = "display_name"
+	profileKeyEmail       = "email"
 
 	ssoUserEmailTypeWork = "work"
 )
@@ -43,9 +45,15 @@ func (o *ssoUserResourceType) CreateAccount(
 	accountInfo *v2.AccountInfo,
 	_ *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
+	if o.aws != nil && !o.aws.ssoProvisioningActive() {
+		return nil, nil, nil, status.Error(
+			codes.Unimplemented,
+			"baton-aws: Identity Center user provisioning is disabled; set BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center",
+		)
+	}
 	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
 	if identityStoreID == "" {
-		return nil, nil, nil, fmt.Errorf("aws-connector: missing identity store id")
+		return nil, nil, nil, status.Error(codes.FailedPrecondition, "baton-aws: missing identity store id")
 	}
 
 	profile, err := getSsoUserCreateProfile(accountInfo)
@@ -76,14 +84,14 @@ func (o *ssoUserResourceType) CreateAccount(
 		if errors.As(err, &conflict) {
 			existing, lookupErr := o.findSsoUserByUserName(ctx, identityStoreID, profile.UserName)
 			if lookupErr != nil {
-				return nil, nil, nil, fmt.Errorf("aws-connector: identity center user %q already exists but lookup failed: %w", profile.UserName, lookupErr)
+				return nil, nil, nil, fmt.Errorf("baton-aws: identity center user %q already exists but lookup failed: %w", profile.UserName, lookupErr)
 			}
 			return v2.CreateAccountResponse_AlreadyExistsResult_builder{
 				Resource:              existing,
 				IsCreateAccountResult: true,
 			}.Build(), nil, nil, nil
 		}
-		return nil, nil, nil, fmt.Errorf("aws-connector: create identity center user failed: %w", err)
+		return nil, nil, nil, fmt.Errorf("baton-aws: create identity center user failed: %w", err)
 	}
 
 	userARN := ssoUserToARN(o.region, identityStoreID, awsSdk.ToString(out.UserId))
@@ -103,7 +111,7 @@ func (o *ssoUserResourceType) CreateAccount(
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
 	)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("aws-connector: build sso user resource: %w", err)
+		return nil, nil, nil, fmt.Errorf("baton-aws: build sso user resource: %w", err)
 	}
 
 	return v2.CreateAccountResponse_SuccessResult_builder{
@@ -113,14 +121,20 @@ func (o *ssoUserResourceType) CreateAccount(
 }
 
 func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+	if o.aws != nil && !o.aws.ssoProvisioningActive() {
+		return nil, status.Error(
+			codes.Unimplemented,
+			"baton-aws: Identity Center user deletion is disabled; set BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center",
+		)
+	}
 	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
 	if identityStoreID == "" {
-		return nil, fmt.Errorf("aws-connector: missing identity store id")
+		return nil, status.Error(codes.FailedPrecondition, "baton-aws: missing identity store id")
 	}
 
 	userID, err := ssoUserIdFromARN(resourceId.GetResource())
 	if err != nil {
-		return nil, fmt.Errorf("aws-connector: parse sso user arn: %w", err)
+		return nil, fmt.Errorf("baton-aws: parse sso user arn: %w", err)
 	}
 
 	_, err = o.identityStoreClient.DeleteUser(ctx, &awsIdentityStore.DeleteUserInput{
@@ -132,7 +146,7 @@ func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 		if errors.As(err, &notFound) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("aws-connector: delete identity center user failed: %w", err)
+		return nil, fmt.Errorf("baton-aws: delete identity center user failed: %w", err)
 	}
 	return nil, nil
 }
@@ -147,28 +161,28 @@ type ssoUserCreateProfile struct {
 
 func getSsoUserCreateProfile(accountInfo *v2.AccountInfo) (*ssoUserCreateProfile, error) {
 	if accountInfo == nil || accountInfo.Profile == nil {
-		return nil, fmt.Errorf("aws-connector: missing account profile")
+		return nil, fmt.Errorf("baton-aws: missing account profile")
 	}
 	pMap := accountInfo.Profile.AsMap()
 
-	userName, err := requireStringProfileField(pMap, ssoUserProfileKeyUserName)
+	userName, err := requireStringProfileField(pMap, profileKeyUserName)
 	if err != nil {
 		return nil, err
 	}
-	givenName, err := requireStringProfileField(pMap, ssoUserProfileKeyGivenName)
+	givenName, err := requireStringProfileField(pMap, profileKeyGivenName)
 	if err != nil {
 		return nil, err
 	}
-	familyName, err := requireStringProfileField(pMap, ssoUserProfileKeyFamilyName)
+	familyName, err := requireStringProfileField(pMap, profileKeyFamilyName)
 	if err != nil {
 		return nil, err
 	}
-	email, err := requireStringProfileField(pMap, ssoUserProfileKeyEmail)
+	email, err := requireStringProfileField(pMap, profileKeyEmail)
 	if err != nil {
 		return nil, err
 	}
 
-	displayName, _ := pMap[ssoUserProfileKeyDisplayName].(string)
+	displayName, _ := pMap[profileKeyDisplayName].(string)
 	if displayName == "" {
 		displayName = givenName + " " + familyName
 	}
@@ -185,11 +199,11 @@ func getSsoUserCreateProfile(accountInfo *v2.AccountInfo) (*ssoUserCreateProfile
 func requireStringProfileField(pMap map[string]interface{}, key string) (string, error) {
 	raw, ok := pMap[key]
 	if !ok {
-		return "", fmt.Errorf("aws-connector: missing %q in account profile", key)
+		return "", fmt.Errorf("baton-aws: missing %q in account profile", key)
 	}
 	s, ok := raw.(string)
 	if !ok || s == "" {
-		return "", fmt.Errorf("aws-connector: %q must be a non-empty string", key)
+		return "", fmt.Errorf("baton-aws: %q must be a non-empty string", key)
 	}
 	return s, nil
 }
@@ -203,10 +217,10 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 		}},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("aws-connector: list identity center users: %w", err)
+		return nil, fmt.Errorf("baton-aws: list identity center users: %w", err)
 	}
 	if len(out.Users) == 0 {
-		return nil, fmt.Errorf("aws-connector: identity center user %q not found after ConflictException", userName)
+		return nil, fmt.Errorf("baton-aws: identity center user %q not found after ConflictException", userName)
 	}
 	existing := out.Users[0]
 	email := ""

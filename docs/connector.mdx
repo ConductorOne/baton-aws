@@ -602,6 +602,12 @@ stringData:
   BATON_GLOBAL_AWS_SSO_ENABLED: true
   BATON_GLOBAL_AWS_SSO_REGION: <Region for SSO identities (default is "us-east-1")>
 
+  # Optional: Choose which AWS user type C1 should create when provisioning accounts.
+  # "iam" (default) creates IAM users. "identity-center" creates AWS Identity Center
+  # (SSO) users via the Identity Store API. Only one path is active at a time per
+  # connector instance, so a single instance cannot provision both IAM and SSO users.
+  BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET: identity-center
+
   # Optional: Include to enable C1 to sync the statuses of SSO accounts
   BATON_SCIM_ENABLED: true
   BATON_SCIM_ENDPOINT: <SCIM endpoint>
@@ -609,6 +615,8 @@ stringData:
 ```
 
 If support for AWS Organizations is enabled, the IAM Role must be created in the management (formerly called master) account of the AWS Organization. If the IAM Role is created on a member account and support for AWS Organizations is enabled, the integration will return a 400 error.
+
+The `identitystore:CreateUser` and `identitystore:DeleteUser` actions in the SSO policy below are only exercised when `BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center`. They are listed in the policy regardless so an operator who later switches the target does not need to re-grant the role.
 
 See the connector's README or run `--help` to see all available configuration flags and environment variables.
 

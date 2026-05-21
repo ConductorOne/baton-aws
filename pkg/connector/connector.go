@@ -55,7 +55,14 @@ type Config struct {
 	SyncSecrets             bool
 	IamAssumeRoleName       string
 	SyncSSOUserLastLogin    bool
+
+	AccountProvisioningTarget string
 }
+
+const (
+	accountProvisioningTargetIAM            = "iam"
+	accountProvisioningTargetIdentityCenter = "identity-center"
+)
 
 type AWS struct {
 	useAssumeRole           bool
@@ -89,6 +96,16 @@ type AWS struct {
 
 	syncSecrets          bool
 	syncSSOUserLastLogin bool
+
+	accountProvisioningTarget string
+}
+
+func (o *AWS) iamProvisioningActive() bool {
+	return o.accountProvisioningTarget == accountProvisioningTargetIAM
+}
+
+func (o *AWS) ssoProvisioningActive() bool {
+	return o.accountProvisioningTarget == accountProvisioningTargetIdentityCenter
 }
 
 func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
@@ -248,6 +265,11 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		SyncSecrets:             awsc.SyncSecrets,
 		IamAssumeRoleName:       awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
+
+		AccountProvisioningTarget: awsc.GlobalAwsAccountProvisioningTarget,
+	}
+	if config.AccountProvisioningTarget == "" {
+		config.AccountProvisioningTarget = accountProvisioningTargetIAM
 	}
 
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
@@ -281,12 +303,18 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
 		syncSSOUserLastLogin:    config.SyncSSOUserLastLogin,
+
+		accountProvisioningTarget: config.AccountProvisioningTarget,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
 		return nil, nil, fmt.Errorf("baton-aws: SSO Support requires Org support to also be enabled. Please enable both")
+	}
+
+	if rv.ssoProvisioningActive() && !rv.ssoEnabled {
+		return nil, nil, fmt.Errorf("baton-aws: BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center requires BATON_GLOBAL_AWS_SSO_ENABLED=true")
 	}
 
 	err = rv.SetupClients(ctx)
@@ -347,66 +375,11 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		return nil, err
 	}
 
-	accountCreationSchema := &v2.ConnectorAccountCreationSchema{
-		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
-			"username": {
-				DisplayName: "Username",
-				Required:    true,
-				Description: "The Identity Center user name (login).",
-				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
-					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
-				},
-				Placeholder: "jdoe@example.com",
-				Order:       1,
-			},
-			"given_name": {
-				DisplayName: "First Name",
-				Required:    false,
-				Description: "The user's given name. Required for Identity Center users.",
-				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
-					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
-				},
-				Placeholder: "Jane",
-				Order:       2,
-			},
-			"family_name": {
-				DisplayName: "Last Name",
-				Required:    false,
-				Description: "The user's family name. Required for Identity Center users.",
-				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
-					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
-				},
-				Placeholder: "Doe",
-				Order:       3,
-			},
-			"email": {
-				DisplayName: "Email",
-				Required:    true,
-				Description: "The user's primary work email.",
-				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
-					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
-				},
-				Placeholder: "jdoe@example.com",
-				Order:       4,
-			},
-			"display_name": {
-				DisplayName: "Display Name",
-				Required:    false,
-				Description: "Optional display name. Defaults to \"<given> <family>\" if empty.",
-				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
-					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
-				},
-				Placeholder: "Jane Doe",
-				Order:       5,
-			},
-		},
-	}
-
 	return &v2.ConnectorMetadata{
 		DisplayName:           displayName,
 		Profile:               profile,
 		Annotations:           annos,
-		AccountCreationSchema: accountCreationSchema,
+		AccountCreationSchema: c.accountCreationSchema(),
 	}, nil
 }
 
@@ -459,14 +432,14 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(c.iamClient, c.awsClientFactory),
+		iamUserBuilder(c.iamClient, c.awsClientFactory, c),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 	}
 
 	if c.ssoEnabled {
 		l.Debug("ssoEnabled. creating ssoUserBuilder and ssoGroupBuilder")
-		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
+		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c))
 		rs = append(rs, ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
 	}
 
@@ -504,10 +477,10 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(nil, nil),
+		iamUserBuilder(nil, nil, nil),
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
-		ssoUserBuilder("", nil, nil, nil),
+		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil),
 		accountIAMBuilder(nil, nil, nil),
@@ -603,4 +576,97 @@ func GetAwsConfigOptionsForAssumeRole(output *sts.AssumeRoleOutput, httpClient *
 	}
 
 	return opts
+}
+
+func (o *AWS) accountCreationSchema() *v2.ConnectorAccountCreationSchema {
+	if o.ssoProvisioningActive() {
+		return ssoAccountCreationSchema()
+	}
+	return iamAccountCreationSchema()
+}
+
+const accountCreationEmailPlaceholder = "jdoe@example.com"
+
+func iamAccountCreationSchema() *v2.ConnectorAccountCreationSchema {
+	return &v2.ConnectorAccountCreationSchema{
+		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+			profileKeyUserName: {
+				DisplayName: "Username",
+				Required:    false,
+				Description: "The IAM user name. Defaults to email if omitted.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "jdoe",
+				Order:       1,
+			},
+			profileKeyEmail: {
+				DisplayName: "Email",
+				Required:    true,
+				Description: "The user's primary work email.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: accountCreationEmailPlaceholder,
+				Order:       2,
+			},
+		},
+	}
+}
+
+func ssoAccountCreationSchema() *v2.ConnectorAccountCreationSchema {
+	return &v2.ConnectorAccountCreationSchema{
+		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
+			profileKeyUserName: {
+				DisplayName: "Username",
+				Required:    true,
+				Description: "The Identity Center user name (login).",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: accountCreationEmailPlaceholder,
+				Order:       1,
+			},
+			profileKeyGivenName: {
+				DisplayName: "First Name",
+				Required:    true,
+				Description: "The user's given name.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "Jane",
+				Order:       2,
+			},
+			profileKeyFamilyName: {
+				DisplayName: "Last Name",
+				Required:    true,
+				Description: "The user's family name.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "Doe",
+				Order:       3,
+			},
+			profileKeyEmail: {
+				DisplayName: "Email",
+				Required:    true,
+				Description: "The user's primary work email.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: accountCreationEmailPlaceholder,
+				Order:       4,
+			},
+			profileKeyDisplayName: {
+				DisplayName: "Display Name",
+				Required:    false,
+				Description: "Optional display name. Defaults to \"<given> <family>\" if empty.",
+				Field: &v2.ConnectorAccountCreationSchema_Field_StringField{
+					StringField: &v2.ConnectorAccountCreationSchema_StringField{},
+				},
+				Placeholder: "Jane Doe",
+				Order:       5,
+			},
+		},
+	}
 }

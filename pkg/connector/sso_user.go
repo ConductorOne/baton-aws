@@ -22,6 +22,7 @@ type ssoUserResourceType struct {
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	region              string
+	aws                 *AWS
 }
 
 func (o *ssoUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -126,6 +127,7 @@ func ssoUserBuilder(
 	ssoClient *awsSsoAdmin.Client,
 	identityStoreClient client.IdentityStoreClient,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+	aws *AWS,
 ) *ssoUserResourceType {
 	return &ssoUserResourceType{
 		resourceType:        resourceTypeSSOUser,
@@ -133,6 +135,7 @@ func ssoUserBuilder(
 		identityInstance:    identityInstance,
 		identityStoreClient: identityStoreClient,
 		ssoClient:           ssoClient,
+		aws:                 aws,
 	}
 }
 
