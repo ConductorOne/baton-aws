@@ -133,7 +133,7 @@ func parseCredentialReportCSV(content []byte) (map[string]*credentialReportEntry
 	result := make(map[string]*credentialReportEntry)
 	for {
 		record, err := reader.Read()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {
