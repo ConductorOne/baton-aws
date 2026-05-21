@@ -5,11 +5,15 @@ import (
 	"fmt"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -22,6 +26,7 @@ type accountIAMResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        *awsOrgs.Client
 	awsClientFactory *AWSClientFactory
+	iamClient        *iam.Client
 	aws              *AWS
 }
 
@@ -99,12 +104,64 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 	return rv, nil, nil
 }
 
-func (o *accountIAMResourceType) Entitlements(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
-	return nil, nil, nil
+func (o *accountIAMResourceType) Entitlements(_ context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
+	var annos annotations.Annotations
+	annos.Update(&v2.V1Identifier{
+		Id: V1MembershipEntitlementID(resource.Id),
+	})
+	ent := entitlementSdk.NewAssignmentEntitlement(resource, consoleAccessEntitlement,
+		entitlementSdk.WithGrantableTo(resourceTypeIAMUser),
+	)
+	ent.Description = fmt.Sprintf("AWS Management Console access for account %s", resource.DisplayName)
+	ent.DisplayName = fmt.Sprintf("%s Console Access", resource.DisplayName)
+	ent.Annotations = annos
+	return []*v2.Entitlement{ent}, nil, nil
 }
 
-func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
-	return nil, nil, nil
+func (o *accountIAMResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	accountID := resource.Id.Resource
+	iamClient, err := o.getIAMClientForAccount(ctx, accountID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	report := fetchCredentialReportBestEffort(ctx, iamClient)
+	if report == nil {
+		return nil, nil, nil
+	}
+
+	var rv []*v2.Grant
+	for username, entry := range report {
+		if !entry.IsPasswordEnabled() {
+			continue
+		}
+		userARN := fmt.Sprintf("arn:aws:iam::%s:user/%s", accountID, username)
+		uID, err := resourceSdk.NewResourceID(resourceTypeIAMUser, userARN)
+		if err != nil {
+			return nil, nil, err
+		}
+		grant := grantSdk.NewGrant(resource, consoleAccessEntitlement, uID,
+			grantSdk.WithAnnotation(&v2.V1Identifier{
+				Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
+			}),
+		)
+		rv = append(rv, grant)
+	}
+
+	return rv, nil, nil
+}
+
+func (o *accountIAMResourceType) getIAMClientForAccount(ctx context.Context, accountID string) (*iam.Client, error) {
+	if o.awsClientFactory != nil {
+		client, err := o.awsClientFactory.GetIAMClient(ctx, accountID)
+		if err != nil {
+			ctxzap.Extract(ctx).Warn("baton-aws: failed to get IAM client for account, falling back to default",
+				zap.String("account_id", accountID), zap.Error(err))
+			return o.iamClient, nil
+		}
+		return client, nil
+	}
+	return o.iamClient, nil
 }
 
 func (o *accountIAMResourceType) parseAssumeRole(
@@ -139,12 +196,14 @@ func (o *accountIAMResourceType) parseAssumeRole(
 func accountIAMBuilder(
 	orgClient *awsOrgs.Client,
 	awsClientFactory *AWSClientFactory,
+	iamClient *iam.Client,
 	aws *AWS,
 ) *accountIAMResourceType {
 	return &accountIAMResourceType{
 		resourceType:     resourceTypeAccountIam,
 		orgClient:        orgClient,
 		awsClientFactory: awsClientFactory,
+		iamClient:        iamClient,
 		aws:              aws,
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
@@ -25,6 +26,7 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	"github.com/conductorone/baton-sdk/pkg/session"
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
+	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 )
@@ -83,6 +85,8 @@ type grantsPageState struct {
 	PermissionSetIndex int `json:"psi"`
 	// AssignmentPageToken is the AWS pagination token for ListAccountAssignments
 	AssignmentPageToken string `json:"apt,omitempty"`
+	// ConsoleAccessDone indicates the console_access grants have been emitted
+	ConsoleAccessDone bool `json:"cad,omitempty"`
 }
 
 func encodePageToken[T any](state T) (string, error) {
@@ -119,6 +123,8 @@ func permissionSetIDsCacheKey(accountID string) string {
 type entitlementsPageState struct {
 	// PermissionSetIndex is the index into the cached permission set IDs list
 	PermissionSetIndex int `json:"psi"`
+	// ConsoleAccessDone indicates the console_access entitlement has been emitted
+	ConsoleAccessDone bool `json:"cad,omitempty"`
 }
 
 type accountResourceType struct {
@@ -129,6 +135,8 @@ type accountResourceType struct {
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 	identityClient   client.IdentityStoreClient
 	region           string
+	iamClient        *iam.Client
+	awsClientFactory *AWSClientFactory
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -216,14 +224,30 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 		return nil, nil, err
 	}
 
-	// If no permission sets, we're done
+	// Emit console_access entitlement on the first page before processing permission sets
+	var consoleAccessEntitlements []*v2.Entitlement
+	if !pageState.ConsoleAccessDone {
+		var caAnnotations annotations.Annotations
+		caAnnotations.Update(&v2.V1Identifier{
+			Id: V1MembershipEntitlementID(resource.Id),
+		})
+		caEnt := entitlementSdk.NewAssignmentEntitlement(resource, consoleAccessEntitlement,
+			entitlementSdk.WithGrantableTo(resourceTypeIAMUser),
+		)
+		caEnt.Description = fmt.Sprintf("AWS Management Console access for account %s", resource.DisplayName)
+		caEnt.DisplayName = fmt.Sprintf("%s Console Access", resource.DisplayName)
+		caEnt.Annotations = caAnnotations
+		consoleAccessEntitlements = append(consoleAccessEntitlements, caEnt)
+	}
+
+	// If no permission sets, return console access entitlement only
 	if len(permissionSetIDs) == 0 {
-		return nil, nil, nil
+		return consoleAccessEntitlements, nil, nil
 	}
 
 	// If we've processed all permission sets, we're done
 	if pageState.PermissionSetIndex >= len(permissionSetIDs) {
-		return nil, nil, nil
+		return consoleAccessEntitlements, nil, nil
 	}
 
 	// Step 2: Calculate the end of the current batch.
@@ -233,7 +257,8 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 	}
 
 	// Step 3: Build entitlements for each permission set in the batch.
-	entitlements := make([]*v2.Entitlement, 0, batchEnd-pageState.PermissionSetIndex)
+	entitlements := make([]*v2.Entitlement, 0, len(consoleAccessEntitlements)+batchEnd-pageState.PermissionSetIndex)
+	entitlements = append(entitlements, consoleAccessEntitlements...)
 	for i := pageState.PermissionSetIndex; i < batchEnd; i++ {
 		ps, err := o.getPermissionSetWithCache(ctx, opts.Session, permissionSetIDs[i])
 		if err != nil {
@@ -265,6 +290,7 @@ func (o *accountResourceType) Entitlements(ctx context.Context, resource *v2.Res
 	if batchEnd < len(permissionSetIDs) {
 		nextState := entitlementsPageState{
 			PermissionSetIndex: batchEnd,
+			ConsoleAccessDone:  true,
 		}
 		nextPageToken, err = encodePageToken(nextState)
 		if err != nil {
@@ -287,20 +313,23 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		return nil, nil, fmt.Errorf("baton-aws: failed to decode page token: %w", err)
 	}
 
+	// If we've finished permission sets but haven't done console access yet,
+	// emit console access grants.
+	if pageState.ConsoleAccessDone {
+		return nil, nil, nil
+	}
+
 	// Step 1: Get or fetch permission set IDs for this account (cached per-account)
 	permissionSetIDs, err := o.getOrFetchPermissionSetIDs(ctx, opts.Session, resource.Id.Resource)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	// If no permission sets, we're done
-	if len(permissionSetIDs) == 0 {
-		return nil, nil, nil
-	}
-
-	// If we've processed all permission sets, we're done
-	if pageState.PermissionSetIndex >= len(permissionSetIDs) {
-		return nil, nil, nil
+	// Check if we're past all permission sets — time to emit console access grants
+	permissionSetsDone := len(permissionSetIDs) == 0 || pageState.PermissionSetIndex >= len(permissionSetIDs)
+	if permissionSetsDone {
+		grants := o.fetchConsoleAccessGrants(ctx, resource)
+		return grants, nil, nil
 	}
 
 	// Step 2: Get the current permission set to process
@@ -362,13 +391,67 @@ func (o *accountResourceType) Grants(ctx context.Context, resource *v2.Resource,
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
 		}
+	} else {
+		// All permission sets done — next call will emit console access grants
+		nextState := grantsPageState{
+			PermissionSetIndex: len(permissionSetIDs),
+			ConsoleAccessDone:  false,
+		}
+		nextPageToken, err = encodePageToken(nextState)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
+		}
 	}
-	// else: nextPageToken remains empty, signaling completion
 
 	if nextPageToken != "" {
 		return grants, &resourceSdk.SyncOpResults{NextPageToken: nextPageToken}, nil
 	}
 	return grants, nil, nil
+}
+
+func (o *accountResourceType) getIAMClientForAccount(ctx context.Context, accountID string) *iam.Client {
+	if o.awsClientFactory != nil {
+		client, err := o.awsClientFactory.GetIAMClient(ctx, accountID)
+		if err != nil {
+			ctxzap.Extract(ctx).Warn("baton-aws: failed to get IAM client for account, falling back to default",
+				zap.String("account_id", accountID), zap.Error(err))
+			return o.iamClient
+		}
+		return client
+	}
+	return o.iamClient
+}
+
+func (o *accountResourceType) fetchConsoleAccessGrants(ctx context.Context, resource *v2.Resource) []*v2.Grant {
+	accountID := resource.Id.Resource
+	iamClient := o.getIAMClientForAccount(ctx, accountID)
+	if iamClient == nil {
+		return nil
+	}
+
+	report := fetchCredentialReportBestEffort(ctx, iamClient)
+	if report == nil {
+		return nil
+	}
+
+	var rv []*v2.Grant
+	for username, entry := range report {
+		if !entry.IsPasswordEnabled() {
+			continue
+		}
+		userARN := fmt.Sprintf("arn:aws:iam::%s:user/%s", accountID, username)
+		uID, err := resourceSdk.NewResourceID(resourceTypeIAMUser, userARN)
+		if err != nil {
+			continue
+		}
+		grant := grantSdk.NewGrant(resource, consoleAccessEntitlement, uID,
+			grantSdk.WithAnnotation(&v2.V1Identifier{
+				Id: V1GrantID(V1MembershipEntitlementID(resource.Id), userARN),
+			}),
+		)
+		rv = append(rv, grant)
+	}
+	return rv
 }
 
 // getOrFetchPermissionSetIDs retrieves permission set IDs for an account, using cache if available.
@@ -877,6 +960,8 @@ func accountBuilder(
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
 	identityClient client.IdentityStoreClient,
+	iamClient *iam.Client,
+	awsClientFactory *AWSClientFactory,
 ) *accountResourceType {
 	return &accountResourceType{
 		resourceType:     resourceTypeAccount,
@@ -886,6 +971,8 @@ func accountBuilder(
 		identityClient:   identityClient,
 		identityInstance: identityInstance,
 		region:           region,
+		iamClient:        iamClient,
+		awsClientFactory: awsClientFactory,
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -23,6 +24,9 @@ type iamUserResourceType struct {
 	resourceType     *v2.ResourceType
 	iamClient        *iam.Client
 	awsClientFactory *AWSClientFactory
+
+	credReportMu    sync.Mutex
+	credReportCache map[string]map[string]*credentialReportEntry
 }
 
 var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
@@ -57,6 +61,8 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		}
 	}
 
+	credReport := o.getCredentialReport(ctx, parentId, iamClient)
+
 	resp, err := iamClient.ListUsers(ctx, listUsersInput)
 	if err != nil {
 		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListUsers failed: %w", err))
@@ -67,7 +73,7 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(user.Arn),
 		}
-		profile := iamUserProfile(ctx, user)
+		profile := iamUserProfile(ctx, user, credReport)
 		lastLogin := getLastLogin(ctx, iamClient, user)
 		options := []resourceSdk.UserTraitOption{
 			resourceSdk.WithUserProfile(profile),
@@ -123,6 +129,27 @@ func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *
 	}
 }
 
+func (o *iamUserResourceType) getCredentialReport(ctx context.Context, parentId *v2.ResourceId, iamClient *iam.Client) map[string]*credentialReportEntry {
+	cacheKey := "_default"
+	if parentId != nil {
+		cacheKey = parentId.Resource
+	}
+
+	o.credReportMu.Lock()
+	defer o.credReportMu.Unlock()
+
+	if o.credReportCache == nil {
+		o.credReportCache = make(map[string]map[string]*credentialReportEntry)
+	}
+	if report, ok := o.credReportCache[cacheKey]; ok {
+		return report
+	}
+
+	report := fetchCredentialReportBestEffort(ctx, iamClient)
+	o.credReportCache[cacheKey] = report
+	return report
+}
+
 func userTagsToMap(u iamTypes.User) map[string]interface{} {
 	rv := make(map[string]interface{})
 	for _, tag := range u.Tags {
@@ -131,13 +158,26 @@ func userTagsToMap(u iamTypes.User) map[string]interface{} {
 	return rv
 }
 
-func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interface{} {
+func iamUserProfile(ctx context.Context, user iamTypes.User, credReport map[string]*credentialReportEntry) map[string]interface{} {
 	profile := make(map[string]interface{})
 	profile["aws_arn"] = awsSdk.ToString(user.Arn)
 	profile["aws_path"] = awsSdk.ToString(user.Path)
 	profile["aws_user_type"] = iamType
 	profile["aws_tags"] = userTagsToMap(user)
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
+
+	if credReport != nil {
+		username := awsSdk.ToString(user.UserName)
+		if entry, ok := credReport[username]; ok {
+			profile["console_access_enabled"] = entry.IsPasswordEnabled()
+			if t := entry.ParsePasswordLastUsed(); t != nil {
+				profile["console_password_last_used"] = t.Format(time.RFC3339)
+			}
+			if t := entry.ParsePasswordLastChanged(); t != nil {
+				profile["console_password_last_changed"] = t.Format(time.RFC3339)
+			}
+		}
+	}
 
 	return profile
 }
