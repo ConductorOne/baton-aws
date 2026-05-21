@@ -94,6 +94,7 @@ Flags:
       --skip-full-sync                                   This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
       --sync-secrets                                     Whether to sync secrets or not ($BATON_SYNC_SECRETS)
+      --sync-sso-user-last-login                         Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission) ($BATON_SYNC_SSO_USER_LAST_LOGIN)
       --ticketing                                        This must be set to enable ticketing support ($BATON_TICKETING)
       --use-assume                                       Enable support for assume role ($BATON_USE_ASSUME)
   -v, --version                                          version for baton-aws
