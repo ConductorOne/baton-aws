@@ -114,7 +114,6 @@ var (
 		field.WithDisplayName("Sync SSO User Last Login"),
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
-		field.WithExportTarget(field.ExportTargetCLIOnly),
 	)
 	GlobalAwsAccountProvisioningTargetField = field.SelectField(
 		"global-aws-account-provisioning-target",
