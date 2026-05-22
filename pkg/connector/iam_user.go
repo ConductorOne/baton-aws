@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
@@ -23,6 +25,9 @@ type iamUserResourceType struct {
 	resourceType     *v2.ResourceType
 	iamClient        *iam.Client
 	awsClientFactory *AWSClientFactory
+	orgClient        *awsOrgs.Client
+	accountNameMu    sync.Mutex
+	accountNameCache map[string]string
 }
 
 var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
@@ -68,6 +73,12 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
+		if parentId != nil {
+			profile["aws_account_id"] = parentId.Resource
+			if accountName := o.getAccountName(ctx, parentId.Resource); accountName != "" {
+				profile["aws_account_name"] = accountName
+			}
+		}
 		lastLogin := getLastLogin(ctx, iamClient, user)
 		options := []resourceSdk.UserTraitOption{
 			resourceSdk.WithUserProfile(profile),
@@ -115,12 +126,41 @@ func (o *iamUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ resour
 	return nil, nil, nil
 }
 
-func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamUserResourceType {
+func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, orgClient *awsOrgs.Client) *iamUserResourceType {
 	return &iamUserResourceType{
 		resourceType:     resourceTypeIAMUser,
 		iamClient:        iamClient,
 		awsClientFactory: awsClientFactory,
+		orgClient:        orgClient,
+		accountNameCache: make(map[string]string),
 	}
+}
+
+func (o *iamUserResourceType) getAccountName(ctx context.Context, accountID string) string {
+	if o.orgClient == nil {
+		return ""
+	}
+
+	o.accountNameMu.Lock()
+	if name, ok := o.accountNameCache[accountID]; ok {
+		o.accountNameMu.Unlock()
+		return name
+	}
+	o.accountNameMu.Unlock()
+
+	resp, err := o.orgClient.DescribeAccount(ctx, &awsOrgs.DescribeAccountInput{
+		AccountId: awsSdk.String(accountID),
+	})
+	if err != nil || resp.Account == nil {
+		return ""
+	}
+
+	name := awsSdk.ToString(resp.Account.Name)
+	o.accountNameMu.Lock()
+	o.accountNameCache[accountID] = name
+	o.accountNameMu.Unlock()
+
+	return name
 }
 
 func userTagsToMap(u iamTypes.User) map[string]interface{} {

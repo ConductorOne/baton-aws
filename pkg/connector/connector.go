@@ -429,7 +429,7 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(c.iamClient, c.awsClientFactory),
+		iamUserBuilder(c.iamClient, c.awsClientFactory, c.orgClient),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 	}
@@ -474,7 +474,7 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(nil, nil),
+		iamUserBuilder(nil, nil, nil),
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
 		ssoUserBuilder("", nil, nil, nil),
