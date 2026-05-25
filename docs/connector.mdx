@@ -50,7 +50,7 @@ Follow the relevant set of instructions below to set up the AWS connector for IA
 
 To sync IAM data (like users, roles, and groups) from multiple AWS child accounts, C1 uses a secure, read-only mechanism called **cross-account access**. This setup works by allowing a central role in your root account to temporarily assume a specific role in each child account. This method ensures that the connector can gather the necessary data without storing credentials or requiring permanent access.
 
-If you're using this setup, make sure to click **Enable support for AWS Organizations** when setting up the connector in the C1 web UI, and DO NOT click **Enable support for AWS IAM Identity Center** or **Enable usage of the AWS IAM Identity Center SCIM API**.
+If you're using this setup, make sure to click **Enable support for AWS Organizations** when setting up the connector in the C1 web UI. You may also enable **Enable support for AWS IAM Identity Center** at the same time, in which case a single connector instance will sync IAM users, roles, and groups from every child account alongside Identity Center users, groups, permission sets, and account assignments.
 
 **In order to use the connector to gather IAM AWS data, you'll need to configure each sub-account to have a role with a trust policy.** There are two options here:
 
@@ -458,7 +458,7 @@ The permissions policy below is broken into several sections to align with these
 	**Section 4: Other permissions**
 	These are supporting permissions that enable specific features or functionality. Some of the permissions listed here can be omitted if your particular use case doesn’t require the data they pull in to C1.
 	- `IAMListPermissions`: This section allows C1 to sync data on access keys. C1 does not store or access the access keys. If you do not want to sync access key data, you can omit this section.
-	- `sts:AssumeRole`: **This permission is only needed for requesting child accounts when Identity Center is not configured, and can be omitted otherwise.** This permission allows C1 to assume the `OrganizationAccountAccessRole` in your child accounts, which allows C1 to discover and sync resources across your AWS Organization.
+	- `sts:AssumeRole`: **This permission is required whenever AWS Organizations support is enabled, regardless of whether Identity Center is also enabled.** It lets C1 assume the `OrganizationAccountAccessRole` in your child accounts so it can discover and sync resources across your AWS Organization. It can only be omitted if AWS Organizations support is disabled.
 	- `iam:GetSAMLProvider`: This is a necessary permission to read the configuration of the SAML provider that AWS SSO uses for single sign-on.
 	- The permissions listed in the `"Sid": "IAMListPermissions"` and `"Sid": "AccessToSSOProvisiondRoles"` sections are required only if you want to use C1 to create assignments in the AWS Organization’s management account. In certain cases, you may also need to add `iam:UpdateSAMLProvider` to these sections.
 	- The `iam:GetAccessKeyLastUsed` permission is only needed if you want C1 to sync access key secret data.
@@ -778,7 +778,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
           ],
           "Resource" : "arn:aws:iam::*:saml-provider/AWSSSO_*_DO_NOT_DELETE"
         },
-        # OPTIONAL: This statement is only needed if requesting child accounts when Identity Center is not configured
+        # Required whenever AWS Organizations support is enabled (with or without Identity Center). Omit only if you disable AWS Organizations support.
         {
           "Effect": "Allow",
           "Action": [

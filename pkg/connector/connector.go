@@ -440,7 +440,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		rs = append(rs, ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
 	}
 
-	if c.orgsEnabled && !c.ssoEnabled {
+	if c.orgsEnabled {
 		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c))
 	}
 
