@@ -614,6 +614,16 @@ func iamAccountCreationSchema() *v2.ConnectorAccountCreationSchema {
 	}
 }
 
+const (
+	profileKeyUserName    = "username"
+	profileKeyGivenName   = "given_name"
+	profileKeyFamilyName  = "family_name"
+	profileKeyDisplayName = "display_name"
+	profileKeyEmail       = "email"
+
+	ssoUserEmailTypeWork = "work"
+)
+
 func ssoAccountCreationSchema() *v2.ConnectorAccountCreationSchema {
 	return &v2.ConnectorAccountCreationSchema{
 		FieldMap: map[string]*v2.ConnectorAccountCreationSchema_Field{
