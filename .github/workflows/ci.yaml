@@ -45,3 +45,14 @@ jobs:
           account-profile: '{"username": "test-user-ci", "email": "testci-userci@test.com"}'
           account-type: 'iam_user'
           search-method: 'display_name'
+      - name: Test Identity Center user provisioning and deprovisioning
+        env:
+          BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET: 'identity-center'
+        uses: ConductorOne/github-workflows/actions/account-provisioning@v3
+        with:
+          connector: ./baton-aws
+          account-email: 'testci-ssoci@test.com'
+          account-display-name: 'test-sso-user-ci'
+          account-profile: '{"username": "test-sso-user-ci", "given_name": "Test", "family_name": "SsoCi", "email": "testci-ssoci@test.com"}'
+          account-type: 'sso_user'
+          search-method: 'display_name'
