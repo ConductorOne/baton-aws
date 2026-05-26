@@ -18,6 +18,10 @@ type Aws struct {
 	SyncSecrets bool `mapstructure:"sync-secrets"`
 	IamAssumeRoleName string `mapstructure:"iam-assume-role-name"`
 	SyncSsoUserLastLogin bool `mapstructure:"sync-sso-user-last-login"`
+	GlobalBonbonEnabled bool `mapstructure:"global-bonbon-enabled"`
+	GlobalBonbonRegion string `mapstructure:"global-bonbon-region"`
+	GlobalBonbonApplicationArn string `mapstructure:"global-bonbon-application-arn"`
+	GlobalBonbonBaseUrl string `mapstructure:"global-bonbon-base-url"`
 }
 
 func (c *Aws) findFieldByTag(tagValue string) (any, bool) {
