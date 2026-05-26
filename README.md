@@ -46,6 +46,13 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
+Set `--global-bonbon-enabled` to pull information about the AWS Account Access (codename Bonbon) connector — private preview. Adds:
+- Bonbon Applications
+- Bonbon Roles (target IAM Role ARNs referenced by entitlements)
+- Grants on Bonbon Roles (IdC user/group → IAM Role)
+
+See [docs/bonbon.md](docs/bonbon.md) for the customer onboarding runbook and private-preview limitations.
+
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
 # Contributing, Support and Issues

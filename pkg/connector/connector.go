@@ -20,6 +20,7 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	cfg "github.com/conductorone/baton-aws/pkg/config"
+	"github.com/conductorone/baton-aws/pkg/connector/bonbon"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -38,23 +39,27 @@ const (
 )
 
 type Config struct {
-	UseAssumeRole           bool
-	GlobalBindingExternalID string
-	GlobalRegion            string
-	GlobalRoleARN           string
-	GlobalSecretAccessKey   string
-	GlobalAccessKeyID       string
-	GlobalAwsSsoRegion      string
-	GlobalAwsOrgsEnabled    bool
-	GlobalAwsSsoEnabled     bool
-	ExternalID              string
-	RoleARN                 string
-	SCIMToken               string
-	SCIMEndpoint            string
-	SCIMEnabled             bool
-	SyncSecrets             bool
-	IamAssumeRoleName       string
-	SyncSSOUserLastLogin    bool
+	UseAssumeRole              bool
+	GlobalBindingExternalID    string
+	GlobalRegion               string
+	GlobalRoleARN              string
+	GlobalSecretAccessKey      string
+	GlobalAccessKeyID          string
+	GlobalAwsSsoRegion         string
+	GlobalAwsOrgsEnabled       bool
+	GlobalAwsSsoEnabled        bool
+	ExternalID                 string
+	RoleARN                    string
+	SCIMToken                  string
+	SCIMEndpoint               string
+	SCIMEnabled                bool
+	SyncSecrets                bool
+	IamAssumeRoleName          string
+	SyncSSOUserLastLogin       bool
+	GlobalBonbonEnabled        bool
+	GlobalBonbonRegion         string
+	GlobalBonbonApplicationArn string
+	GlobalBonbonBaseURL        string
 }
 
 type AWS struct {
@@ -89,6 +94,11 @@ type AWS struct {
 
 	syncSecrets          bool
 	syncSSOUserLastLogin bool
+
+	bonbonEnabled        bool
+	bonbonRegion         string
+	bonbonApplicationArn string
+	bonbonBaseURL        string
 }
 
 func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
@@ -218,6 +228,11 @@ func validateConfig(awsc *cfg.Aws) error {
 			}
 		}
 	}
+	if awsc.GlobalBonbonEnabled {
+		if err := bonbon.ValidateRegion(awsc.GlobalBonbonRegion); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -247,7 +262,11 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		UseAssumeRole:           awsc.UseAssume,
 		SyncSecrets:             awsc.SyncSecrets,
 		IamAssumeRoleName:       awsc.IamAssumeRoleName,
-		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
+		SyncSSOUserLastLogin:       awsc.SyncSsoUserLastLogin,
+		GlobalBonbonEnabled:        awsc.GlobalBonbonEnabled,
+		GlobalBonbonRegion:         awsc.GlobalBonbonRegion,
+		GlobalBonbonApplicationArn: awsc.GlobalBonbonApplicationArn,
+		GlobalBonbonBaseURL:        awsc.GlobalBonbonBaseUrl,
 	}
 
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
@@ -281,6 +300,10 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
 		syncSSOUserLastLogin:    config.SyncSSOUserLastLogin,
+		bonbonEnabled:           config.GlobalBonbonEnabled,
+		bonbonRegion:            config.GlobalBonbonRegion,
+		bonbonApplicationArn:    config.GlobalBonbonApplicationArn,
+		bonbonBaseURL:           config.GlobalBonbonBaseURL,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -453,6 +476,26 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		l.Debug("syncSecrets. creating secretBuilder")
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
+
+	if c.bonbonEnabled {
+		l.Debug("bonbonEnabled. creating bonbon builders", zap.String("region", c.bonbonRegion))
+		bonbonCfg, err := c.getCallingConfig(ctx, c.bonbonRegion)
+		if err != nil {
+			l.Error("baton-aws/bonbon: failed to resolve calling config", zap.Error(err))
+			return rs
+		}
+		builders, err := bonbon.NewBuilders(ctx, bonbonCfg, bonbon.Options{
+			Region:         c.bonbonRegion,
+			ApplicationArn: c.bonbonApplicationArn,
+			BaseURL:        c.bonbonBaseURL,
+			HTTPClient:     c.baseClient,
+		})
+		if err != nil {
+			l.Error("baton-aws/bonbon: NewBuilders failed", zap.Error(err))
+			return rs
+		}
+		rs = append(rs, builders...)
+	}
 	return rs
 }
 
@@ -473,7 +516,7 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 }
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
-	return []connectorbuilder.ResourceSyncerV2{
+	rs := []connectorbuilder.ResourceSyncerV2{
 		iamUserBuilder(nil, nil),
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
@@ -483,6 +526,8 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		accountIAMBuilder(nil, nil, nil),
 		secretBuilder(nil, nil),
 	}
+	rs = append(rs, bonbon.DefaultCapabilityBuilders()...)
+	return rs
 }
 
 func (c *AWS) EventFeeds(ctx context.Context) []connectorbuilder.EventFeed {
