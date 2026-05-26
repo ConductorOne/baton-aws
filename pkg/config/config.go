@@ -115,6 +115,31 @@ var (
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
 	)
+
+	GlobalBonbonEnabledField = field.BoolField(
+		"global-bonbon-enabled",
+		field.WithDisplayName("Enable AWS Account Access Manager (Bonbon)"),
+		field.WithDescription("Enable support for AWS Account Access Manager (codename: Bonbon) — private preview"),
+		field.WithDefaultValue(false),
+	)
+	GlobalBonbonRegionField = field.SelectField(
+		"global-bonbon-region",
+		[]string{"us-east-1", "us-west-2"},
+		field.WithDisplayName("Region for AWS Account Access Manager"),
+		field.WithDescription("Region for the AWS Account Access Manager API. Private preview is us-east-1 / us-west-2 only."),
+		field.WithDefaultValue("us-east-1"),
+	)
+	GlobalBonbonApplicationArnField = field.StringField(
+		"global-bonbon-application-arn",
+		field.WithDisplayName("Bonbon Application ARN"),
+		field.WithDescription("Optional. Scope the sync to a single Bonbon Application ARN. If unset, all applications in the account are synced."),
+	)
+	GlobalBonbonBaseURLField = field.StringField(
+		"global-bonbon-base-url",
+		field.WithDisplayName("Bonbon API base URL override"),
+		field.WithDescription("Optional. Override the AWS Account Access Manager endpoint. Used by integration tests; leave empty in production."),
+		field.WithExportTarget(field.ExportTargetOps),
+	)
 )
 
 //go:generate go run ./gen
@@ -134,6 +159,10 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		GlobalBonbonEnabledField,
+		GlobalBonbonRegionField,
+		GlobalBonbonApplicationArnField,
+		GlobalBonbonBaseURLField,
 	},
 	field.WithConstraints(
 		field.FieldsDependentOn(

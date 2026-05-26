@@ -122,6 +122,26 @@ func TestConfigs(t *testing.T) {
 				true,
 				"empty",
 			},
+			{
+				"--global-bonbon-enabled",
+				true,
+				"bonbon: enabled flag accepted",
+			},
+			{
+				"--global-bonbon-enabled --global-bonbon-region us-east-1",
+				true,
+				"bonbon: us-east-1 is a supported preview region",
+			},
+			{
+				"--global-bonbon-enabled --global-bonbon-region us-west-2",
+				true,
+				"bonbon: us-west-2 is a supported preview region",
+			},
+			{
+				"--global-bonbon-enabled --global-bonbon-region eu-central-1",
+				false,
+				"bonbon: eu-central-1 is rejected outside private preview",
+			},
 		},
 	)
 }

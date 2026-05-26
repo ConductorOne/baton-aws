@@ -20,6 +20,7 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	cfg "github.com/conductorone/baton-aws/pkg/config"
+	"github.com/conductorone/baton-aws/pkg/connector/bonbon"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -38,23 +39,27 @@ const (
 )
 
 type Config struct {
-	UseAssumeRole           bool
-	GlobalBindingExternalID string
-	GlobalRegion            string
-	GlobalRoleARN           string
-	GlobalSecretAccessKey   string
-	GlobalAccessKeyID       string
-	GlobalAwsSsoRegion      string
-	GlobalAwsOrgsEnabled    bool
-	GlobalAwsSsoEnabled     bool
-	ExternalID              string
-	RoleARN                 string
-	SCIMToken               string
-	SCIMEndpoint            string
-	SCIMEnabled             bool
-	SyncSecrets             bool
-	IamAssumeRoleName       string
-	SyncSSOUserLastLogin    bool
+	UseAssumeRole              bool
+	GlobalBindingExternalID    string
+	GlobalRegion               string
+	GlobalRoleARN              string
+	GlobalSecretAccessKey      string
+	GlobalAccessKeyID          string
+	GlobalAwsSsoRegion         string
+	GlobalAwsOrgsEnabled       bool
+	GlobalAwsSsoEnabled        bool
+	ExternalID                 string
+	RoleARN                    string
+	SCIMToken                  string
+	SCIMEndpoint               string
+	SCIMEnabled                bool
+	SyncSecrets                bool
+	IamAssumeRoleName          string
+	SyncSSOUserLastLogin       bool
+	GlobalBonbonEnabled        bool
+	GlobalBonbonRegion         string
+	GlobalBonbonApplicationArn string
+	GlobalBonbonBaseURL        string
 }
 
 type AWS struct {
@@ -89,6 +94,8 @@ type AWS struct {
 
 	syncSecrets          bool
 	syncSSOUserLastLogin bool
+
+	bonbonConfig BonbonConfig
 }
 
 func (o *AWS) getIAMClient(ctx context.Context) (*iam.Client, error) {
@@ -234,20 +241,24 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 	}
 
 	config := Config{
-		GlobalBindingExternalID: awsc.GlobalBindingExternalId,
-		GlobalRegion:            awsc.GlobalRegion,
-		GlobalRoleARN:           awsc.GlobalRoleArn,
-		GlobalSecretAccessKey:   awsc.GlobalSecretAccessKey,
-		GlobalAccessKeyID:       awsc.GlobalAccessKeyId,
-		GlobalAwsSsoRegion:      awsc.GlobalAwsSsoRegion,
-		GlobalAwsOrgsEnabled:    awsc.GlobalAwsOrgsEnabled,
-		GlobalAwsSsoEnabled:     awsc.GlobalAwsSsoEnabled,
-		ExternalID:              awsc.ExternalId,
-		RoleARN:                 awsc.RoleArn,
-		UseAssumeRole:           awsc.UseAssume,
-		SyncSecrets:             awsc.SyncSecrets,
-		IamAssumeRoleName:       awsc.IamAssumeRoleName,
-		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
+		GlobalBindingExternalID:    awsc.GlobalBindingExternalId,
+		GlobalRegion:               awsc.GlobalRegion,
+		GlobalRoleARN:              awsc.GlobalRoleArn,
+		GlobalSecretAccessKey:      awsc.GlobalSecretAccessKey,
+		GlobalAccessKeyID:          awsc.GlobalAccessKeyId,
+		GlobalAwsSsoRegion:         awsc.GlobalAwsSsoRegion,
+		GlobalAwsOrgsEnabled:       awsc.GlobalAwsOrgsEnabled,
+		GlobalAwsSsoEnabled:        awsc.GlobalAwsSsoEnabled,
+		ExternalID:                 awsc.ExternalId,
+		RoleARN:                    awsc.RoleArn,
+		UseAssumeRole:              awsc.UseAssume,
+		SyncSecrets:                awsc.SyncSecrets,
+		IamAssumeRoleName:          awsc.IamAssumeRoleName,
+		SyncSSOUserLastLogin:       awsc.SyncSsoUserLastLogin,
+		GlobalBonbonEnabled:        awsc.GlobalBonbonEnabled,
+		GlobalBonbonRegion:         awsc.GlobalBonbonRegion,
+		GlobalBonbonApplicationArn: awsc.GlobalBonbonApplicationArn,
+		GlobalBonbonBaseURL:        awsc.GlobalBonbonBaseUrl,
 	}
 
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, l))
@@ -281,6 +292,12 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
 		syncSSOUserLastLogin:    config.SyncSSOUserLastLogin,
+		bonbonConfig: BonbonConfig{
+			Enabled:        config.GlobalBonbonEnabled,
+			Region:         config.GlobalBonbonRegion,
+			ApplicationArn: config.GlobalBonbonApplicationArn,
+			BaseURL:        config.GlobalBonbonBaseURL,
+		},
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -453,6 +470,11 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		l.Debug("syncSecrets. creating secretBuilder")
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
+
+	if c.bonbonConfig.Enabled {
+		l.Debug("bonbonEnabled. creating bonbon resource syncers")
+		rs = append(rs, c.bonbonResourceSyncers(ctx, c.bonbonConfig)...)
+	}
 	return rs
 }
 
@@ -473,7 +495,7 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 }
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
-	return []connectorbuilder.ResourceSyncerV2{
+	rs := []connectorbuilder.ResourceSyncerV2{
 		iamUserBuilder(nil, nil),
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
@@ -483,6 +505,8 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		accountIAMBuilder(nil, nil, nil),
 		secretBuilder(nil, nil),
 	}
+	rs = append(rs, bonbon.DefaultCapabilities()...)
+	return rs
 }
 
 func (c *AWS) EventFeeds(ctx context.Context) []connectorbuilder.EventFeed {
