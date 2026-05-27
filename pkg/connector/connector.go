@@ -429,18 +429,48 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 	return nil
 }
 
+// When iam is not the active provisioning target, the wrapper hides CreateAccount so the SDK registers a single account manager (sso_user).
+func (c *AWS) iamUserSyncer() connectorbuilder.ResourceSyncerV2 {
+	iam := iamUserBuilder(c.iamClient, c.awsClientFactory, c)
+	if c.iamProvisioningActive() {
+		return iam
+	}
+	return &iamUserSyncOnly{ResourceSyncerV2: iam, ResourceDeleterV2Limited: iam}
+}
+
+// Counterpart to iamUserSyncer.
+func (c *AWS) ssoUserSyncer() connectorbuilder.ResourceSyncerV2 {
+	sso := ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c)
+	if c.ssoProvisioningActive() {
+		return sso
+	}
+	return &ssoUserSyncOnly{ResourceSyncerV2: sso, ResourceDeleterLimited: sso}
+}
+
+type iamUserSyncOnly struct {
+	connectorbuilder.ResourceSyncerV2
+	connectorbuilder.ResourceDeleterV2Limited
+}
+
+type ssoUserSyncOnly struct {
+	connectorbuilder.ResourceSyncerV2
+	connectorbuilder.ResourceDeleterLimited
+}
+
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(c.iamClient, c.awsClientFactory, c),
+		c.iamUserSyncer(), // always added
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 	}
 
 	if c.ssoEnabled {
 		l.Debug("ssoEnabled. creating ssoUserBuilder and ssoGroupBuilder")
-		rs = append(rs, ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c))
-		rs = append(rs, ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance))
+		rs = append(rs,
+			c.ssoUserSyncer(),
+			ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance),
+		)
 	}
 
 	if c.orgsEnabled && !c.ssoEnabled {
