@@ -435,7 +435,7 @@ func (c *AWS) iamUserSyncer() connectorbuilder.ResourceSyncerV2 {
 	if c.iamProvisioningActive() {
 		return iam
 	}
-	return &iamUserSyncOnly{ResourceSyncerV2: iam, ResourceDeleterV2Limited: iam}
+	return &iamUserSyncOnly{ResourceSyncerV2: iam}
 }
 
 // Counterpart to iamUserSyncer.
@@ -444,17 +444,15 @@ func (c *AWS) ssoUserSyncer() connectorbuilder.ResourceSyncerV2 {
 	if c.ssoProvisioningActive() {
 		return sso
 	}
-	return &ssoUserSyncOnly{ResourceSyncerV2: sso, ResourceDeleterLimited: sso}
+	return &ssoUserSyncOnly{ResourceSyncerV2: sso}
 }
 
 type iamUserSyncOnly struct {
 	connectorbuilder.ResourceSyncerV2
-	connectorbuilder.ResourceDeleterV2Limited
 }
 
 type ssoUserSyncOnly struct {
 	connectorbuilder.ResourceSyncerV2
-	connectorbuilder.ResourceDeleterLimited
 }
 
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
