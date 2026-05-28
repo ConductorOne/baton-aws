@@ -69,6 +69,8 @@ var (
 			"sso:ListPermissionSetsProvisionedToAccount",
 			"sso:ListAccountAssignments",
 			"sso:ListInstances",
+			"iam:GenerateCredentialReport",
+			"iam:GetCredentialReport",
 			// Provision
 			"sso:CreateAccountAssignment",
 			"sso:DeleteAccountAssignment",
@@ -94,13 +96,11 @@ var (
 		Id:          "account_iam",
 		DisplayName: "Account IAM",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
-		Annotations: annotations.New(
-			&v2.SkipEntitlementsAndGrants{},
-			&v2.V1Identifier{Id: "account_iam"},
-			capabilityPermissions(
-				"iam:ListAccountAliases",
-			),
-		),
+		Annotations: v1AnnotationsWithPermissions("account_iam", capabilityPermissions(
+			"iam:ListAccountAliases",
+			"iam:GenerateCredentialReport",
+			"iam:GetCredentialReport",
+		)),
 	}
 	resourceTypeSSOUser = &v2.ResourceType{
 		Id:          "sso_user",
@@ -132,6 +132,8 @@ var (
 				"iam:GetUser",
 				"iam:ListAccessKeys",
 				"iam:GetAccessKeyLastUsed",
+				"iam:GenerateCredentialReport",
+				"iam:GetCredentialReport",
 				"iam:ListSigningCertificates",
 				"iam:ListSSHPublicKeys",
 				"iam:ListServiceSpecificCredentials",

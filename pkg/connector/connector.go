@@ -441,12 +441,12 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	}
 
 	if c.orgsEnabled && !c.ssoEnabled {
-		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c))
+		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c.iamClient, c))
 	}
 
 	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
-		rs = append(rs, accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient))
+		rs = append(rs, accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient, c.iamClient, c.awsClientFactory))
 	}
 
 	if c.syncSecrets {
@@ -479,8 +479,8 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		iamGroupBuilder(nil, nil),
 		ssoUserBuilder("", nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
-		accountBuilder(nil, "", nil, nil, "", nil),
-		accountIAMBuilder(nil, nil, nil),
+		accountBuilder(nil, "", nil, nil, "", nil, nil, nil),
+		accountIAMBuilder(nil, nil, nil, nil),
 		secretBuilder(nil, nil),
 	}
 }
