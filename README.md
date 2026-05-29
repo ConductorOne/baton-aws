@@ -155,6 +155,15 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Sync identity center users, groups, and permission sets, as well as the organization accounts
       "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
+    },
+    {
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole",
+      // Required whenever --global-aws-orgs-enabled is set: lets the connector assume into each child account to sync its IAM users, roles, and groups
+      "Sid": "AssumeOrganizationAccountAccessRole"
     }
   ],
   "Version": "2012-10-17"
@@ -249,6 +258,15 @@ _These policies have comments prefixed with // that need to be removed before us
       // Without this, the connector will attempt assignments and may get unclear ConflictException errors
       // for suspended accounts. This permission provides clearer error messages.
       "Sid": "AccountStatusValidationForProvisioning"
+    },
+    {
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole",
+      // Required whenever --global-aws-orgs-enabled is set: lets the connector assume into each child account to sync its IAM users, roles, and groups
+      "Sid": "AssumeOrganizationAccountAccessRole"
     }
   ],
   "Version": "2012-10-17"
