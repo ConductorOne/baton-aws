@@ -46,8 +46,11 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
-`--global-aws-orgs-enabled` can be set on its own: the connector discovers every account in the AWS Organization and assumes a role into each one to sync its IAM users, roles, and groups. `--global-aws-sso-enabled` requires `--global-aws-orgs-enabled` to also be set; with both on, the connector additionally syncs Identity Center users, groups, permission sets, and account assignments from the management account (or a delegated administrator account). The combined mode is what to use when you want cross-account IAM and Identity Center data from a single connector instance.
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
+
+## Sync modes
+
+`--global-aws-orgs-enabled` can be set on its own: the connector discovers every account in the AWS Organization and assumes a role into each one to sync its IAM users, roles, and groups. `--global-aws-sso-enabled` requires `--global-aws-orgs-enabled` to also be set; with both on, the connector additionally syncs Identity Center users, groups, permission sets, and account assignments from the management account (or a delegated administrator account). The combined mode is what to use when you want cross-account IAM and Identity Center data from a single connector instance.
 
 # Contributing, Support and Issues
 
