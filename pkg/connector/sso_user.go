@@ -20,6 +20,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+var _ connectorbuilder.AccountManagerV2 = &ssoUserResourceType{}
+
 type ssoUserResourceType struct {
 	resourceType        *v2.ResourceType
 	ssoClient           *awsSsoAdmin.Client
