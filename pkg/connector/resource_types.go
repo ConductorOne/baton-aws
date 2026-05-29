@@ -149,6 +149,7 @@ var (
 				// Read
 				"iam:ListUsers",
 				"iam:GetUser",
+				"iam:GetLoginProfile",
 				"iam:ListAccessKeys",
 				"iam:GetAccessKeyLastUsed",
 				"iam:ListSigningCertificates",
