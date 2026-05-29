@@ -116,7 +116,7 @@ var (
 		field.WithDefaultValue(false),
 	)
 	GlobalAwsAccountProvisioningTargetField = field.SelectField(
-		"global-aws-account-provisioning-target",
+		"create-account-resource-type",
 		[]string{"iam", "identity-center"},
 		field.WithDisplayName("Account Provisioning Target"),
 		field.WithDescription(
@@ -125,8 +125,7 @@ var (
 				"Only one path can be active at a time per connector instance.",
 		),
 		field.WithDefaultValue("iam"),
-		field.WithExportTarget(field.ExportTargetGUI),
-	)
+	).ExportAs(field.ExportTargetGUI)
 )
 
 //go:generate go run ./gen

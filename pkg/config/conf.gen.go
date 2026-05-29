@@ -18,7 +18,7 @@ type Aws struct {
 	SyncSecrets bool `mapstructure:"sync-secrets"`
 	IamAssumeRoleName string `mapstructure:"iam-assume-role-name"`
 	SyncSsoUserLastLogin bool `mapstructure:"sync-sso-user-last-login"`
-	GlobalAwsAccountProvisioningTarget string `mapstructure:"global-aws-account-provisioning-target"`
+	CreateAccountResourceType string `mapstructure:"create-account-resource-type"`
 }
 
 func (c *Aws) findFieldByTag(tagValue string) (any, bool) {

@@ -266,7 +266,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		IamAssumeRoleName:       awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
 
-		AccountProvisioningTarget: awsc.GlobalAwsAccountProvisioningTarget,
+		AccountProvisioningTarget: awsc.CreateAccountResourceType,
 	}
 	if config.AccountProvisioningTarget == "" {
 		config.AccountProvisioningTarget = accountProvisioningTargetIAM
@@ -429,36 +429,10 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 	return nil
 }
 
-// When iam is not the active provisioning target, the wrapper hides CreateAccount so the SDK registers a single account manager (sso_user).
-func (c *AWS) iamUserSyncer() connectorbuilder.ResourceSyncerV2 {
-	iam := iamUserBuilder(c.iamClient, c.awsClientFactory, c)
-	if c.iamProvisioningActive() {
-		return iam
-	}
-	return &iamUserSyncOnly{ResourceSyncerV2: iam}
-}
-
-// Counterpart to iamUserSyncer.
-func (c *AWS) ssoUserSyncer() connectorbuilder.ResourceSyncerV2 {
-	sso := ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c)
-	if c.ssoProvisioningActive() {
-		return sso
-	}
-	return &ssoUserSyncOnly{ResourceSyncerV2: sso}
-}
-
-type iamUserSyncOnly struct {
-	connectorbuilder.ResourceSyncerV2
-}
-
-type ssoUserSyncOnly struct {
-	connectorbuilder.ResourceSyncerV2
-}
-
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
-		c.iamUserSyncer(), // always added
+		iamUserBuilder(c.iamClient, c.awsClientFactory, c),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 	}
@@ -466,7 +440,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.ssoEnabled {
 		l.Debug("ssoEnabled. creating ssoUserBuilder and ssoGroupBuilder")
 		rs = append(rs,
-			c.ssoUserSyncer(),
+			ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c),
 			ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance),
 		)
 	}
