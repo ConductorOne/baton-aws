@@ -117,14 +117,14 @@ var (
 	)
 	GlobalAwsAccountProvisioningTargetField = field.SelectField(
 		"create-account-resource-type",
-		[]string{"iam", "identity-center"},
+		[]string{"iam_user", "sso_user"},
 		field.WithDisplayName("Account Provisioning Target"),
 		field.WithDescription(
 			"Which AWS user type C1 should create when provisioning accounts. "+
-				"'iam' (default) creates IAM users; 'identity-center' creates AWS Identity Center (SSO) users. "+
+				"'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. "+
 				"Only one path can be active at a time per connector instance.",
 		),
-		field.WithDefaultValue("iam"),
+		field.WithDefaultValue("iam_user"),
 	).ExportAs(field.ExportTargetGUI)
 )
 

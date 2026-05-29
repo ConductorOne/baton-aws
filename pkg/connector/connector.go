@@ -60,8 +60,8 @@ type Config struct {
 }
 
 const (
-	accountProvisioningTargetIAM            = "iam"
-	accountProvisioningTargetIdentityCenter = "identity-center"
+	accountProvisioningTargetIAM            = "iam_user"
+	accountProvisioningTargetIdentityCenter = "sso_user"
 )
 
 type AWS struct {
