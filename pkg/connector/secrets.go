@@ -91,6 +91,8 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 					Resource:      *user.UserId,
 					BatonResource: false,
 				}),
+				resourceSdk.WithSecretType(v2.SecretTrait_CREDENTIAL_TYPE_STATIC_SECRET),
+				resourceSdk.WithSecretDetail("aws.access_key"),
 			}
 
 			keyLastUsedDate := getAccessKeyLastUsedDate(ctx, iamClient, *key.AccessKeyId)
