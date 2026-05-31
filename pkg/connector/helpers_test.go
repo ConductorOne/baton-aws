@@ -1,9 +1,12 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
+	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -598,4 +601,79 @@ func TestExtractTrustPrincipals(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"arn:aws:iam::123456789012:user/test"}, principals)
 	})
+}
+
+func TestClassifyRoleNHIDetail(t *testing.T) {
+	role := func(arn, path, trust string) iamTypes.Role {
+		r := iamTypes.Role{Arn: awsSdk.String(arn), Path: awsSdk.String(path)}
+		if trust != "" {
+			r.AssumeRolePolicyDocument = awsSdk.String(trust)
+		}
+		return r
+	}
+	trust := func(principal string) string {
+		return `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":` +
+			principal + `,"Action":"sts:AssumeRole"}]}`
+	}
+
+	tests := []struct {
+		name string
+		role iamTypes.Role
+		want string
+	}{
+		{
+			name: "service-linked role via path",
+			role: role("arn:aws:iam::123456789012:role/aws-service-role/elasticbeanstalk.amazonaws.com/AWSServiceRoleForElasticBeanstalk",
+				"/aws-service-role/elasticbeanstalk.amazonaws.com/", ""),
+			want: "aws.role.service_linked",
+		},
+		{
+			name: "lambda service principal",
+			role: role("arn:aws:iam::123456789012:role/lambda-exec", "/", trust(`{"Service":"lambda.amazonaws.com"}`)),
+			want: "aws.role.lambda",
+		},
+		{
+			name: "ecs-tasks service principal normalizes hyphen",
+			role: role("arn:aws:iam::123456789012:role/task", "/", trust(`{"Service":"ecs-tasks.amazonaws.com"}`)),
+			want: "aws.role.ecs_tasks",
+		},
+		{
+			name: "multiple services are deterministic (smallest)",
+			role: role("arn:aws:iam::123456789012:role/multi", "/", trust(`{"Service":["lambda.amazonaws.com","ec2.amazonaws.com"]}`)),
+			want: "aws.role.ec2",
+		},
+		{
+			name: "oidc federated provider",
+			role: role("arn:aws:iam::123456789012:role/irsa", "/",
+				trust(`{"Federated":"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/ABC"}`)),
+			want: "aws.role.oidc",
+		},
+		{
+			name: "saml federated provider",
+			role: role("arn:aws:iam::123456789012:role/saml", "/",
+				trust(`{"Federated":"arn:aws:iam::123456789012:saml-provider/Okta"}`)),
+			want: "aws.role.saml",
+		},
+		{
+			name: "cross-account AWS principal",
+			role: role("arn:aws:iam::123456789012:role/cross", "/", trust(`{"AWS":"arn:aws:iam::999999999999:root"}`)),
+			want: "aws.role.cross_account",
+		},
+		{
+			name: "same-account AWS principal falls back to base",
+			role: role("arn:aws:iam::123456789012:role/same", "/", trust(`{"AWS":"arn:aws:iam::123456789012:user/alice"}`)),
+			want: "aws.role",
+		},
+		{
+			name: "no trust document falls back to base",
+			role: role("arn:aws:iam::123456789012:role/none", "/", ""),
+			want: "aws.role",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, classifyRoleNHIDetail(context.Background(), tt.role))
+		})
+	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"sort"
+	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -77,6 +79,10 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 			[]resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
 			resourceSdk.WithParentResourceID(parentId),
+			resourceSdk.WithNHIType(
+				v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+				classifyRoleNHIDetail(ctx, role),
+			),
 		)
 		if err != nil {
 			return nil, nil, err
@@ -248,4 +254,106 @@ func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{}
 	profile["aws_role_description"] = awsSdk.ToString(role.Description)
 
 	return profile
+}
+
+// classifyRoleNHIDetail derives the NHI type detail string for an IAM role
+// (axis-2 value per the NHI RFC §2.8 convention "<platform>.<object>[.<purpose>]",
+// dotted lowercase). The trust policy and path are already returned inline by
+// ListRoles, so classification happens at sync time without an extra API call.
+//
+// Priority, most-specific first:
+//   - service-linked role (path /aws-service-role/)        -> aws.role.service_linked
+//   - trusted by an AWS service principal                  -> aws.role.<service> (e.g. aws.role.lambda)
+//   - trusted by a federated provider                      -> aws.role.oidc | aws.role.saml | aws.role.federated
+//   - trusted by an AWS principal in a different account    -> aws.role.cross_account
+//   - otherwise                                            -> aws.role
+func classifyRoleNHIDetail(ctx context.Context, role iamTypes.Role) string {
+	const base = "aws.role"
+
+	if strings.HasPrefix(awsSdk.ToString(role.Path), "/aws-service-role/") {
+		return base + ".service_linked"
+	}
+
+	if role.AssumeRolePolicyDocument == nil {
+		return base
+	}
+
+	tp, err := extractTrustPrincipalsByKind(awsSdk.ToString(role.AssumeRolePolicyDocument))
+	if err != nil {
+		ctxzap.Extract(ctx).Debug("baton-aws: failed to parse trust policy for NHI classification",
+			zap.String("role_arn", awsSdk.ToString(role.Arn)),
+			zap.Error(err),
+		)
+		return base
+	}
+
+	if svc := serviceTrustDetail(tp.service); svc != "" {
+		return base + "." + svc
+	}
+
+	if fed := federatedTrustDetail(tp.federated); fed != "" {
+		return base + "." + fed
+	}
+
+	if roleAccountID, ok := arnAccountID(awsSdk.ToString(role.Arn)); ok && isCrossAccountTrust(roleAccountID, tp.aws) {
+		return base + ".cross_account"
+	}
+
+	return base
+}
+
+// serviceTrustDetail returns the short service name (e.g. "lambda", "ec2",
+// "ecs_tasks") for the lexicographically-smallest AWS service principal so the
+// result is deterministic across syncs, or "" if there are none.
+func serviceTrustDetail(services []string) string {
+	short := make([]string, 0, len(services))
+	for _, s := range services {
+		name, _, _ := strings.Cut(s, ".") // "lambda.amazonaws.com" -> "lambda"
+		name = strings.ToLower(strings.ReplaceAll(name, "-", "_"))
+		if name != "" {
+			short = append(short, name)
+		}
+	}
+	if len(short) == 0 {
+		return ""
+	}
+	sort.Strings(short)
+	return short[0]
+}
+
+// federatedTrustDetail classifies a federated trust principal by its provider
+// ARN (arn:aws:iam::<acct>:oidc-provider/... or :saml-provider/...).
+func federatedTrustDetail(federated []string) string {
+	if len(federated) == 0 {
+		return ""
+	}
+	for _, f := range federated {
+		switch {
+		case strings.Contains(f, ":oidc-provider/"):
+			return "oidc"
+		case strings.Contains(f, ":saml-provider/"):
+			return "saml"
+		}
+	}
+	return "federated"
+}
+
+// isCrossAccountTrust reports whether any AWS trust principal belongs to an
+// account other than the role's own.
+func isCrossAccountTrust(roleAccountID string, awsPrincipals []string) bool {
+	for _, p := range awsPrincipals {
+		if acct, ok := arnAccountID(p); ok && acct != roleAccountID {
+			return true
+		}
+	}
+	return false
+}
+
+// arnAccountID extracts the 12-digit account ID from an ARN.
+func arnAccountID(arnStr string) (string, bool) {
+	parsed, err := arn.Parse(arnStr)
+	if err != nil || parsed.AccountID == "" {
+		return "", false
+	}
+	return parsed.AccountID, true
 }
