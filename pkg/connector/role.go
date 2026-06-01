@@ -72,6 +72,7 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 			Id: awsSdk.ToString(role.Arn),
 		}
 		profile := roleProfile(ctx, role)
+		nhiType, nhiDetail := classifyRoleNHI(ctx, role)
 		roleResource, err := resourceSdk.NewRoleResource(
 			awsSdk.ToString(role.RoleName),
 			resourceTypeRole,
@@ -79,10 +80,7 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 			[]resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
 			resourceSdk.WithParentResourceID(parentId),
-			resourceSdk.WithNHIType(
-				v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
-				classifyRoleNHIDetail(ctx, role),
-			),
+			resourceSdk.WithNHIType(nhiType, nhiDetail),
 		)
 		if err != nil {
 			return nil, nil, err
@@ -256,26 +254,27 @@ func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{}
 	return profile
 }
 
-// classifyRoleNHIDetail derives the NHI type detail string for an IAM role
-// (axis-2 value per the NHI RFC §2.8 convention "<platform>.<object>[.<purpose>]",
+// classifyRoleNHI derives the NHI type and axis-2 detail string for an IAM role
+// (detail per the NHI RFC §2.8 convention "<platform>.<object>[.<purpose>]",
 // dotted lowercase). The trust policy and path are already returned inline by
 // ListRoles, so classification happens at sync time without an extra API call.
 //
-// Priority, most-specific first:
-//   - service-linked role (path /aws-service-role/)        -> aws.role.service_linked
-//   - trusted by an AWS service principal                  -> aws.role.<service> (e.g. aws.role.lambda)
-//   - trusted by a federated provider                      -> aws.role.oidc | aws.role.saml | aws.role.federated
-//   - trusted by an AWS principal in a different account    -> aws.role.cross_account
-//   - otherwise                                            -> aws.role
-func classifyRoleNHIDetail(ctx context.Context, role iamTypes.Role) string {
+// AWS service-linked roles are custodied by AWS — the org doesn't control the
+// trust policy — so they map to MANAGED_IDENTITY (D-366). Every other role is an
+// org-controlled ASSUMABLE_ROLE, classified by its trust principals:
+//   - trusted by an AWS service principal                -> aws.role.<service> (e.g. aws.role.lambda)
+//   - trusted by a federated provider                    -> aws.role.oidc | aws.role.saml | aws.role.federated
+//   - trusted by an AWS principal in a different account  -> aws.role.cross_account
+//   - otherwise                                          -> aws.role
+func classifyRoleNHI(ctx context.Context, role iamTypes.Role) (v2.NonHumanIdentityTrait_NhiType, string) {
 	const base = "aws.role"
 
-	if strings.HasPrefix(awsSdk.ToString(role.Path), "/aws-service-role/") {
-		return base + ".service_linked"
+	if isServiceLinkedRole(role) {
+		return v2.NonHumanIdentityTrait_NHI_TYPE_MANAGED_IDENTITY, "aws.service_linked_role"
 	}
 
 	if role.AssumeRolePolicyDocument == nil {
-		return base
+		return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base
 	}
 
 	tp, err := extractTrustPrincipalsByKind(awsSdk.ToString(role.AssumeRolePolicyDocument))
@@ -284,22 +283,30 @@ func classifyRoleNHIDetail(ctx context.Context, role iamTypes.Role) string {
 			zap.String("role_arn", awsSdk.ToString(role.Arn)),
 			zap.Error(err),
 		)
-		return base
+		return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base
 	}
 
 	if svc := serviceTrustDetail(tp.service); svc != "" {
-		return base + "." + svc
+		return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base + "." + svc
 	}
 
 	if fed := federatedTrustDetail(tp.federated); fed != "" {
-		return base + "." + fed
+		return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base + "." + fed
 	}
 
 	if roleAccountID, ok := arnAccountID(awsSdk.ToString(role.Arn)); ok && isCrossAccountTrust(roleAccountID, tp.aws) {
-		return base + ".cross_account"
+		return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base + ".cross_account"
 	}
 
-	return base
+	return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base
+}
+
+// isServiceLinkedRole reports whether an IAM role is AWS service-linked, which
+// AWS identifies either by the reserved /aws-service-role/ path or the
+// AWSServiceRoleFor* name prefix.
+func isServiceLinkedRole(role iamTypes.Role) bool {
+	return strings.HasPrefix(awsSdk.ToString(role.Path), "/aws-service-role/") ||
+		strings.HasPrefix(awsSdk.ToString(role.RoleName), "AWSServiceRoleFor")
 }
 
 // serviceTrustDetail returns the short service name (e.g. "lambda", "ec2",

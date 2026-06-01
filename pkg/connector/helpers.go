@@ -322,7 +322,7 @@ func (action *Action) UnmarshalJSON(data []byte) error {
 
 // Principal represents the Principal field in an IAM statement. AWS principals
 // drive assume-role grants; Service and Federated principals are kept only to
-// classify the role's NHI type at sync time (see classifyRoleNHIDetail).
+// classify the role's NHI type at sync time (see classifyRoleNHI).
 type Principal struct {
 	AWS       []string
 	Service   []string
