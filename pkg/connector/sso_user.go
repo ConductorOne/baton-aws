@@ -162,7 +162,7 @@ func (o *ssoUserResourceType) CreateAccount(
 	if o.aws != nil && !o.aws.ssoProvisioningActive() {
 		return nil, nil, nil, status.Error(
 			codes.Unimplemented,
-			"baton-aws: Identity Center user provisioning is disabled; set BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center",
+			"baton-aws: Identity Center user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user",
 		)
 	}
 	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
@@ -235,12 +235,6 @@ func (o *ssoUserResourceType) CreateAccount(
 }
 
 func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
-	if o.aws != nil && !o.aws.ssoProvisioningActive() {
-		return nil, status.Error(
-			codes.Unimplemented,
-			"baton-aws: Identity Center user deletion is disabled; set BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center",
-		)
-	}
 	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
 	if identityStoreID == "" {
 		return nil, status.Error(codes.FailedPrecondition, "baton-aws: missing identity store id")

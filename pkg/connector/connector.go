@@ -314,7 +314,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 	}
 
 	if rv.ssoProvisioningActive() && !rv.ssoEnabled {
-		return nil, nil, fmt.Errorf("baton-aws: BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=identity-center requires BATON_GLOBAL_AWS_SSO_ENABLED=true")
+		return nil, nil, fmt.Errorf("baton-aws: BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user requires BATON_GLOBAL_AWS_SSO_ENABLED=true")
 	}
 
 	err = rv.SetupClients(ctx)

@@ -47,7 +47,7 @@ jobs:
           search-method: 'display_name'
       - name: Test Identity Center user provisioning and deprovisioning
         env:
-          BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET: 'identity-center'
+          BATON_CREATE_ACCOUNT_RESOURCE_TYPE: 'sso_user'
         uses: ConductorOne/github-workflows/actions/account-provisioning@v3
         with:
           connector: ./baton-aws

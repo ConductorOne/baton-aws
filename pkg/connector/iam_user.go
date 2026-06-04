@@ -224,7 +224,7 @@ func (o *iamUserResourceType) CreateAccount(
 	if o.aws != nil && !o.aws.iamProvisioningActive() {
 		return nil, nil, nil, status.Error(
 			codes.Unimplemented,
-			"baton-aws: IAM user provisioning is disabled; set BATON_GLOBAL_AWS_ACCOUNT_PROVISIONING_TARGET=iam",
+			"baton-aws: IAM user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=iam_user",
 		)
 	}
 	profile := accountInfo.Profile.AsMap()
