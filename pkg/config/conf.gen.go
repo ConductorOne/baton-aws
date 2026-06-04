@@ -8,6 +8,7 @@ type Aws struct {
 	GlobalAccessKeyId string `mapstructure:"global-access-key-id"`
 	GlobalAwsOrgsEnabled bool `mapstructure:"global-aws-orgs-enabled"`
 	GlobalAwsSsoEnabled bool `mapstructure:"global-aws-sso-enabled"`
+	GlobalAwsCrossAccountIamEnabled bool `mapstructure:"global-aws-cross-account-iam-enabled"`
 	GlobalAwsSsoRegion string `mapstructure:"global-aws-sso-region"`
 	GlobalBindingExternalId string `mapstructure:"global-binding-external-id"`
 	GlobalRegion string `mapstructure:"global-region"`

@@ -17,8 +17,8 @@ import (
 )
 
 // accountIAMResourceType represents the IAM resources for an AWS account.
-// Registered whenever AWS Organizations support is enabled; runs alongside
-// the Identity Center builders when SSO is also enabled.
+// Registered when AWS Organizations is enabled and Identity Center is off,
+// or when both are on plus the cross-account IAM flag.
 type accountIAMResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        *awsOrgs.Client
