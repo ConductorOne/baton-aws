@@ -120,6 +120,17 @@ var (
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
 	)
+	GlobalAwsAccountProvisioningTargetField = field.SelectField(
+		"create-account-resource-type",
+		[]string{"iam_user", "sso_user"},
+		field.WithDisplayName("Account Provisioning Target"),
+		field.WithDescription(
+			"Which AWS user type C1 should create when provisioning accounts. "+
+				"'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. "+
+				"Only one path can be active at a time per connector instance.",
+		),
+		field.WithDefaultValue("iam_user"),
+	).ExportAs(field.ExportTargetGUI)
 )
 
 //go:generate go run ./gen
@@ -140,6 +151,7 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		GlobalAwsAccountProvisioningTargetField,
 	},
 	field.WithConstraints(
 		field.FieldsDependentOn(

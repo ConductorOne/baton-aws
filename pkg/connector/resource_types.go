@@ -112,8 +112,12 @@ var (
 			&v2.SkipEntitlementsAndGrants{},
 			&v2.V1Identifier{Id: "sso_user"},
 			capabilityPermissions(
+				// Read
 				"identitystore:ListUsers",
 				"sso:ListInstances",
+				// Provision
+				"identitystore:CreateUser",
+				"identitystore:DeleteUser",
 			),
 		),
 	}

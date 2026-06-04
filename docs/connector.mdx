@@ -373,6 +373,8 @@ The permissions policy below is broken into several sections to align with these
 	        "sso:DeleteAccountAssignment",
 	        "identitystore:CreateGroupMembership",
 	        "identitystore:DeleteGroupMembership",
+	        "identitystore:CreateUser",
+	        "identitystore:DeleteUser",
 	        "sso:DescribeAccountAssignmentCreationStatus",
 	        "sso:DescribeAccountAssignmentDeletionStatus",
 	        "iam:DeleteLoginProfile",
@@ -450,6 +452,7 @@ The permissions policy below is broken into several sections to align with these
 	- `iam:AddUserToGroup, iam:RemoveUserFromGroup`: These permissions are used to manage IAM group memberships directly.
 	- `sso:CreateAccountAssignment, sso:DeleteAccountAssignment`: These are the core permissions for provisioning. They allow C1 to add or remove assignments of permission sets to users within your organization.
 	- `identitystore:CreateGroupMembership, identitystore:DeleteGroupMembership`: These permissions manage group membership for users and groups defined within the Identity Center.
+	- `identitystore:CreateUser, identitystore:DeleteUser`: Required to provision and deprovision Identity Center user accounts (separate from IAM users). Identity Store has no disable/deactivate operation, so deprovisioning is a hard delete.
 	- `iam:DeleteLoginProfile, iam:DeleteAccessKey, iam:DeleteUser, and other iam:Delete... and iam:Deactivate... actions`: These permissions are required to clean up all credentials and associated policies for an IAM user before the final `iam:DeleteUser` action can be successful. These are required for full user deprovisioning functionality.
 	- `iam:TagUser`: This permission is required to add tags to a newly created IAM user.
 	**Section 3: Access to SSO-provisioned roles (“AccessToSSOProvisionedRoles”)**
@@ -599,6 +602,12 @@ stringData:
   BATON_GLOBAL_AWS_SSO_ENABLED: true
   BATON_GLOBAL_AWS_SSO_REGION: <Region for SSO identities (default is "us-east-1")>
 
+  # Optional: Choose which AWS user type C1 should create when provisioning accounts.
+  # "iam_user" (default) creates IAM users. "sso_user" creates AWS Identity Center
+  # (SSO) users via the Identity Store API. Only one path is active at a time per
+  # connector instance, so a single instance cannot provision both IAM and SSO users.
+  BATON_CREATE_ACCOUNT_RESOURCE_TYPE: sso_user
+
   # Optional: Include to enable C1 to sync the statuses of SSO accounts
   BATON_SCIM_ENABLED: true
   BATON_SCIM_ENDPOINT: <SCIM endpoint>
@@ -606,6 +615,8 @@ stringData:
 ```
 
 If support for AWS Organizations is enabled, the IAM Role must be created in the management (formerly called master) account of the AWS Organization. If the IAM Role is created on a member account and support for AWS Organizations is enabled, the integration will return a 400 error.
+
+The `identitystore:CreateUser` and `identitystore:DeleteUser` actions in the SSO policy below are only exercised when `BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user`. They are listed in the policy regardless so an operator who later switches the target does not need to re-grant the role.
 
 See the connector's README or run `--help` to see all available configuration flags and environment variables.
 
@@ -737,6 +748,8 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "sso:DeleteAccountAssignment",
             "identitystore:CreateGroupMembership",
             "identitystore:DeleteGroupMembership",
+            "identitystore:CreateUser",
+            "identitystore:DeleteUser",
             "sso:DescribeAccountAssignmentCreationStatus",
             "sso:DescribeAccountAssignmentDeletionStatus"
           ],

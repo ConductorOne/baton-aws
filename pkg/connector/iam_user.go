@@ -17,12 +17,15 @@ import (
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type iamUserResourceType struct {
 	resourceType     *v2.ResourceType
 	iamClient        *iam.Client
 	awsClientFactory *AWSClientFactory
+	aws              *AWS
 }
 
 var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
@@ -115,11 +118,12 @@ func (o *iamUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ resour
 	return nil, nil, nil
 }
 
-func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamUserResourceType {
+func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS) *iamUserResourceType {
 	return &iamUserResourceType{
 		resourceType:     resourceTypeIAMUser,
 		iamClient:        iamClient,
 		awsClientFactory: awsClientFactory,
+		aws:              aws,
 	}
 }
 
@@ -217,6 +221,12 @@ func (o *iamUserResourceType) CreateAccount(
 	accountInfo *v2.AccountInfo,
 	credentialOptions *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
+	if o.aws != nil && !o.aws.iamProvisioningActive() {
+		return nil, nil, nil, status.Error(
+			codes.Unimplemented,
+			"baton-aws: IAM user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=iam_user",
+		)
+	}
 	profile := accountInfo.Profile.AsMap()
 
 	// Extract required fields

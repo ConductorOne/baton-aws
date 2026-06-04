@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,10 @@ import (
 	"slices"
 	"strings"
 
+	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	aws_middleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
+	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -351,4 +354,90 @@ func wrapAWSError(err error) error {
 	}
 
 	return err
+}
+
+type ssoUserCreateProfile struct {
+	UserName    string
+	GivenName   string
+	FamilyName  string
+	DisplayName string
+	Email       string
+}
+
+func getSsoUserEmail(user awsIdentityStoreTypes.User) string {
+	email := ""
+	username := awsSdk.ToString(user.UserName)
+	if strings.Contains(username, "@") {
+		email = username
+	}
+	return email
+}
+
+func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile["aws_user_type"] = ssoType
+	profile["aws_user_name"] = awsSdk.ToString(user.DisplayName)
+	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
+
+	if len(user.ExternalIds) >= 1 {
+		lv := []interface{}{}
+		for _, ext := range user.ExternalIds {
+			attr := map[string]interface{}{
+				"id":     awsSdk.ToString(ext.Id),
+				"issuer": awsSdk.ToString(ext.Issuer),
+			}
+			lv = append(lv, attr)
+		}
+		profile["external_ids"] = lv
+	}
+	return profile
+}
+
+func getSsoUserCreateProfile(accountInfo *v2.AccountInfo) (*ssoUserCreateProfile, error) {
+	if accountInfo == nil || accountInfo.Profile == nil {
+		return nil, fmt.Errorf("baton-aws: missing account profile")
+	}
+	pMap := accountInfo.Profile.AsMap()
+
+	userName, err := requireStringProfileField(pMap, profileKeyUserName)
+	if err != nil {
+		return nil, err
+	}
+	givenName, err := requireStringProfileField(pMap, profileKeyGivenName)
+	if err != nil {
+		return nil, err
+	}
+	familyName, err := requireStringProfileField(pMap, profileKeyFamilyName)
+	if err != nil {
+		return nil, err
+	}
+	email, err := requireStringProfileField(pMap, profileKeyEmail)
+	if err != nil {
+		return nil, err
+	}
+
+	displayName, _ := pMap[profileKeyDisplayName].(string)
+	if displayName == "" {
+		displayName = givenName + " " + familyName
+	}
+
+	return &ssoUserCreateProfile{
+		UserName:    userName,
+		GivenName:   givenName,
+		FamilyName:  familyName,
+		DisplayName: displayName,
+		Email:       email,
+	}, nil
+}
+
+func requireStringProfileField(pMap map[string]interface{}, key string) (string, error) {
+	raw, ok := pMap[key]
+	if !ok {
+		return "", fmt.Errorf("baton-aws: missing %q in account profile", key)
+	}
+	s, ok := raw.(string)
+	if !ok || s == "" {
+		return "", fmt.Errorf("baton-aws: %q must be a non-empty string", key)
+	}
+	return s, nil
 }

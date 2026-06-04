@@ -10,7 +10,9 @@ import (
 )
 
 const (
-	iamType = "iam"
+	awsPartition = "aws"
+	iamType      = "iam"
+	ssoType      = "sso"
 )
 
 var (
@@ -26,7 +28,7 @@ func IsValidRoleARN(input string) error {
 	if err != nil {
 		return fmt.Errorf("baton-aws: invalid role ARN: %w", err)
 	}
-	if parsedArn.Partition != "aws" {
+	if parsedArn.Partition != awsPartition {
 		return fmt.Errorf("baton-aws: invalid role ARN: only aws partition supported")
 	}
 	if parsedArn.Service != iamType {
@@ -69,7 +71,7 @@ func AccountIdFromARN(input string) (string, error) {
 
 func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	id := arn.ARN{
-		Partition: "aws",
+		Partition: awsPartition,
 		Service:   "identitystore",
 		Region:    region,
 		AccountID: "",
@@ -80,7 +82,7 @@ func ssoUserToARN(region string, identityStoreId string, userId string) string {
 
 func ssoGroupToARN(region string, identityStoreId string, groupId string) string {
 	id := arn.ARN{
-		Partition: "aws",
+		Partition: awsPartition,
 		Service:   "identitystore",
 		Region:    region,
 		AccountID: "",

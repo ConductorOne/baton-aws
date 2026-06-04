@@ -42,7 +42,6 @@ import (
 	reader_v2 "github.com/conductorone/baton-sdk/pb/c1/reader/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorstore"
-	"github.com/conductorone/baton-sdk/pkg/dotc1z/manager"
 	"github.com/conductorone/baton-sdk/pkg/sync/progresslog"
 	"github.com/conductorone/baton-sdk/pkg/types"
 )
@@ -112,7 +111,6 @@ func (sm *syncMap[K, V]) Store(key K, val V) {
 
 // syncer orchestrates a connector sync and stores the results using the provided datasource.Writer.
 type syncer struct {
-	c1zManager                          manager.Manager
 	c1zPath                             string
 	externalResourceC1ZPath             string
 	externalResourceEntitlementIdFilter string
@@ -142,7 +140,7 @@ type syncer struct {
 	syncResourceTypes                   []string
 	previousSyncMu                      native_sync.Mutex
 	previousSyncIDPtr                   atomic.Pointer[string]
-	workerCount                         int // If 0, sequential sync is used. If > 0, parallel sync is used.
+	workerCount                         int // If 1, sync is sequential (default). If > 1, sync operations are done in parallel.
 }
 
 var _ Syncer = (*syncer)(nil)
@@ -510,17 +508,9 @@ func (s *syncer) Sync(ctx context.Context) error {
 		)
 	}
 
-	var warnings []error
-	if s.workerCount == 0 {
-		warnings, err = s.sequentialSync(ctx, runCtx, targetedResources)
-		if err != nil {
-			return err
-		}
-	} else {
-		warnings, err = s.parallelSync(ctx, runCtx, targetedResources)
-		if err != nil {
-			return err
-		}
+	warnings, err := s.parallelSync(ctx, runCtx, targetedResources)
+	if err != nil {
+		return err
 	}
 
 	// Force a checkpoint to clear completed actions & entitlement graph in sync_token.
@@ -1740,6 +1730,32 @@ func (s *syncer) fetchEtaggedGrantsForResource(
 			if g.GetEntitlement().GetId() != etagMatch.GetEntitlementId() {
 				continue
 			}
+
+			// Replayed grants are read back from the store, which on a
+			// slim engine (Pebble) returns an identity-only stub for
+			// grant.Entitlement.Resource. Downstream handling in
+			// syncGrantsForResource reads rich fields off that resource
+			// (InsertResourceGrants re-writes it to the resources table;
+			// the related-resource fetch reads its parent). That is only
+			// safe because the grant's entitlement-resource equals the
+			// resource we're syncing — which the syncGrantsForResource
+			// etag-update re-writes full afterward, masking any stub.
+			//
+			// That equality is enforced by the ListGrants(Resource=...)
+			// filter above, not by the data model, so assert it. If it
+			// is ever violated, a stub resource for some OTHER resource
+			// would be persisted (no etag-update to mask it) — fail loud
+			// here rather than corrupt the resources table silently.
+			gr := g.GetEntitlement().GetResource().GetId()
+			if gr.GetResourceType() != resource.GetId().GetResourceType() ||
+				gr.GetResource() != resource.GetId().GetResource() {
+				return nil, false, fmt.Errorf(
+					"etag replay: grant %q entitlement-resource %s/%s does not match synced resource %s/%s",
+					g.GetId(),
+					gr.GetResourceType(), gr.GetResource(),
+					resource.GetId().GetResourceType(), resource.GetId().GetResource(),
+				)
+			}
 			ret = append(ret, g)
 		}
 
@@ -2650,16 +2666,7 @@ func (s *syncer) loadStore(ctx context.Context) error {
 		return nil
 	}
 
-	if s.c1zManager == nil {
-		opts := []manager.ManagerOption{manager.WithTmpDir(s.tmpDir)}
-		m, err := manager.New(ctx, s.c1zPath, opts...)
-		if err != nil {
-			return err
-		}
-		s.c1zManager = m
-	}
-
-	store, err := s.c1zManager.LoadC1Z(ctx)
+	store, err := dotc1z.NewC1ZFile(ctx, s.c1zPath, dotc1z.WithTmpDir(s.tmpDir))
 	if err != nil {
 		return err
 	}
@@ -2690,45 +2697,60 @@ func (s *syncer) wireCountsDBSizeProvider() {
 	}
 }
 
-// Close closes the datastorage to ensure it is updated on disk.
+// Close closes the store so the c1z is flushed to disk.
+//
+// Store close runs on a context detached from the caller's cancellation.
+// The caller may be a Temporal activity whose deadline has already fired;
+// we still need to commit the c1z cleanly. The detached context is bounded
+// by dotc1z.FinalizeTimeout() so a wedged finalize cannot pin a worker
+// indefinitely. A new-root span linked to syncer.Close keeps the finalize
+// subtree from inflating very long sync traces.
 func (s *syncer) Close(ctx context.Context) error {
 	ctx, span := tracer.Start(ctx, "syncer.Close")
 	var err error
 	defer func() { uotel.EndSpanWithError(span, err) }()
 
+	parentCtxErrLabel := uotel.ClassifyCtxErr(ctx.Err())
+	timeout := dotc1z.FinalizeTimeout()
+	finalizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	// Propagate the original caller's ctx-error label across the detach
+	// so downstream finalize spans (e.g. C1File.finalize) can record
+	// what the caller actually saw — without this, the nested span
+	// would re-classify our already-detached ctx and always report
+	// parent_ctx_err="nil".
+	finalizeCtx = uotel.WithParentCtxErrLabel(finalizeCtx, parentCtxErrLabel)
+	finalizeCtx, finalizeSpan := uotel.StartWithLink(finalizeCtx, tracer, "syncer.finalize")
+	finalizeSpan.SetAttributes(
+		attribute.Bool("c1z.finalize.cancel_observed", parentCtxErrLabel != "nil"),
+		attribute.String("c1z.finalize.parent_ctx_err", parentCtxErrLabel),
+		attribute.Int64("c1z.finalize.timeout_seconds", int64(timeout.Seconds())),
+	)
+	defer func() { uotel.EndSpanWithError(finalizeSpan, err) }()
+
 	var errs []error
 
 	var storeCloseErr error
 	if s.store != nil {
-		storeCloseErr = s.store.Close(ctx)
+		storeCloseErr = s.store.Close(finalizeCtx)
 		if storeCloseErr != nil {
 			errs = append(errs, fmt.Errorf("error closing store: %w", storeCloseErr))
 		}
 	}
 
+	// The external resource reader is read-only and has no durable
+	// state to commit — closing it on the caller's ctx (not the
+	// detached finalizeCtx) keeps a hung close from holding the
+	// syncer past the caller's deadline for no commit-correctness
+	// benefit.
 	if s.externalResourceReader != nil {
 		if err := s.externalResourceReader.Close(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("error closing external resource reader: %w", err))
 		}
 	}
 
-	if s.c1zManager != nil {
-		// Only persist the c1z if the store closed cleanly. If the store
-		// failed to close (e.g. WAL checkpoint failure), saving would
-		// persist a potentially corrupt state.
-		if storeCloseErr == nil {
-			if err := s.c1zManager.SaveC1Z(ctx); err != nil {
-				errs = append(errs, err)
-			}
-		}
-		// Always close the manager to clean up temp files, even if save
-		// was skipped or failed.
-		if err := s.c1zManager.Close(ctx); err != nil {
-			errs = append(errs, err)
-		}
-	}
-
-	return errors.Join(errs...)
+	err = errors.Join(errs...)
+	return err
 }
 
 type SyncOpt func(s *syncer)
@@ -2882,14 +2904,13 @@ func NormalizeWorkerCount(count int) int {
 	if count == -1 {
 		return min(max(runtime.GOMAXPROCS(0), 1), 4)
 	}
-	return max(count, 0)
+	return max(count, 1)
 }
 
 // WithWorkerCount sets the number of workers to use.
-// If 0, sequential sync is used. If > 0, parallel sync is used.
+// If <=1, 1 worker is used (default). If > 1, parallel sync is used.
 // If -1, the number of workers is set to the number of CPU cores or 4, whichever is lower.
-// If < -1, sequential sync is used.
-// Yes, this allows for a "parallel" sync with one worker, effectively making it sequential.
+// If < -1, 1 worker is used. (Nothing should do this, but there's no way to return an error in this option.)
 func WithWorkerCount(count int) SyncOpt {
 	return func(s *syncer) {
 		s.workerCount = NormalizeWorkerCount(count)
@@ -2899,8 +2920,9 @@ func WithWorkerCount(count int) SyncOpt {
 // NewSyncer returns a new syncer object.
 func NewSyncer(ctx context.Context, c types.ConnectorClient, opts ...SyncOpt) (Syncer, error) {
 	s := &syncer{
-		connector: c,
-		syncType:  connectorstore.SyncTypeFull,
+		connector:   c,
+		syncType:    connectorstore.SyncTypeFull,
+		workerCount: 1,
 	}
 
 	for _, o := range opts {
@@ -2912,9 +2934,6 @@ func NewSyncer(ctx context.Context, c types.ConnectorClient, opts ...SyncOpt) (S
 	}
 
 	progressLogOpts := []progresslog.Option{}
-	if s.workerCount > 0 {
-		progressLogOpts = append(progressLogOpts, progresslog.WithSequentialMode(false))
-	}
 	s.counts = progresslog.NewProgressCounts(ctx, progressLogOpts...)
 	// Wire the DBSizeProvider now if the store is already set (WithConnectorStore
 	// case). For WithC1ZPath, the store is populated later inside loadStore,

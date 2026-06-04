@@ -2,8 +2,8 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -12,9 +12,15 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/conductorone/baton-aws/pkg/connector/client"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
+
+var _ connectorbuilder.AccountManagerV2 = &ssoUserResourceType{}
 
 type ssoUserResourceType struct {
 	resourceType        *v2.ResourceType
@@ -22,6 +28,7 @@ type ssoUserResourceType struct {
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	region              string
+	aws                 *AWS
 }
 
 func (o *ssoUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -126,6 +133,7 @@ func ssoUserBuilder(
 	ssoClient *awsSsoAdmin.Client,
 	identityStoreClient client.IdentityStoreClient,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+	aws *AWS,
 ) *ssoUserResourceType {
 	return &ssoUserResourceType{
 		resourceType:        resourceTypeSSOUser,
@@ -133,34 +141,161 @@ func ssoUserBuilder(
 		identityInstance:    identityInstance,
 		identityStoreClient: identityStoreClient,
 		ssoClient:           ssoClient,
+		aws:                 aws,
 	}
 }
 
-func getSsoUserEmail(user awsIdentityStoreTypes.User) string {
-	email := ""
-	username := awsSdk.ToString(user.UserName)
-	if strings.Contains(username, "@") {
-		email = username
-	}
-	return email
+func (o *ssoUserResourceType) CreateAccountCapabilityDetails(_ context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
+	return &v2.CredentialDetailsAccountProvisioning{
+		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
+			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
+		},
+		PreferredCredentialOption: v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
+	}, nil, nil
 }
 
-func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
-	profile := make(map[string]interface{})
-	profile["aws_user_type"] = "sso"
-	profile["aws_user_name"] = awsSdk.ToString(user.DisplayName)
-	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
+func (o *ssoUserResourceType) CreateAccount(
+	ctx context.Context,
+	accountInfo *v2.AccountInfo,
+	_ *v2.LocalCredentialOptions,
+) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
+	if o.aws != nil && !o.aws.ssoProvisioningActive() {
+		return nil, nil, nil, status.Error(
+			codes.Unimplemented,
+			"baton-aws: Identity Center user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user",
+		)
+	}
+	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
+	if identityStoreID == "" {
+		return nil, nil, nil, status.Error(codes.FailedPrecondition, "baton-aws: missing identity store id")
+	}
 
-	if len(user.ExternalIds) >= 1 {
-		lv := []interface{}{}
-		for _, ext := range user.ExternalIds {
-			attr := map[string]interface{}{
-				"id":     awsSdk.ToString(ext.Id),
-				"issuer": awsSdk.ToString(ext.Issuer),
+	profile, err := getSsoUserCreateProfile(accountInfo)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	input := &awsIdentityStore.CreateUserInput{
+		IdentityStoreId: awsSdk.String(identityStoreID),
+		UserName:        awsSdk.String(profile.UserName),
+		DisplayName:     awsSdk.String(profile.DisplayName),
+		Name: &awsIdentityStoreTypes.Name{
+			GivenName:  awsSdk.String(profile.GivenName),
+			FamilyName: awsSdk.String(profile.FamilyName),
+		},
+		Emails: []awsIdentityStoreTypes.Email{
+			{
+				Primary: true,
+				Type:    awsSdk.String(ssoUserEmailTypeWork),
+				Value:   awsSdk.String(profile.Email),
+			},
+		},
+	}
+
+	out, err := o.identityStoreClient.CreateUser(ctx, input)
+	if err != nil {
+		var conflict *awsIdentityStoreTypes.ConflictException
+		if errors.As(err, &conflict) {
+			existing, lookupErr := o.findSsoUserByUserName(ctx, identityStoreID, profile.UserName)
+			if lookupErr != nil {
+				return nil, nil, nil, fmt.Errorf("baton-aws: identity center user %q already exists but lookup failed: %w", profile.UserName, lookupErr)
 			}
-			lv = append(lv, attr)
+			return v2.CreateAccountResponse_AlreadyExistsResult_builder{
+				Resource:              existing,
+				IsCreateAccountResult: true,
+			}.Build(), nil, nil, nil
 		}
-		profile["external_ids"] = lv
+		return nil, nil, nil, fmt.Errorf("baton-aws: create identity center user failed: %w", err)
 	}
-	return profile
+
+	userARN := ssoUserToARN(o.region, identityStoreID, awsSdk.ToString(out.UserId))
+	userResource, err := resourceSdk.NewUserResource(
+		profile.UserName,
+		resourceTypeSSOUser,
+		userARN,
+		[]resourceSdk.UserTraitOption{
+			resourceSdk.WithUserProfile(map[string]interface{}{
+				"aws_user_type": ssoType,
+				"aws_user_name": profile.DisplayName,
+				"aws_user_id":   awsSdk.ToString(out.UserId),
+			}),
+			resourceSdk.WithEmail(profile.Email, true),
+			resourceSdk.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
+		},
+		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
+	)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("baton-aws: build sso user resource: %w", err)
+	}
+
+	return v2.CreateAccountResponse_SuccessResult_builder{
+		Resource:              userResource,
+		IsCreateAccountResult: true,
+	}.Build(), nil, nil, nil
+}
+
+func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId) (annotations.Annotations, error) {
+	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
+	if identityStoreID == "" {
+		return nil, status.Error(codes.FailedPrecondition, "baton-aws: missing identity store id")
+	}
+
+	userID, err := ssoUserIdFromARN(resourceId.GetResource())
+	if err != nil {
+		return nil, fmt.Errorf("baton-aws: parse sso user arn: %w", err)
+	}
+
+	_, err = o.identityStoreClient.DeleteUser(ctx, &awsIdentityStore.DeleteUserInput{
+		IdentityStoreId: awsSdk.String(identityStoreID),
+		UserId:          awsSdk.String(userID),
+	})
+	if err != nil {
+		var notFound *awsIdentityStoreTypes.ResourceNotFoundException
+		if errors.As(err, &notFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("baton-aws: delete identity center user failed: %w", err)
+	}
+	return nil, nil
+}
+
+func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identityStoreID, userName string) (*v2.Resource, error) {
+	out, err := o.identityStoreClient.ListUsers(ctx, &awsIdentityStore.ListUsersInput{
+		IdentityStoreId: awsSdk.String(identityStoreID),
+		Filters: []awsIdentityStoreTypes.Filter{{
+			AttributePath:  awsSdk.String("UserName"),
+			AttributeValue: awsSdk.String(userName),
+		}},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("baton-aws: list identity center users: %w", err)
+	}
+	if len(out.Users) == 0 {
+		return nil, fmt.Errorf("baton-aws: identity center user %q not found after ConflictException", userName)
+	}
+	existing := out.Users[0]
+	email := ""
+	for _, e := range existing.Emails {
+		if e.Primary {
+			email = awsSdk.ToString(e.Value)
+			break
+		}
+	}
+	displayName := awsSdk.ToString(existing.DisplayName)
+	userARN := ssoUserToARN(o.region, identityStoreID, awsSdk.ToString(existing.UserId))
+	return resourceSdk.NewUserResource(
+		awsSdk.ToString(existing.UserName),
+		resourceTypeSSOUser,
+		userARN,
+		[]resourceSdk.UserTraitOption{
+			resourceSdk.WithUserProfile(map[string]interface{}{
+				"aws_user_type": ssoType,
+				"aws_user_name": displayName,
+				"aws_user_id":   awsSdk.ToString(existing.UserId),
+			}),
+			resourceSdk.WithEmail(email, true),
+			resourceSdk.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
+		},
+		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
+	)
 }
