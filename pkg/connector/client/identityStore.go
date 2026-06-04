@@ -28,4 +28,14 @@ type IdentityStoreClient interface {
 		params *identitystore.GetGroupMembershipIdInput,
 		optFns ...func(*identitystore.Options),
 	) (*identitystore.GetGroupMembershipIdOutput, error)
+	CreateUser(
+		ctx context.Context,
+		params *identitystore.CreateUserInput,
+		optFns ...func(*identitystore.Options),
+	) (*identitystore.CreateUserOutput, error)
+	DeleteUser(
+		ctx context.Context,
+		params *identitystore.DeleteUserInput,
+		optFns ...func(*identitystore.Options),
+	) (*identitystore.DeleteUserOutput, error)
 }

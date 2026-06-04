@@ -589,13 +589,21 @@
               },
               {
                 "permission": "sso:ListInstances"
+              },
+              {
+                "permission": "identitystore:CreateUser"
+              },
+              {
+                "permission": "identitystore:DeleteUser"
               }
             ]
           }
         ]
       },
       "capabilities": [
-        "CAPABILITY_SYNC"
+        "CAPABILITY_SYNC",
+        "CAPABILITY_ACCOUNT_PROVISIONING",
+        "CAPABILITY_RESOURCE_DELETE"
       ],
       "permissions": {
         "permissions": [
@@ -604,6 +612,12 @@
           },
           {
             "permission": "sso:ListInstances"
+          },
+          {
+            "permission": "identitystore:CreateUser"
+          },
+          {
+            "permission": "identitystore:DeleteUser"
           }
         ]
       }

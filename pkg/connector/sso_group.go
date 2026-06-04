@@ -438,7 +438,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 
 func ssoGroupProfile(ctx context.Context, group awsIdentityStoreTypes.Group) map[string]interface{} {
 	profile := make(map[string]interface{})
-	profile["aws_group_type"] = "sso"
+	profile["aws_group_type"] = ssoType
 	profile["aws_group_name"] = awsSdk.ToString(group.DisplayName)
 	profile["aws_group_id"] = awsSdk.ToString(group.GroupId)
 

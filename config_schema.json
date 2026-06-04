@@ -215,6 +215,20 @@
       "displayName": "Sync SSO User Last Login",
       "description": "Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)",
       "boolField": {}
+    },
+    {
+      "name": "create-account-resource-type",
+      "displayName": "Account Provisioning Target",
+      "description": "Which AWS user type C1 should create when provisioning accounts. 'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. Only one path can be active at a time per connector instance.",
+      "stringField": {
+        "defaultValue": "iam_user",
+        "rules": {
+          "in": [
+            "iam_user",
+            "sso_user"
+          ]
+        }
+      }
     }
   ],
   "constraints": [
