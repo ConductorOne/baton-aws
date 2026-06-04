@@ -434,10 +434,7 @@ func (c *AWS) shouldSyncCrossAccountIAM() bool {
 	if c.orgsEnabled && c.ssoEnabled {
 		return c.crossAccountIAMEnabled
 	}
-	if c.orgsEnabled {
-		return true
-	}
-	return false
+	return c.orgsEnabled
 }
 
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
