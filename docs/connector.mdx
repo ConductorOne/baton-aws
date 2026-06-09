@@ -233,10 +233,10 @@ Next, you will create an inline policy to define the specific data this role can
 **Done.** Next, move on to the connector configuration instructions.
 </Tab>
 
-<Tab title="SSO setup">
-### SSO setup: Gather credentials
+<Tab title="Identity Center setup">
+### Identity Center setup: Gather credentials
 
-Follow these steps to gather the credentials needed for an AWS IAM Identity Center (SSO) setup of the AWS connector.
+Follow these steps to gather the credentials needed for an AWS IAM Identity Center setup of the AWS connector.
 
 #### Get a C1-provided External ID
 
@@ -440,7 +440,7 @@ The permissions policy below is broken into several sections to align with these
 	```
 	**Notes about permissions:**
 	**Section 1: Read-only access (“C1ReadAccess”)**
-	This group of permissions is the minimum required for C1 to discover and sync your SSO users, groups, and permission sets. These are strictly read-only permissions.
+	This group of permissions is the minimum required for C1 to discover and sync your Identity Center users, groups, and permission sets. These are strictly read-only permissions.
 	- `iam:CreateUser`: This permission is required to provision IAM user accounts.
 	- `iam:List..., iam:GetGroup`: These are standard IAM permissions for listing users, groups, and roles. They are necessary to identify resources within your AWS account. iam:GetGroup provides the members of a group.
 	- `identitystore:List...`: These permissions are specific to AWS IAM Identity Center. They allow C1 to list and read information about your users and groups as they are defined within the Identity Center.
@@ -455,14 +455,14 @@ The permissions policy below is broken into several sections to align with these
 	- `identitystore:CreateUser, identitystore:DeleteUser`: Required to provision and deprovision Identity Center user accounts (separate from IAM users). Identity Store has no disable/deactivate operation, so deprovisioning is a hard delete.
 	- `iam:DeleteLoginProfile, iam:DeleteAccessKey, iam:DeleteUser, and other iam:Delete... and iam:Deactivate... actions`: These permissions are required to clean up all credentials and associated policies for an IAM user before the final `iam:DeleteUser` action can be successful. These are required for full user deprovisioning functionality.
 	- `iam:TagUser`: This permission is required to add tags to a newly created IAM user.
-	**Section 3: Access to SSO-provisioned roles (“AccessToSSOProvisionedRoles”)**
+	**Section 3: Access to IAM Identity Center-provisioned roles (“AccessToSSOProvisionedRoles”)**
 	This group of permissions allows C1 to inspect and manage the AWS-managed roles created by IAM Identity Center in your accounts. This is crucial for understanding how permission sets are being applied.
-	- `iam:AttachRolePolicy, iam:DeleteRole, iam:GetRole, etc.`: These are permissions to manage IAM roles. The key detail is the Resource constraint: `arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*`. This ensures that C1 can only interact with roles created and managed by the AWS SSO service itself, preventing it from modifying other roles in your account.
+	- `iam:AttachRolePolicy, iam:DeleteRole, iam:GetRole, etc.`: These are permissions to manage IAM roles. The key detail is the Resource constraint: `arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*`. This ensures that C1 can only interact with roles created and managed by the AWS IAM Identity Center service itself, preventing it from modifying other roles in your account.
 	**Section 4: Other permissions**
 	These are supporting permissions that enable specific features or functionality. Some of the permissions listed here can be omitted if your particular use case doesn’t require the data they pull in to C1.
 	- `IAMListPermissions`: This section allows C1 to sync data on access keys. C1 does not store or access the access keys. If you do not want to sync access key data, you can omit this section.
 	- `sts:AssumeRole`: **This permission is only needed for requesting child accounts when Identity Center is not configured, and can be omitted otherwise.** This permission allows C1 to assume the `OrganizationAccountAccessRole` in your child accounts, which allows C1 to discover and sync resources across your AWS Organization.
-	- `iam:GetSAMLProvider`: This is a necessary permission to read the configuration of the SAML provider that AWS SSO uses for single sign-on.
+	- `iam:GetSAMLProvider`: This is a necessary permission to read the configuration of the SAML provider that AWS IAM Identity Center uses for single sign-on.
 	- The permissions listed in the `"Sid": "IAMListPermissions"` and `"Sid": "AccessToSSOProvisiondRoles"` sections are required only if you want to use C1 to create assignments in the AWS Organization’s management account. In certain cases, you may also need to add `iam:UpdateSAMLProvider` to these sections.
 	- The `iam:GetAccessKeyLastUsed` permission is only needed if you want C1 to sync access key secret data.
     </Step>
@@ -512,7 +512,7 @@ The permissions policy below is broken into several sections to align with these
     **Optional.** Click to **Enable support for AWS IAM Identity Center** and select the region for AWS IAM Identity Center from the dropdown.
     </Step>
     <Step>
-    **Optional.** To enable C1 to sync the statuses of SSO accounts, click to **Enable usage of the AWS IAM Identity Center SCIM API** and enter the SCIM endpoint and access token in the relevant fields.
+    **Optional.** To enable C1 to sync the statuses of Identity Center accounts, click to **Enable usage of the AWS IAM Identity Center SCIM API** and enter the SCIM endpoint and access token in the relevant fields.
     </Step>
     <Step>
     **Optional.** Enable **Sync secrets** to display them on the [Inventory page](/product/admin/inventory).
@@ -608,7 +608,7 @@ stringData:
   # connector instance, so a single instance cannot provision both IAM and SSO users.
   BATON_CREATE_ACCOUNT_RESOURCE_TYPE: sso_user
 
-  # Optional: Include to enable C1 to sync the statuses of SSO accounts
+  # Optional: Include to enable C1 to sync the statuses of Identity Center accounts
   BATON_SCIM_ENABLED: true
   BATON_SCIM_ENDPOINT: <SCIM endpoint>
   BATON_SCIM_TOKEN: <SCIM access token>
@@ -811,5 +811,5 @@ resource "aws_iam_role" "ConductorOneIntegration" {
 
 
 <Tip>
-If your users work from the command line, see [Use Cone with AWS SSO](/product/how-to/cone-aws-sso-integration) to request and retrieve AWS credentials directly from the AWS CLI.
+If your users work from the command line, see [Use Cone with AWS IAM Identity Center](/product/how-to/cone-aws-sso-integration) to request and retrieve AWS credentials directly from the AWS CLI.
 </Tip>
