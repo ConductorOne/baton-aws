@@ -256,7 +256,7 @@ func (o *iamUserResourceType) CreateAccount(
 		if errors.As(err, &alreadyExists) {
 			existing, lookupErr := o.findIamUserByUserName(ctx, username)
 			if lookupErr != nil {
-				return nil, nil, nil, status.Errorf(codes.PermissionDenied, "baton-aws: iam user %q already exists but lookup via iam:GetUser failed: %v", username, lookupErr)
+				return nil, nil, nil, fmt.Errorf("baton-aws: iam user %q already exists but lookup via iam:GetUser failed: %w", username, lookupErr)
 			}
 			return &v2.CreateAccountResponse_AlreadyExistsResult{
 				Resource:              existing,
