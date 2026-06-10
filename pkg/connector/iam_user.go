@@ -240,30 +240,6 @@ func (o *iamUserResourceType) CreateAccount(
 		username = email
 	}
 
-	if result, err := o.iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsSdk.String(username)}); err == nil {
-		var noSuchEntity *iamTypes.NoSuchEntityException
-		if errors.As(err, &noSuchEntity) {
-			return nil, nil, nil, fmt.Errorf("baton-aws: iam.GetUser failed: %w", err)
-		}
-		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(result.User.Arn),
-		}
-		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(result.User.UserName),
-			resourceTypeIAMUser,
-			awsSdk.ToString(result.User.Arn),
-			nil,
-			resourceSdk.WithAnnotation(annos),
-		)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-
-		return &v2.CreateAccountResponse_SuccessResult{
-			Resource:              userResource,
-			IsCreateAccountResult: true,
-		}, nil, nil, nil
-	}
-
 	createUserInput := &iam.CreateUserInput{
 		UserName: awsSdk.String(username),
 	}
@@ -276,18 +252,21 @@ func (o *iamUserResourceType) CreateAccount(
 
 	result, err := o.iamClient.CreateUser(ctx, createUserInput)
 	if err != nil {
+		var alreadyExists *iamTypes.EntityAlreadyExistsException
+		if errors.As(err, &alreadyExists) {
+			existing, lookupErr := o.findIamUserByUserName(ctx, username)
+			if lookupErr != nil {
+				return nil, nil, nil, status.Errorf(codes.PermissionDenied, "baton-aws: iam user %q already exists but lookup via iam:GetUser failed: %v", username, lookupErr)
+			}
+			return &v2.CreateAccountResponse_AlreadyExistsResult{
+				Resource:              existing,
+				IsCreateAccountResult: true,
+			}, nil, nil, nil
+		}
 		return nil, nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.CreateUser failed: %w", err))
 	}
 
-	annos := &v2.V1Identifier{
-		Id: awsSdk.ToString(result.User.Arn),
-	}
-	userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(result.User.UserName),
-		resourceTypeIAMUser,
-		awsSdk.ToString(result.User.Arn),
-		nil,
-		resourceSdk.WithAnnotation(annos),
-	)
+	userResource, err := iamUserToResource(result.User)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -296,6 +275,25 @@ func (o *iamUserResourceType) CreateAccount(
 		Resource:              userResource,
 		IsCreateAccountResult: true,
 	}, nil, nil, nil
+}
+
+func iamUserToResource(user *iamTypes.User) (*v2.Resource, error) {
+	arn := awsSdk.ToString(user.Arn)
+	return resourceSdk.NewUserResource(
+		awsSdk.ToString(user.UserName),
+		resourceTypeIAMUser,
+		arn,
+		nil,
+		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: arn}),
+	)
+}
+
+func (o *iamUserResourceType) findIamUserByUserName(ctx context.Context, username string) (*v2.Resource, error) {
+	out, err := o.iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsSdk.String(username)})
+	if err != nil {
+		return nil, fmt.Errorf("baton-aws: iam.GetUser %q: %w", username, err)
+	}
+	return iamUserToResource(out.User)
 }
 
 func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId, parentResourceID *v2.ResourceId) (annotations.Annotations, error) {
