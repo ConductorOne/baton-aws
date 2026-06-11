@@ -254,7 +254,7 @@ func (o *iamUserResourceType) CreateAccount(
 	if err != nil {
 		var alreadyExists *iamTypes.EntityAlreadyExistsException
 		if errors.As(err, &alreadyExists) {
-			existing, lookupErr := o.findIamUserByUserName(ctx, username)
+			existing, lookupErr := o.findIamUserByUserName(ctx, username, email)
 			if lookupErr != nil {
 				return nil, nil, nil, fmt.Errorf("baton-aws: iam user %q already exists but lookup via iam:GetUser failed: %w", username, lookupErr)
 			}
@@ -266,7 +266,7 @@ func (o *iamUserResourceType) CreateAccount(
 		return nil, nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.CreateUser failed: %w", err))
 	}
 
-	userResource, err := iamUserToResource(result.User)
+	userResource, err := iamUserToResource(ctx, result.User, email)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -277,23 +277,38 @@ func (o *iamUserResourceType) CreateAccount(
 	}, nil, nil, nil
 }
 
-func iamUserToResource(user *iamTypes.User) (*v2.Resource, error) {
+func iamUserToResource(ctx context.Context, user *iamTypes.User, email string) (*v2.Resource, error) {
 	arn := awsSdk.ToString(user.Arn)
+	options := []resourceSdk.UserTraitOption{
+		resourceSdk.WithUserProfile(iamUserProfile(ctx, *user)),
+	}
+	seen := map[string]bool{}
+	if email != "" {
+		options = append(options, resourceSdk.WithEmail(email, true))
+		seen[email] = true
+	}
+	for _, e := range getUserEmails(*user) {
+		if seen[e] {
+			continue
+		}
+		options = append(options, resourceSdk.WithEmail(e, email == ""))
+		seen[e] = true
+	}
 	return resourceSdk.NewUserResource(
 		awsSdk.ToString(user.UserName),
 		resourceTypeIAMUser,
 		arn,
-		nil,
+		options,
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: arn}),
 	)
 }
 
-func (o *iamUserResourceType) findIamUserByUserName(ctx context.Context, username string) (*v2.Resource, error) {
+func (o *iamUserResourceType) findIamUserByUserName(ctx context.Context, username, email string) (*v2.Resource, error) {
 	out, err := o.iamClient.GetUser(ctx, &iam.GetUserInput{UserName: awsSdk.String(username)})
 	if err != nil {
 		return nil, fmt.Errorf("baton-aws: iam.GetUser %q: %w", username, err)
 	}
-	return iamUserToResource(out.User)
+	return iamUserToResource(ctx, out.User, email)
 }
 
 func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId, parentResourceID *v2.ResourceId) (annotations.Annotations, error) {
