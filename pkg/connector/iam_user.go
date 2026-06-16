@@ -72,6 +72,14 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		}
 		profile := iamUserProfile(ctx, user)
 		lastLogin := getLastLogin(ctx, iamClient, user)
+
+		consoleAccessEnabled, passwordResetRequired, loginProfileCreatedAt := getConsoleAccess(ctx, iamClient, user)
+		profile["console_access_enabled"] = consoleAccessEnabled
+		profile["password_reset_required"] = passwordResetRequired
+		if loginProfileCreatedAt != nil {
+			profile["login_profile_created_at"] = loginProfileCreatedAt.Format(time.RFC3339)
+		}
+
 		options := []resourceSdk.UserTraitOption{
 			resourceSdk.WithUserProfile(profile),
 		}
@@ -144,6 +152,31 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
 	return profile
+}
+
+func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.User) (bool, bool, *time.Time) {
+	logger := ctxzap.Extract(ctx)
+
+	resp, err := client.GetLoginProfile(ctx, &iam.GetLoginProfileInput{
+		UserName: user.UserName,
+	})
+	if err != nil {
+		var noSuchEntity *iamTypes.NoSuchEntityException
+		if errors.As(err, &noSuchEntity) {
+			return false, false, nil
+		}
+		logger.Debug("baton-aws: error getting login profile",
+			zap.Error(err),
+			zap.String("user", awsSdk.ToString(user.UserName)),
+		)
+		return false, false, nil
+	}
+
+	if resp.LoginProfile == nil {
+		return false, false, nil
+	}
+
+	return true, resp.LoginProfile.PasswordResetRequired, resp.LoginProfile.CreateDate
 }
 
 func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *time.Time {
