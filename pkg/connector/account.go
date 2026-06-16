@@ -177,8 +177,9 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		l.Debug("baton-aws: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
+		displayName := fmt.Sprintf("%s (%s)", name, accountId)
 		userResource, err := resourceSdk.NewAppResource(
-			name,
+			displayName,
 			resourceTypeAccount,
 			accountId,
 			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
