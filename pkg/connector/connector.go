@@ -451,7 +451,14 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 
 	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
-		rs = append(rs, accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient))
+		acct := accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient)
+		rs = append(rs,
+			acct,
+			// Sparse ACLs (Cloud Infrastructure Access): permission set as role, and the
+			// per-(account, permission set) scope-binding. Both are OptInRequired.
+			permissionSetBuilder(c.ssoAdminClient, c.identityInstance),
+			permissionSetAssignmentBuilder(acct),
+		)
 	}
 
 	if c.syncSecrets {
@@ -485,6 +492,8 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil),
+		permissionSetBuilder(nil, nil),
+		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil)),
 		accountIAMBuilder(nil, nil, nil),
 		secretBuilder(nil, nil),
 	}

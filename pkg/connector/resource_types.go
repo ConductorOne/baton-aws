@@ -170,4 +170,50 @@ var (
 			),
 		),
 	}
+
+	// resourceTypePermissionSet is the Identity Center permission set modeled as a
+	// role (Sparse ACLs / Cloud Infrastructure Access). It is a pure role catalog
+	// node: its id is the bare permission-set ARN (see permissionSetRoleID), which
+	// the scope-binding trait's role_id must byte-match.
+	resourceTypePermissionSet = &v2.ResourceType{
+		Id:          "permission_set",
+		DisplayName: "Permission Set",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			&v2.OptInRequired{},
+			capabilityPermissions(
+				"sso:ListInstances",
+				"sso:ListPermissionSets",
+				"sso:DescribePermissionSet",
+			),
+		),
+	}
+
+	// resourceTypePermissionSetAssignment is the (permission set → account) binding
+	// carrying TRAIT_SCOPE_BINDING. This single trait is what makes the AWS app
+	// ingest as SPARSE/HYBRID and lights up the RoleScopeBindingRelationship / JIT /
+	// UAR / JML pipelines. Provisioning rides the existing Create/DeleteAccountAssignment
+	// path at the account scope.
+	resourceTypePermissionSetAssignment = &v2.ResourceType{
+		Id:          "permission_set_assignment",
+		DisplayName: "Permission Set Assignment",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_SCOPE_BINDING},
+		Annotations: annotations.New(
+			&v2.OptInRequired{},
+			capabilityPermissions(
+				// Read
+				"sso:ListInstances",
+				"sso:ListPermissionSetsProvisionedToAccount",
+				"sso:DescribePermissionSet",
+				"sso:ListAccountAssignments",
+				// Provision
+				"sso:CreateAccountAssignment",
+				"sso:DeleteAccountAssignment",
+				"sso:DescribeAccountAssignmentCreationStatus",
+				"sso:DescribeAccountAssignmentDeletionStatus",
+				"organizations:DescribeAccount",
+			),
+		),
+	}
 )
