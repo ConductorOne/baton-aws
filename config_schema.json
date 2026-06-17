@@ -120,6 +120,12 @@
       "boolField": {}
     },
     {
+      "name": "global-aws-cross-account-iam-enabled",
+      "displayName": "Also sync cross-account IAM when Identity Center is enabled",
+      "description": "When both Organizations and Identity Center are enabled, also sync IAM users, roles, and groups from every child account. Requires sts:AssumeRole on OrganizationAccountAccessRole in each child account. Has no effect when Identity Center is disabled (cross-account IAM sync always runs in that mode).",
+      "boolField": {}
+    },
+    {
       "name": "global-aws-sso-region",
       "displayName": "Region for AWS IAM Identity Center (successor to AWS Single Sign-On)",
       "description": "The region for the sso identities",
@@ -239,6 +245,16 @@
       ],
       "secondaryFieldNames": [
         "role-arn"
+      ]
+    },
+    {
+      "kind": "CONSTRAINT_KIND_DEPENDENT_ON",
+      "fieldNames": [
+        "global-aws-cross-account-iam-enabled"
+      ],
+      "secondaryFieldNames": [
+        "global-aws-orgs-enabled",
+        "global-aws-sso-enabled"
       ]
     }
   ],
