@@ -33,7 +33,13 @@ var (
 	GlobalAwsCrossAccountIamEnabledField = field.BoolField(
 		"global-aws-cross-account-iam-enabled",
 		field.WithDisplayName("Also sync cross-account IAM when Identity Center is enabled"),
-		field.WithDescription("When both AWS Organizations and Identity Center are enabled, also sync IAM users, roles, and groups from every child account. Requires sts:AssumeRole on OrganizationAccountAccessRole in each child account. Has no effect when Identity Center is disabled (cross-account IAM sync always runs in that mode)."),
+		field.WithDescription(
+			"When both Organizations and Identity Center are enabled, also sync IAM "+
+				"users, roles, and groups from every child account. Requires "+
+				"sts:AssumeRole on OrganizationAccountAccessRole in each child account. "+
+				"Has no effect when Identity Center is disabled (cross-account IAM "+
+				"sync always runs in that mode).",
+		),
 	)
 	GlobalAwsSsoRegionField = field.SelectField(
 		"global-aws-sso-region",
@@ -160,6 +166,15 @@ var Config = field.NewConfiguration(
 			},
 			[]field.SchemaField{
 				RoleArnField,
+			},
+		),
+		field.FieldsDependentOn(
+			[]field.SchemaField{
+				GlobalAwsCrossAccountIamEnabledField,
+			},
+			[]field.SchemaField{
+				GlobalAwsOrgsEnabledField,
+				GlobalAwsSsoEnabledField,
 			},
 		)),
 	field.WithConnectorDisplayName("AWS"),
