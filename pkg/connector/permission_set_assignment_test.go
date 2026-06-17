@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"strings"
 	"testing"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -21,20 +20,11 @@ const (
 	testPermissionSetID  = testPermissionSetArn // ListPermissionSets returns ARNs
 )
 
-// resourceIDToString and parseV2ExternalID mirror c1's pkg/connector/v2.ResourceIDToString
-// (type + "::" + resource) and baton-sdk's baton.ParseV2ExternalID (SplitN("::", 2)). They
-// are replicated here so the test pins the exact reconcile-key contract independently of
-// the c1 source tree.
-func resourceIDToString(rt, resource string) string { return rt + "::" + resource }
-
-func parseV2ExternalID(t *testing.T, s string) *v2.ResourceId {
-	t.Helper()
-	parts := strings.SplitN(s, "::", 2)
-	require.Len(t, parts, 2, "external id must split into type::resource")
-	return &v2.ResourceId{ResourceType: parts[0], Resource: parts[1]}
-}
-
-// scopeRoleBindingExternalID replicates c1's scope_role_jit.go helper exactly.
+// scopeRoleBindingExternalID mirrors c1's scope_role_jit.go JIT fabrication
+// (scopeRoleBindingExternalID = role + "-" + scope). c1 is the platform repo and is not in
+// this connector's module graph, so this one-line shape — the JIT id the connector emission
+// must byte-match — is pinned here. The end-to-end byte-match against a live sync is the .c1z
+// grep-verification step (enablement checklist / data-model §7.1).
 func scopeRoleBindingExternalID(roleResource, scopeResource string) string {
 	return roleResource + "-" + scopeResource
 }
@@ -124,23 +114,33 @@ func TestAssignedEntitlement_Slug(t *testing.T) {
 		ent.Id)
 }
 
-// The full reconcile-key round-trip: ResourceIDToString -> ParseV2ExternalID recovers the
-// binding's (type, resource) verbatim despite the ARN's embedded "::"/":::" — proving the
-// gate decision (raw concatenation, no encoding) holds for real ARNs.
-func TestBindingSourceID_RoundTripsThroughParseV2ExternalID(t *testing.T) {
+// The reconcile-key contract is pinned against the REAL baton-sdk id constructors, not local
+// replicas. baton-sdk does NOT export the c1-side type-prefixed external-id codec
+// (ResourceIDToString uses "::" / ParseV2ExternalID splits on it) — those live in the c1
+// platform repo, which is intentionally absent from a connector's module graph — so the two
+// reconcile keys we CAN verify with real SDK functions are pinned here, and the end-to-end
+// "::" round-trip is covered by the .c1z grep-verification step (G6) against a live sync.
+func TestBindingReconcileKeys_RealSDK(t *testing.T) {
 	binding, err := permissionSetAssignmentResource(testPermissionSetArn, "PowerUserAccess", testAccountID,
 		&v2.ResourceId{ResourceType: resourceTypeAccount.Id, Resource: testAccountID})
 	require.NoError(t, err)
 
-	sourceID := resourceIDToString(binding.Id.ResourceType, binding.Id.Resource)
-	parsed := parseV2ExternalID(t, sourceID)
+	// 1) The binding's resource id is exactly what the SDK's canonical NewResourceID produces
+	// for the same (type, object id) — so the connector emits the SDK-canonical id, with the
+	// ARN's embedded '-', ':' and '/' carried verbatim into Resource (no lossy encoding).
+	wantID, err := resourceSdk.NewResourceID(resourceTypePermissionSetAssignment,
+		permissionSetAssignmentObjectID(testPermissionSetArn, testAccountID))
+	require.NoError(t, err)
+	assert.Equal(t, wantID.ResourceType, binding.Id.ResourceType)
+	assert.Equal(t, wantID.Resource, binding.Id.Resource)
+	assert.Equal(t, permissionSetAssignmentObjectID(testPermissionSetArn, testAccountID), binding.Id.Resource)
 
-	assert.Equal(t, resourceTypePermissionSetAssignment.Id, parsed.ResourceType)
-	assert.Equal(t, permissionSetAssignmentObjectID(testPermissionSetArn, testAccountID), parsed.Resource)
-
-	// The role resource id (a bare ARN with ":::") also round-trips intact.
-	roleSourceID := resourceIDToString(resourceTypePermissionSet.Id, permissionSetRoleID(testPermissionSetArn))
-	parsedRole := parseV2ExternalID(t, roleSourceID)
-	assert.Equal(t, resourceTypePermissionSet.Id, parsedRole.ResourceType)
-	assert.Equal(t, testPermissionSetArn, parsedRole.Resource)
+	// 2) The entitlement external id — c1's canonical reconcile key — is exactly the real SDK
+	// NewEntitlementID(binding, "assigned"); the realistic ARN's special chars survive intact.
+	gotEnt := assignedEntitlement(binding)
+	wantEntID := entitlementSdk.NewEntitlementID(binding, permissionSetAssignmentEntitlement)
+	assert.Equal(t, wantEntID, gotEnt.Id)
+	assert.Equal(t,
+		resourceTypePermissionSetAssignment.Id+":"+permissionSetAssignmentObjectID(testPermissionSetArn, testAccountID)+":assigned",
+		gotEnt.Id)
 }

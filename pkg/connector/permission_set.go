@@ -24,7 +24,7 @@ func permissionSetRoleID(permissionSetArn string) string {
 
 type permissionSetResourceType struct {
 	resourceType     *v2.ResourceType
-	ssoAdminClient   *awsSsoAdmin.Client
+	ssoAdminClient   ssoAdminAPI
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 }
 
@@ -88,7 +88,10 @@ func permissionSetResource(ps *awsSsoAdminTypes.PermissionSet) (*v2.Resource, er
 		resourceTypePermissionSet,
 		permissionSetRoleID(arnStr),
 		nil,
-		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: arnStr}),
+		// No V1Identifier: permission_set is a brand-new sparse-ACL resource type with no
+		// v1 predecessor entity, so there is no legacy id to preserve. Both proven exemplars
+		// (baton-confluence space_role, baton-azure-infrastructure role_assignment) omit it on
+		// their new role/binding types; the binding resource here omits it for the same reason.
 		resourceSdk.WithDescription(awsSdk.ToString(ps.Description)),
 	)
 }
@@ -104,7 +107,7 @@ func (o *permissionSetResourceType) Grants(_ context.Context, _ *v2.Resource, _ 
 	return nil, nil, nil
 }
 
-func permissionSetBuilder(ssoAdminClient *awsSsoAdmin.Client, identityInstance *awsSsoAdminTypes.InstanceMetadata) *permissionSetResourceType {
+func permissionSetBuilder(ssoAdminClient ssoAdminAPI, identityInstance *awsSsoAdminTypes.InstanceMetadata) *permissionSetResourceType {
 	return &permissionSetResourceType{
 		resourceType:     resourceTypePermissionSet,
 		ssoAdminClient:   ssoAdminClient,

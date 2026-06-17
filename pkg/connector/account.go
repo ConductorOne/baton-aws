@@ -123,8 +123,8 @@ type entitlementsPageState struct {
 
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
-	orgClient        *awsOrgs.Client
-	ssoAdminClient   *awsSsoAdmin.Client
+	orgClient        orgsAPI
+	ssoAdminClient   ssoAdminAPI
 	roleArn          string
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 	identityClient   client.IdentityStoreClient
@@ -585,6 +585,33 @@ func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource,
 	return o.provisionAssignment(ctx, binding.AccountID, binding.PermissionSetId, principal)
 }
 
+// accountAssignmentExists reports whether (account, permissionSet, principal) is already an
+// Identity Center account assignment. It paginates ListAccountAssignments fully so a binding
+// on a later page is not missed. Used by provisionAssignment to emit GrantAlreadyExists.
+func (o *accountResourceType) accountAssignmentExists(ctx context.Context, accountID string, permissionSetArn string, principalType awsSsoAdminTypes.PrincipalType, principalId string) (bool, error) {
+	var nextToken *string
+	for {
+		resp, err := o.ssoAdminClient.ListAccountAssignments(ctx, &awsSsoAdmin.ListAccountAssignmentsInput{
+			AccountId:        awsSdk.String(accountID),
+			InstanceArn:      o.identityInstance.InstanceArn,
+			PermissionSetArn: awsSdk.String(permissionSetArn),
+			NextToken:        nextToken,
+		})
+		if err != nil {
+			return false, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListAccountAssignments failed: %w", err))
+		}
+		for _, a := range resp.AccountAssignments {
+			if a.PrincipalType == principalType && awsSdk.ToString(a.PrincipalId) == principalId {
+				return true, nil
+			}
+		}
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			return false, nil
+		}
+		nextToken = resp.NextToken
+	}
+}
+
 // provisionAssignment creates an Identity Center account assignment for the given
 // (account, permission set, principal). It is the shared core of the account-entitlement
 // Grant path and the scope-binding Grant path; both recover (accountID, permissionSetArn)
@@ -595,6 +622,20 @@ func (o *accountResourceType) provisionAssignment(ctx context.Context, accountID
 	principalType, principalId, err := resolveSSOPrincipal(principal)
 	if err != nil {
 		return nil, err
+	}
+
+	// Idempotency: if the assignment already exists, emit GrantAlreadyExists and skip the
+	// create+status-poll (and the DescribeAccount status check below). CreateAccountAssignment
+	// is natively idempotent, so re-creating would also succeed, but emitting the annotation is
+	// the baton-sdk idiom and mirrors the GrantAlreadyRevoked path in deprovisionAssignment.
+	exists, err := o.accountAssignmentExists(ctx, accountID, permissionSetArn, principalType, principalId)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		annos := annotations.New()
+		annos.Append(&v2.GrantAlreadyExists{})
+		return annos, nil
 	}
 
 	binding := &PermissionSetBinding{AccountID: accountID, PermissionSetId: permissionSetArn}
@@ -881,9 +922,9 @@ func (o *accountResourceType) fetchPermissionSetFromAPI(ctx context.Context, per
 }
 
 func accountBuilder(
-	orgClient *awsOrgs.Client,
+	orgClient orgsAPI,
 	roleArn string,
-	ssoAdminClient *awsSsoAdmin.Client,
+	ssoAdminClient ssoAdminAPI,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
 	identityClient client.IdentityStoreClient,
