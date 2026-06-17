@@ -10,7 +10,6 @@ import (
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 
-	"github.com/conductorone/baton-sdk/pkg/connectorstore"
 	formatv3 "github.com/conductorone/baton-sdk/pkg/dotc1z/format/v3"
 )
 
@@ -36,18 +35,58 @@ type StoreOptions struct {
 
 	// PayloadEncoding selects the v3 envelope payload framing for
 	// engines that produce a v3 envelope (currently Pebble). Zero
-	// value means "engine default" (PayloadEncodingTarZstd for Pebble).
+	// value means "engine default" (PayloadEncodingIndexedZstd for
+	// Pebble).
 	PayloadEncoding PayloadEncoding
+
+	// DecoderPool optionally scopes v3 payload-decoder reuse to the
+	// caller's operation (see WithDecoderPool). Nil means a one-shot
+	// decoder per open.
+	DecoderPool *EnvelopeDecoderPool
+
+	// MaxDecodedPayloadBytes optionally caps v3 envelope payload extraction.
+	// Zero means use BATON_DECODER_MAX_DECODED_SIZE_MB or the v3 default.
+	MaxDecodedPayloadBytes uint64
+
+	// MaxDecoderMemoryBytes optionally caps zstd decoder memory for v3 envelope
+	// payload extraction. Zero means use BATON_DECODER_MAX_MEMORY_MB or the v3
+	// default.
+	MaxDecoderMemoryBytes uint64
 }
 
-// EngineDriver opens a .c1z file for a specific storage engine. Drivers live
-// outside the dotc1z package when they carry optional dependencies. The default
-// SQLite driver is registered by this package; Pebble registers from
-// pkg/dotc1z/engine/pebble when callers explicitly import and register it.
+// EnvelopeDecoderPool re-exports the v3 envelope payload decoder pool
+// so callers (e.g. the sync compactor) can scope decoder reuse to one
+// operation without importing the format package. See
+// formatv3.DecoderPool for semantics.
+type EnvelopeDecoderPool = formatv3.DecoderPool
+
+// NewEnvelopeDecoderPool returns an empty pool; the caller owns its
+// lifetime and must Close it when the operation completes.
+func NewEnvelopeDecoderPool() *EnvelopeDecoderPool {
+	return formatv3.NewDecoderPool()
+}
+
+// WithDecoderPool threads a caller-owned envelope decoder pool through
+// a store open. Useful only for callers that open MANY v3 c1z files in
+// one operation (the compactor opens one envelope per source per
+// merge); each open draws its zstd payload decoder from the pool
+// instead of constructing a fresh one. The caller must Close the pool
+// when the operation finishes — that deterministic release is the
+// point of scoping the pool instead of sharing one process-wide.
+// Ignored by the SQLite (v1) engine and harmless when nil.
+func WithDecoderPool(p *EnvelopeDecoderPool) C1ZOption {
+	return func(o *c1zOptions) {
+		o.decoderPool = p
+	}
+}
+
+// EngineDriver opens a .c1z file for a specific storage engine. The SQLite
+// and Pebble drivers are both registered statically by this package;
+// RegisterEngine exists for additional engines.
 type EngineDriver interface {
 	Engine() Engine
 	Format() C1ZFormat
-	OpenStore(ctx context.Context, outputFilePath string, opts StoreOptions) (connectorstore.Writer, error)
+	OpenStore(ctx context.Context, outputFilePath string, opts StoreOptions) (C1ZStore, error)
 }
 
 type engineRegistry struct {
@@ -58,6 +97,7 @@ type engineRegistry struct {
 var defaultEngineRegistry = &engineRegistry{
 	byEngine: map[Engine]EngineDriver{
 		EngineSQLite: sqliteDriver{},
+		EnginePebble: pebbleDriver{},
 	},
 }
 
@@ -105,7 +145,7 @@ func (r *engineRegistry) driverForEngine(engine Engine) (EngineDriver, bool) {
 // the engine-neutral constructor for callers that may opt into non-default
 // engines. NewC1ZFile remains the concrete SQLite constructor for legacy
 // callers that need *C1File.
-func NewStore(ctx context.Context, outputFilePath string, opts ...C1ZOption) (connectorstore.Writer, error) {
+func NewStore(ctx context.Context, outputFilePath string, opts ...C1ZOption) (C1ZStore, error) {
 	options, err := buildC1ZOptions(opts...)
 	if err != nil {
 		return nil, err
@@ -129,20 +169,28 @@ func buildC1ZOptions(opts ...C1ZOption) (*c1zOptions, error) {
 	if options.encoderConcurrency < 0 {
 		return nil, fmt.Errorf("encoder concurrency must not be negative: %d", options.encoderConcurrency)
 	}
+	if _, err := applyDecoderOptions(options.decoderOptions...); err != nil {
+		return nil, err
+	}
 	return options, nil
 }
 
 func storeOptionsFromC1ZOptions(options *c1zOptions) StoreOptions {
+	maxDecodedPayloadBytes, _ := explicitMaxDecodedSizeForDecoderOptions(options.decoderOptions...)
+	maxDecoderMemoryBytes, _ := explicitMaxMemorySizeForDecoderOptions(options.decoderOptions...)
 	out := StoreOptions{
-		TmpDir:             options.tmpDir,
-		DecoderOptions:     append([]DecoderOption(nil), options.decoderOptions...),
-		ReadOnly:           options.readOnly,
-		EncoderConcurrency: options.encoderConcurrency,
-		SyncLimit:          options.syncLimit,
-		SkipCleanup:        options.skipCleanup,
-		V2GrantsWriter:     options.v2GrantsWriter,
-		Engine:             options.engine,
-		PayloadEncoding:    options.payloadEncoding,
+		TmpDir:                 options.tmpDir,
+		DecoderOptions:         append([]DecoderOption(nil), options.decoderOptions...),
+		ReadOnly:               options.readOnly,
+		EncoderConcurrency:     options.encoderConcurrency,
+		SyncLimit:              options.syncLimit,
+		SkipCleanup:            options.skipCleanup,
+		V2GrantsWriter:         options.v2GrantsWriter,
+		Engine:                 options.engine,
+		PayloadEncoding:        options.payloadEncoding,
+		DecoderPool:            options.decoderPool,
+		MaxDecodedPayloadBytes: maxDecodedPayloadBytes,
+		MaxDecoderMemoryBytes:  maxDecoderMemoryBytes,
 	}
 	if out.Engine == "" {
 		out.Engine = EngineSQLite
@@ -193,7 +241,11 @@ func selectStoreDriver(ctx context.Context, outputFilePath string, options *c1zO
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() {
+		if f != nil {
+			_ = f.Close()
+		}
+	}()
 
 	format, err := ReadHeaderFormat(f)
 	if err != nil {
@@ -203,17 +255,42 @@ func selectStoreDriver(ctx context.Context, outputFilePath string, options *c1zO
 	var fileEngine Engine
 	switch format {
 	case C1ZFormatV1:
+		if shouldConvertSQLiteToPebble(requested, options.readOnly, true) {
+			// Close our header-read handle before converting: the conversion
+			// renames a temp file over outputFilePath, which fails on Windows
+			// if any handle to the destination is still open. Nil out f so
+			// the deferred close doesn't double-close.
+			closeErr := f.Close()
+			f = nil
+			if closeErr != nil {
+				return nil, closeErr
+			}
+			l.Debug("converting existing v1 c1z to pebble", zap.String("output_file_path", outputFilePath))
+			if err := convertExistingV1C1ZFile(ctx, outputFilePath, pebbleOpenOptionsFromC1Z(options)); err != nil {
+				return nil, fmt.Errorf("select-store-driver: convert existing v1 c1z to pebble: %w", err)
+			}
+			l.Debug("converted existing v1 c1z to pebble", zap.String("output_file_path", outputFilePath))
+			return requireEngineDriver(EnginePebble)
+		}
 		fileEngine = EngineSQLite
 	case C1ZFormatV3:
 		if _, err := f.Seek(0, 0); err != nil {
 			return nil, err
 		}
-		env, err := formatv3.ReadEnvelope(f)
+		// Engine dispatch only needs the small manifest header. Avoiding the
+		// descriptor closure unmarshal cut the clean skewed-500 overlay profile
+		// from ~3.64M to ~1.74M allocs/op; ReadManifestHeader (vs
+		// ReadEnvelopeHeader) additionally skips constructing a zstd payload
+		// decoder that dispatch never reads from — one wasted
+		// window-allocation + worker spin-up per open.
+		m, err := formatv3.ReadManifestHeader(f)
 		if err != nil {
 			return nil, err
 		}
-		defer env.Close()
-		fileEngine = Engine(env.Manifest.GetEngine())
+		fileEngine = Engine(m.GetEngine())
+		if fileEngine == PebbleManifestEngine { // single-sync manifest name; same driver
+			fileEngine = EnginePebble
+		}
 	default:
 		return nil, ErrInvalidFile
 	}
@@ -232,7 +309,7 @@ func selectStoreDriver(ctx context.Context, outputFilePath string, options *c1zO
 func requireEngineDriver(engine Engine) (EngineDriver, error) {
 	driver, ok := EngineDriverFor(engine)
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrEngineNotAvailable, engine)
+		return nil, fmt.Errorf("require-engine-driver: %w: %s", ErrEngineNotAvailable, engine)
 	}
 	return driver, nil
 }
@@ -242,7 +319,7 @@ type sqliteDriver struct{}
 func (sqliteDriver) Engine() Engine    { return EngineSQLite }
 func (sqliteDriver) Format() C1ZFormat { return C1ZFormatV1 }
 
-func (sqliteDriver) OpenStore(ctx context.Context, outputFilePath string, opts StoreOptions) (connectorstore.Writer, error) {
+func (sqliteDriver) OpenStore(ctx context.Context, outputFilePath string, opts StoreOptions) (C1ZStore, error) {
 	c1zOpts := []C1ZOption{
 		WithEngine(EngineSQLite),
 		WithEncoderConcurrency(opts.EncoderConcurrency),

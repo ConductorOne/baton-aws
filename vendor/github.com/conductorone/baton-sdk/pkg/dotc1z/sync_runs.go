@@ -14,6 +14,7 @@ import (
 	"github.com/doug-martin/goqu/v9"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/segmentio/ksuid"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -23,6 +24,7 @@ import (
 
 	reader_v2 "github.com/conductorone/baton-sdk/pb/c1/reader/v2"
 	"github.com/conductorone/baton-sdk/pkg/connectorstore"
+	"github.com/conductorone/baton-sdk/pkg/dotc1z/c1zstore"
 	"github.com/conductorone/baton-sdk/pkg/uotel"
 )
 
@@ -364,6 +366,8 @@ func (c *C1File) ListSyncRuns(ctx context.Context, pageToken string, pageSize ui
 	return ret, nextPageToken, nil
 }
 
+// LatestSyncID returns the ID of the most recently finished sync of the given type.
+// If syncType is connectorstore.SyncTypeAny, it will return the most recently finished sync of any type.
 func (c *C1File) LatestSyncID(ctx context.Context, syncType connectorstore.SyncType) (string, error) {
 	ctx, span := tracer.Start(ctx, "C1File.LatestSyncID")
 	var err error
@@ -449,7 +453,7 @@ func (c *C1File) getSync(ctx context.Context, syncID string) (*SyncRun, error) {
 	var statsBytes *[]byte
 	err = row.Scan(&ret.ID, &ret.StartedAt, &ret.EndedAt, &ret.SyncToken, &ret.Type, &ret.ParentSyncID, &ret.LinkedSyncID, &ret.SupportsDiff, &statsBytes)
 	if err != nil {
-		return nil, err
+		return nil, c1zstore.AdaptNotFound(err)
 	}
 
 	ret.Stats = parseStats(ctx, statsBytes)
@@ -582,7 +586,7 @@ func (c *C1File) StartOrResumeSync(ctx context.Context, syncType connectorstore.
 
 	resumedSyncID, err := c.ResumeSync(ctx, syncType, syncID)
 	if err != nil {
-		if status.Code(err) != codes.NotFound && !errors.Is(err, sql.ErrNoRows) {
+		if status.Code(err) != codes.NotFound {
 			return "", false, err
 		}
 	} else {
@@ -619,10 +623,19 @@ func (c *C1File) StartNewSync(ctx context.Context, syncType connectorstore.SyncT
 		if err != nil {
 			return "", err
 		}
-		if cur != nil && cur.EndedAt == nil && cur.Type != syncType {
-			return "", status.Errorf(codes.FailedPrecondition, "current sync (id %s) is type %s. cannot start %s", cur.ID, cur.Type, syncType)
+		// Only adopt the current sync as the started one when it actually exists
+		// and is still open. An ENDED (cur.EndedAt != nil) or missing (cur == nil)
+		// current sync must NOT be returned here: a caller that scanned existing
+		// syncs and left currentSyncID pointing at a finished sync would otherwise
+		// get that finished sync back and write a fresh sync's records into it.
+		// Fall through to create a brand-new sync instead.
+		if cur != nil && cur.EndedAt == nil {
+			if cur.Type != syncType {
+				return "", status.Errorf(codes.FailedPrecondition, "current sync (id %s) is type %s. cannot start %s", cur.ID, cur.Type, syncType)
+			}
+			return c.currentSyncID, nil
 		}
-		return c.currentSyncID, nil
+		c.currentSyncID = ""
 	}
 
 	switch syncType {
@@ -749,7 +762,7 @@ func (c *C1File) endSyncRun(ctx context.Context, syncID string) error {
 	c.dbUpdated = true
 
 	// Run stats to generate and save the cached stats.
-	_, _, statsErr := c.stats(ctx, connectorstore.SyncTypeAny, syncID)
+	_, _, statsErr := c.stats(ctx, connectorstore.SyncTypeAny, syncID, true)
 	if statsErr != nil {
 		// Ignore stats error. We will recalculate them if Stats() is called.
 		ctxzap.Extract(ctx).Warn("c1z: error calculating & saving stats",
@@ -848,6 +861,7 @@ func wrapSqliteInterruptError(err error) error {
 
 func (c *C1File) Cleanup(ctx context.Context) error {
 	ctx, span := tracer.Start(ctx, "C1File.Cleanup")
+	uotel.SetSyncIdentityAttrs(ctx, span)
 	var err error
 	defer func() { uotel.EndSpanWithError(span, err) }()
 
@@ -1016,6 +1030,7 @@ func (c *C1File) DeleteSyncRun(ctx context.Context, syncID string) error {
 // Vacuum runs a VACUUM on the database to reclaim space.
 func (c *C1File) Vacuum(ctx context.Context) error {
 	ctx, span := tracer.Start(ctx, "C1File.Vacuum")
+	uotel.SetSyncIdentityAttrs(ctx, span)
 	var err error
 	defer func() { uotel.EndSpanWithError(span, err) }()
 
@@ -1024,9 +1039,25 @@ func (c *C1File) Vacuum(ctx context.Context) error {
 		return err
 	}
 
+	sizeBefore, sizeBeforeErr := c.CurrentDBSizeBytes()
+
 	_, err = c.rawDb.ExecContext(ctx, "VACUUM")
 	if err != nil {
 		return err
+	}
+
+	sizeAfter, sizeErr := c.CurrentDBSizeBytes()
+	if sizeErr == nil {
+		span.SetAttributes(attribute.Int64("c1z.vacuum.size_after_bytes", sizeAfter))
+		recordC1ZSize(ctx, "vacuum", sizeAfter)
+		// reclaimed_bytes is only meaningful with a valid pre-VACUUM size;
+		// a failed sizeBefore returns 0 and would emit negative reclaimed.
+		if sizeBeforeErr == nil {
+			span.SetAttributes(
+				attribute.Int64("c1z.vacuum.size_before_bytes", sizeBefore),
+				attribute.Int64("c1z.vacuum.reclaimed_bytes", sizeBefore-sizeAfter),
+			)
+		}
 	}
 
 	c.dbUpdated = true

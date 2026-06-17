@@ -13,6 +13,7 @@ import (
 
 	"github.com/conductorone/baton-sdk/pkg/bid"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
+	"github.com/conductorone/baton-sdk/pkg/dotc1z"
 	"github.com/conductorone/baton-sdk/pkg/field"
 	"github.com/conductorone/baton-sdk/pkg/healthcheck"
 	"github.com/conductorone/baton-sdk/pkg/synccompactor"
@@ -421,16 +422,20 @@ type runnerConfig struct {
 	syncDifferConfig                      *syncDifferConfig
 	syncCompactorConfig                   *syncCompactorConfig
 	skipFullSync                          bool
+	storageEngine                         dotc1z.Engine
 	workerCount                           int
 	targetedSyncResourceIDs               []string
 	externalResourceC1Z                   string
 	externalResourceEntitlementIdFilter   string
+	keepPreviousSyncC1ZCapable            bool
+	keepPreviousSyncC1ZEnabled            bool
 	skipEntitlementsAndGrants             bool
 	skipGrants                            bool
 	sessionStoreEnabled                   bool
 	syncResourceTypeIDs                   []string
 	defaultCapabilitiesConnectorBuilder   connectorbuilder.ConnectorBuilder
 	defaultCapabilitiesConnectorBuilderV2 connectorbuilder.ConnectorBuilderV2
+	defaultCapabilitiesConnectorFactory   func(ctx context.Context) (types.ConnectorServer, error)
 	healthCheckEnabled                    bool
 	healthCheckPort                       int
 	healthCheckBindAddress                string
@@ -664,6 +669,13 @@ func WithWorkerCount(workerCount int) Option {
 	}
 }
 
+func WithStorageEngine(engine dotc1z.Engine) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.storageEngine = engine
+		return nil
+	}
+}
+
 // WithTaskConcurrency sets how many Baton tasks may run concurrently in service mode.
 // n uses the same raw sentinels as sync workers: -1 for auto-detect, 0 for sequential,
 // and >0 for that many concurrent tasks.
@@ -755,6 +767,41 @@ func WithExternalResourceEntitlementFilter(entitlementId string) Option {
 	}
 }
 
+// WithKeepPreviousSyncC1Z is the connector AUTHOR's build-time
+// declaration that this connector supports ETag replay in service
+// mode: after each successful upload the runner retains the uploaded
+// c1z as a local spare (one file, fixed name, replaced atomically each
+// sync) and feeds it to the next full sync as the previous-sync replay
+// source.
+//
+// The capability alone does nothing — the CUSTOMER must also enable it
+// at runtime (--keep-previous-sync-c1z / BATON_KEEP_PREVIOUS_SYNC_C1Z,
+// which sets WithKeepPreviousSyncC1ZRuntimeOptIn). Both are required:
+// the author knows whether the connector emits ETags; the customer
+// decides whether to spend a c1z of host disk on the spare. No effect
+// in local/on-demand modes, which keep their c1z at a stable path
+// already.
+func WithKeepPreviousSyncC1Z() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.keepPreviousSyncC1ZCapable = true
+		return nil
+	}
+}
+
+// WithKeepPreviousSyncC1ZRuntimeOptIn is the customer's runtime half of
+// the ETag-replay opt-in, set by the --keep-previous-sync-c1z flag /
+// BATON_KEEP_PREVIOUS_SYNC_C1Z env var. It only takes effect on
+// connectors whose author declared the capability via
+// WithKeepPreviousSyncC1Z; on any other connector it is inert (and the
+// runner logs a warning so the customer isn't left wondering why ETag
+// replay never activates).
+func WithKeepPreviousSyncC1ZRuntimeOptIn() Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.keepPreviousSyncC1ZEnabled = true
+		return nil
+	}
+}
+
 func WithDiffSyncs(c1zPath string, baseSyncID string, newSyncID string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
 		cfg.onDemand = true
@@ -816,6 +863,22 @@ func WithDefaultCapabilitiesConnectorBuilderV2(t connectorbuilder.ConnectorBuild
 	}
 }
 
+// WithDefaultCapabilitiesConnectorFactory sets a factory that supplies the connector
+// used by the "capabilities" sub-command. Unlike WithDefaultCapabilitiesConnectorBuilder,
+// the factory returns a fully-constructed types.ConnectorServer directly, so the connector
+// is not wrapped by connectorbuilder.NewConnector. This lets callers provide a connector
+// (such as an embedded connector) whose capabilities are reported via GetMetadata rather
+// than via the optional GetCapabilities getter.
+//
+// The factory is only invoked inside the capabilities command, and its returned connector
+// is closed (if it implements Close) once capabilities have been read.
+func WithDefaultCapabilitiesConnectorFactory(f func(ctx context.Context) (types.ConnectorServer, error)) Option {
+	return func(ctx context.Context, cfg *runnerConfig) error {
+		cfg.defaultCapabilitiesConnectorFactory = f
+		return nil
+	}
+}
+
 // WithHealthCheck enables the HTTP health check server.
 func WithHealthCheck(enabled bool, port int, bindAddress string) Option {
 	return func(ctx context.Context, cfg *runnerConfig) error {
@@ -845,6 +908,21 @@ func ExtractDefaultConnector(ctx context.Context, options ...Option) (any, error
 	}
 
 	return nil, nil
+}
+
+// ExtractDefaultCapabilitiesConnectorFactory returns the factory registered via
+// WithDefaultCapabilitiesConnectorFactory, or nil if none was set.
+func ExtractDefaultCapabilitiesConnectorFactory(ctx context.Context, options ...Option) (func(ctx context.Context) (types.ConnectorServer, error), error) {
+	cfg := &runnerConfig{}
+
+	for _, o := range options {
+		err := o(ctx, cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return cfg.defaultCapabilitiesConnectorFactory, nil
 }
 
 func IsSessionStoreEnabled(ctx context.Context, options ...Option) (bool, error) {
@@ -1009,6 +1087,7 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 				local.WithSkipGrants(cfg.skipGrants),
 				local.WithSyncResourceTypeIDs(cfg.syncResourceTypeIDs),
 				local.WithWorkerCount(cfg.workerCount),
+				local.WithStorageEngine(cfg.storageEngine),
 			)
 			if err != nil {
 				return nil, err
@@ -1026,6 +1105,17 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 	// (cfg.onDemand) returned above, and Lambda mode never reaches
 	// NewConnectorRunner. Only this path sends a startup Hello to Conductor
 	// One — local / one-shot managers and Lambda intentionally do not.
+
+	// ETag replay requires BOTH halves of the opt-in: the author's
+	// build-time capability declaration AND the customer's runtime flag.
+	// A runtime flag on a connector without the capability is inert —
+	// warn so the customer isn't left wondering why replay never
+	// activates.
+	keepPreviousSyncC1Z := cfg.keepPreviousSyncC1ZCapable && cfg.keepPreviousSyncC1ZEnabled
+	if cfg.keepPreviousSyncC1ZEnabled && !cfg.keepPreviousSyncC1ZCapable {
+		ctxzap.Extract(ctx).Warn("keep-previous-sync-c1z is set, but this connector does not declare ETag-replay support; the flag has no effect")
+	}
+
 	tm, err := c1api.NewC1TaskManager(
 		ctx,
 		cfg.clientID,
@@ -1037,7 +1127,9 @@ func NewConnectorRunner(ctx context.Context, c types.ConnectorServer, opts ...Op
 		resources,
 		cfg.syncResourceTypeIDs,
 		cfg.workerCount,
+		cfg.storageEngine,
 		runner.taskConcurrency,
+		keepPreviousSyncC1Z,
 	)
 	if err != nil {
 		return nil, err
