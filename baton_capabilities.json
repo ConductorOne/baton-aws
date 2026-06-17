@@ -61,6 +61,9 @@
                 "permission": "organizations:DescribeOrganization"
               },
               {
+                "permission": "organizations:ListParents"
+              },
+              {
                 "permission": "sso:ListPermissionSets"
               },
               {
@@ -141,6 +144,9 @@
           },
           {
             "permission": "organizations:DescribeOrganization"
+          },
+          {
+            "permission": "organizations:ListParents"
           },
           {
             "permission": "sso:ListPermissionSets"
@@ -462,6 +468,86 @@
           }
         ]
       }
+    },
+    {
+      "resourceType": {
+        "id": "organization",
+        "displayName": "Organization Root",
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.OptInRequired"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.ChildResourceType",
+            "resourceTypeId": "organizational_unit"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "organizations:ListRoots"
+              },
+              {
+                "permission": "organizations:ListOrganizationalUnitsForParent"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "organizations:ListRoots"
+          },
+          {
+            "permission": "organizations:ListOrganizationalUnitsForParent"
+          }
+        ]
+      },
+      "optInRequired": true
+    },
+    {
+      "resourceType": {
+        "id": "organizational_unit",
+        "displayName": "Organizational Unit",
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.OptInRequired"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.ChildResourceType",
+            "resourceTypeId": "organizational_unit"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "organizations:ListOrganizationalUnitsForParent"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "organizations:ListOrganizationalUnitsForParent"
+          }
+        ]
+      },
+      "optInRequired": true
     },
     {
       "resourceType": {

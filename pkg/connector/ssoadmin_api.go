@@ -40,10 +40,21 @@ type ssoAdminAPI interface {
 	) (*awsSsoAdmin.DescribeAccountAssignmentDeletionStatusOutput, error)
 }
 
-// orgsAPI is the subset of *organizations.Client the account builder calls. Same rationale and
-// structural-satisfaction property as ssoAdminAPI; ListAccounts also doubles as the API client
-// for NewListAccountsPaginator.
+// orgsAPI is the subset of *organizations.Client the account and org-hierarchy builders call.
+// Same rationale and structural-satisfaction property as ssoAdminAPI; ListAccounts also doubles
+// as the API client for NewListAccountsPaginator.
+//
+// The ListRoots / ListOrganizationalUnitsForParent / ListParents methods back the Sparse ACLs
+// Root → OU → Account hierarchy (Phase 2): the org / OU builders walk the tree top-down, and
+// the account builder re-parents each account onto its Root/OU via ListParents.
 type orgsAPI interface {
 	DescribeAccount(ctx context.Context, params *awsOrgs.DescribeAccountInput, optFns ...func(*awsOrgs.Options)) (*awsOrgs.DescribeAccountOutput, error)
 	ListAccounts(ctx context.Context, params *awsOrgs.ListAccountsInput, optFns ...func(*awsOrgs.Options)) (*awsOrgs.ListAccountsOutput, error)
+	ListRoots(ctx context.Context, params *awsOrgs.ListRootsInput, optFns ...func(*awsOrgs.Options)) (*awsOrgs.ListRootsOutput, error)
+	ListOrganizationalUnitsForParent(
+		ctx context.Context,
+		params *awsOrgs.ListOrganizationalUnitsForParentInput,
+		optFns ...func(*awsOrgs.Options),
+	) (*awsOrgs.ListOrganizationalUnitsForParentOutput, error)
+	ListParents(ctx context.Context, params *awsOrgs.ListParentsInput, optFns ...func(*awsOrgs.Options)) (*awsOrgs.ListParentsOutput, error)
 }

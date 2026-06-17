@@ -115,15 +115,53 @@ func (f *fakeSSOAdmin) DescribeAccountAssignmentDeletionStatus(
 }
 
 // fakeOrgs is an orgsAPI that reports every account active, so the provision/deprovision
-// status-verification step passes without a real AWS Organizations call.
-type fakeOrgs struct{}
+// status-verification step passes without a real AWS Organizations call. The org-tree methods
+// delegate to pluggable funcs; nil funcs return an empty, successful response.
+type fakeOrgs struct {
+	listAccountsFn    func(*awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error)
+	listRootsFn       func(*awsOrgs.ListRootsInput) (*awsOrgs.ListRootsOutput, error)
+	listOUsFn         func(*awsOrgs.ListOrganizationalUnitsForParentInput) (*awsOrgs.ListOrganizationalUnitsForParentOutput, error)
+	listParentsFn     func(*awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error)
+	describeAccountFn func(*awsOrgs.DescribeAccountInput) (*awsOrgs.DescribeAccountOutput, error)
+}
 
 func (f *fakeOrgs) DescribeAccount(_ context.Context, in *awsOrgs.DescribeAccountInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.DescribeAccountOutput, error) {
+	if f.describeAccountFn != nil {
+		return f.describeAccountFn(in)
+	}
 	return &awsOrgs.DescribeAccountOutput{Account: &awsOrgsTypes.Account{Id: in.AccountId, Status: awsOrgsTypes.AccountStatusActive}}, nil
 }
 
-func (f *fakeOrgs) ListAccounts(_ context.Context, _ *awsOrgs.ListAccountsInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.ListAccountsOutput, error) {
+func (f *fakeOrgs) ListAccounts(_ context.Context, in *awsOrgs.ListAccountsInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.ListAccountsOutput, error) {
+	if f.listAccountsFn != nil {
+		return f.listAccountsFn(in)
+	}
 	return &awsOrgs.ListAccountsOutput{}, nil
+}
+
+func (f *fakeOrgs) ListRoots(_ context.Context, in *awsOrgs.ListRootsInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.ListRootsOutput, error) {
+	if f.listRootsFn != nil {
+		return f.listRootsFn(in)
+	}
+	return &awsOrgs.ListRootsOutput{}, nil
+}
+
+func (f *fakeOrgs) ListOrganizationalUnitsForParent(
+	_ context.Context,
+	in *awsOrgs.ListOrganizationalUnitsForParentInput,
+	_ ...func(*awsOrgs.Options),
+) (*awsOrgs.ListOrganizationalUnitsForParentOutput, error) {
+	if f.listOUsFn != nil {
+		return f.listOUsFn(in)
+	}
+	return &awsOrgs.ListOrganizationalUnitsForParentOutput{}, nil
+}
+
+func (f *fakeOrgs) ListParents(_ context.Context, in *awsOrgs.ListParentsInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.ListParentsOutput, error) {
+	if f.listParentsFn != nil {
+		return f.listParentsFn(in)
+	}
+	return &awsOrgs.ListParentsOutput{}, nil
 }
 
 const (

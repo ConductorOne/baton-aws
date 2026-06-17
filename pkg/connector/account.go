@@ -161,6 +161,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
+	orgReadDenied := false
 	for _, account := range resp.Accounts {
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(account.Id),
@@ -177,22 +178,44 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		l.Debug("baton-aws: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
-		userResource, err := resourceSdk.NewAppResource(
-			name,
-			resourceTypeAccount,
-			accountId,
-			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
+		resourceOpts := []resourceSdk.ResourceOption{
 			resourceSdk.WithAnnotation(annos),
 			// Sparse ACLs: advertise the scope-binding type as a child so the SDK
 			// crawls per-(account, permission set) bindings under each account.
 			resourceSdk.WithAnnotation(&v2.ChildResourceType{
 				ResourceTypeId: resourceTypePermissionSetAssignment.Id,
 			}),
+		}
+
+		// Sparse ACLs hierarchy (Phase 2): re-parent the account under its Root/OU so c1's
+		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
+		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
+		parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
+		if err != nil {
+			return nil, nil, err
+		}
+		if accessDenied {
+			orgReadDenied = true
+		}
+		if parentID != nil {
+			resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
+		}
+
+		userResource, err := resourceSdk.NewAppResource(
+			name,
+			resourceTypeAccount,
+			accountId,
+			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
+			resourceOpts...,
 		)
 		if err != nil {
 			return nil, nil, err
 		}
 		rv = append(rv, userResource)
+	}
+	if orgReadDenied {
+		l.Warn("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
+			"Add organizations:ListParents to enable by-inheritance review across the org tree.")
 	}
 
 	if resp.NextToken != nil {
