@@ -38,23 +38,24 @@ const (
 )
 
 type Config struct {
-	UseAssumeRole           bool
-	GlobalBindingExternalID string
-	GlobalRegion            string
-	GlobalRoleARN           string
-	GlobalSecretAccessKey   string
-	GlobalAccessKeyID       string
-	GlobalAwsSsoRegion      string
-	GlobalAwsOrgsEnabled    bool
-	GlobalAwsSsoEnabled     bool
-	ExternalID              string
-	RoleARN                 string
-	SCIMToken               string
-	SCIMEndpoint            string
-	SCIMEnabled             bool
-	SyncSecrets             bool
-	IamAssumeRoleName       string
-	SyncSSOUserLastLogin    bool
+	UseAssumeRole                   bool
+	GlobalBindingExternalID         string
+	GlobalRegion                    string
+	GlobalRoleARN                   string
+	GlobalSecretAccessKey           string
+	GlobalAccessKeyID               string
+	GlobalAwsSsoRegion              string
+	GlobalAwsOrgsEnabled            bool
+	GlobalAwsSsoEnabled             bool
+	GlobalAwsCrossAccountIamEnabled bool
+	ExternalID                      string
+	RoleARN                         string
+	SCIMToken                       string
+	SCIMEndpoint                    string
+	SCIMEnabled                     bool
+	SyncSecrets                     bool
+	IamAssumeRoleName               string
+	SyncSSOUserLastLogin            bool
 
 	AccountProvisioningTarget string
 }
@@ -68,6 +69,7 @@ type AWS struct {
 	useAssumeRole           bool
 	orgsEnabled             bool
 	ssoEnabled              bool
+	crossAccountIAMEnabled  bool
 	ssoRegion               string
 	globalRegion            string
 	roleARN                 string
@@ -251,22 +253,22 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 	}
 
 	config := Config{
-		GlobalBindingExternalID: awsc.GlobalBindingExternalId,
-		GlobalRegion:            awsc.GlobalRegion,
-		GlobalRoleARN:           awsc.GlobalRoleArn,
-		GlobalSecretAccessKey:   awsc.GlobalSecretAccessKey,
-		GlobalAccessKeyID:       awsc.GlobalAccessKeyId,
-		GlobalAwsSsoRegion:      awsc.GlobalAwsSsoRegion,
-		GlobalAwsOrgsEnabled:    awsc.GlobalAwsOrgsEnabled,
-		GlobalAwsSsoEnabled:     awsc.GlobalAwsSsoEnabled,
-		ExternalID:              awsc.ExternalId,
-		RoleARN:                 awsc.RoleArn,
-		UseAssumeRole:           awsc.UseAssume,
-		SyncSecrets:             awsc.SyncSecrets,
-		IamAssumeRoleName:       awsc.IamAssumeRoleName,
-		SyncSSOUserLastLogin:    awsc.SyncSsoUserLastLogin,
-
-		AccountProvisioningTarget: awsc.CreateAccountResourceType,
+		GlobalBindingExternalID:         awsc.GlobalBindingExternalId,
+		GlobalRegion:                    awsc.GlobalRegion,
+		GlobalRoleARN:                   awsc.GlobalRoleArn,
+		GlobalSecretAccessKey:           awsc.GlobalSecretAccessKey,
+		GlobalAccessKeyID:               awsc.GlobalAccessKeyId,
+		GlobalAwsSsoRegion:              awsc.GlobalAwsSsoRegion,
+		GlobalAwsOrgsEnabled:            awsc.GlobalAwsOrgsEnabled,
+		GlobalAwsSsoEnabled:             awsc.GlobalAwsSsoEnabled,
+		GlobalAwsCrossAccountIamEnabled: awsc.GlobalAwsCrossAccountIamEnabled,
+		ExternalID:                      awsc.ExternalId,
+		RoleARN:                         awsc.RoleArn,
+		UseAssumeRole:                   awsc.UseAssume,
+		SyncSecrets:                     awsc.SyncSecrets,
+		IamAssumeRoleName:               awsc.IamAssumeRoleName,
+		SyncSSOUserLastLogin:            awsc.SyncSsoUserLastLogin,
+		AccountProvisioningTarget:       awsc.CreateAccountResourceType,
 	}
 	if config.AccountProvisioningTarget == "" {
 		config.AccountProvisioningTarget = accountProvisioningTargetIAM
@@ -288,6 +290,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		useAssumeRole:           config.UseAssumeRole,
 		orgsEnabled:             config.GlobalAwsOrgsEnabled,
 		ssoEnabled:              config.GlobalAwsSsoEnabled,
+		crossAccountIAMEnabled:  config.GlobalAwsCrossAccountIamEnabled,
 		globalRegion:            config.GlobalRegion,
 		roleARN:                 config.RoleARN,
 		externalID:              config.ExternalID,
@@ -429,6 +432,13 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 	return nil
 }
 
+func (c *AWS) shouldSyncCrossAccountIAM() bool {
+	if c.orgsEnabled && c.ssoEnabled {
+		return c.crossAccountIAMEnabled
+	}
+	return c.orgsEnabled
+}
+
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
@@ -445,7 +455,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		)
 	}
 
-	if c.orgsEnabled && !c.ssoEnabled {
+	if c.shouldSyncCrossAccountIAM() {
 		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c))
 	}
 

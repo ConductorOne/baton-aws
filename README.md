@@ -50,6 +50,12 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
+## Sync modes
+
+`--global-aws-orgs-enabled` can be set on its own: the connector discovers every account in the AWS Organization and assumes a role into each one to sync its IAM users, roles, and groups. `--global-aws-sso-enabled` requires `--global-aws-orgs-enabled` to also be set; with both on, the connector syncs Identity Center users, groups, permission sets, and account assignments from the management account (or a delegated administrator account).
+
+To also sync cross-account IAM users, roles, and groups while Identity Center is enabled, set `--global-aws-cross-account-iam-enabled`. This flag is off by default so existing Identity-Center deployments don't suddenly require `sts:AssumeRole` on every child account. Turn it on once you've granted the connector role `sts:AssumeRole` on `arn:aws:iam::*:role/OrganizationAccountAccessRole` and configured a matching trust policy in each child account.
+
 # Contributing, Support and Issues
 
 We started Baton because we were tired of taking screenshots and manually building spreadsheets. We welcome contributions, and ideas, no matter how small -- our goal is to make identity and permissions sprawl less painful for everyone. If you have questions, problems, or ideas: Please open a Github Issue!
@@ -156,6 +162,15 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Sync identity center users, groups, and permission sets, as well as the organization accounts
       "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
+    },
+    {
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole",
+      // Required when cross-account IAM sync runs: --global-aws-orgs-enabled with --global-aws-sso-enabled OFF, or both of those plus --global-aws-cross-account-iam-enabled. Lets the connector assume into each child account to sync its IAM users, roles, and groups.
+      "Sid": "AssumeOrganizationAccountAccessRole"
     }
   ],
   "Version": "2012-10-17"
@@ -261,6 +276,15 @@ _These policies have comments prefixed with // that need to be removed before us
       // Without this, the connector will attempt assignments and may get unclear ConflictException errors
       // for suspended accounts. This permission provides clearer error messages.
       "Sid": "AccountStatusValidationForProvisioning"
+    },
+    {
+      "Action": [
+        "sts:AssumeRole"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:iam::*:role/OrganizationAccountAccessRole",
+      // Required when cross-account IAM sync runs: --global-aws-orgs-enabled with --global-aws-sso-enabled OFF, or both of those plus --global-aws-cross-account-iam-enabled. Lets the connector assume into each child account to sync its IAM users, roles, and groups.
+      "Sid": "AssumeOrganizationAccountAccessRole"
     }
   ],
   "Version": "2012-10-17"
