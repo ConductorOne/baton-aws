@@ -210,35 +210,6 @@ func (u *userBuilder) CreateAccount(ctx context.Context, accountInfo *v2.Account
 
 ---
 
-## CreateAccount Idempotency
-
-`CreateAccount` is retried by the SDK on transient failures. If the user already exists in the target system, the second call must NOT surface an error. Return `CreateAccountResponse_AlreadyExistsResult` populated with the existing resource.
-
-```go
-newUser, err := u.client.CreateUser(ctx, ...)
-if err != nil {
-    if isAlreadyExistsError(err) {
-        existing, lookupErr := u.client.GetUser(ctx, username)
-        if lookupErr != nil {
-            return nil, nil, nil, fmt.Errorf("baton-myservice: user %q already exists but lookup failed: %w", username, lookupErr)
-        }
-        return &v2.CreateAccountResponse_AlreadyExistsResult{
-            Resource:              existing,
-            IsCreateAccountResult: true,
-        }, nil, nil, nil
-    }
-    return nil, nil, nil, fmt.Errorf("baton-myservice: CreateUser failed: %w", err)
-}
-```
-
-**Do not pick a gRPC code by hand on the lookup failure.** Returning a hand-picked `status.Errorf(codes.PermissionDenied, ...)` (or `codes.Internal`, etc.) is wrong for a lookup that can fail for many reasons (throttling, transient service failure, network). If the underlying client goes through `uhttp.BaseHttpClient`, uhttp has already classified the response — return the wrapped error directly. If it goes through a vendor SDK that bypasses uhttp, route the error through the connector's existing AWS/HTTP error helper (e.g., `wrapAWSError`) instead of inventing a code at the call site.
-
-**Use `AlreadyExistsResult`, not `SuccessResult`.** `SuccessResult` signals "I just created this"; `AlreadyExistsResult` signals "it was already there." They are distinct in the protobuf for a reason.
-
-**`AlreadyExistsResult` is for direct resource creates (IAM user, native API user).** For invitation flows (CreateAccount issues an invitation rather than a finished resource), use `CreateAccountResponse_ActionRequiredResult`. Don't mix them.
-
----
-
 ## Capability Declaration
 
 Provisioning capabilities must be declared:
