@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -12,6 +13,7 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/conductorone/baton-aws/test"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -226,6 +228,64 @@ func TestPermissionSetAssignmentList_EmitsScopeBinding(t *testing.T) {
 	assert.Equal(t, resourceTypeAccount.Id, trait.GetScopeResourceId().GetResourceType())
 	require.NotNil(t, resources[0].ParentResourceId)
 	assert.Equal(t, testAccountID, resources[0].ParentResourceId.Resource)
+}
+
+// List paginates the per-account binding fan-out in entitlementsBatchSize batches (mirroring
+// account.Entitlements): each call emits at most one batch and returns a page token round-trip
+// that resumes at the next index, and across all pages every provisioned permission set yields
+// exactly one binding — no duplicates, none dropped.
+func TestPermissionSetAssignmentList_PaginatesInBatches(t *testing.T) {
+	ctx := context.Background()
+
+	// More than two full batches so we exercise a middle page plus a short final page.
+	const total = entitlementsBatchSize*2 + 10
+	allArns := make([]string, 0, total)
+	for i := 0; i < total; i++ {
+		allArns = append(allArns, fmt.Sprintf("%s-%03d", testPermissionSetArn, i))
+	}
+
+	sso := &fakeSSOAdmin{
+		listPermissionSetsProvisionedToAccountFn: func(in *awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput) (*awsSsoAdmin.ListPermissionSetsProvisionedToAccountOutput, error) {
+			assert.Equal(t, testAccountID, awsSdk.ToString(in.AccountId))
+			return &awsSsoAdmin.ListPermissionSetsProvisionedToAccountOutput{PermissionSets: allArns}, nil
+		},
+	}
+	psa := permissionSetAssignmentBuilder(newBehaviorAccount(sso))
+	parentID := &v2.ResourceId{ResourceType: resourceTypeAccount.Id, Resource: testAccountID}
+
+	seen := make(map[string]int)
+	pageSizes := []int{}
+	token := ""
+	pages := 0
+	for {
+		resources, res, err := psa.List(ctx, parentID, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: token}})
+		require.NoError(t, err)
+		pageSizes = append(pageSizes, len(resources))
+		for _, r := range resources {
+			seen[r.Id.Resource]++
+		}
+
+		if res == nil || res.NextPageToken == "" {
+			break
+		}
+		// The page token round-trips to the next batch boundary.
+		decoded, err := decodePageToken[entitlementsPageState](res.NextPageToken)
+		require.NoError(t, err)
+		assert.Equal(t, len(seen), decoded.PermissionSetIndex, "page token must resume exactly where this page left off")
+		token = res.NextPageToken
+
+		pages++
+		require.Less(t, pages, total, "pagination must terminate")
+	}
+
+	// Batches are 25, 25, 10 — each call emits at most one batch.
+	assert.Equal(t, []int{entitlementsBatchSize, entitlementsBatchSize, 10}, pageSizes)
+	// Every provisioned permission set produced exactly one binding across all pages.
+	require.Len(t, seen, total)
+	for _, arn := range allArns {
+		wantID := permissionSetAssignmentObjectID(arn, testAccountID)
+		assert.Equal(t, 1, seen[wantID], "binding %s must be emitted exactly once", wantID)
+	}
 }
 
 // List only crawls bindings as a child of an account; any other parent yields nothing.

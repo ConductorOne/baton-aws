@@ -72,14 +72,40 @@ func (o *permissionSetAssignmentResourceType) List(ctx context.Context, parentRe
 	}
 	accountID := parentResourceID.Resource
 
+	// Reuse the account-entitlement batching mechanism verbatim (entitlementsPageState +
+	// entitlementsBatchSize + encode/decodePageToken) so binding List paginates identically
+	// to account.Entitlements: one DescribePermissionSet fan-out is bounded to a batch per
+	// call instead of buffering every provisioned permission set at once, keeping the
+	// blast radius on a rate-limit error small enough to resume from a checkpoint.
+	pageState, err := decodePageToken[entitlementsPageState](opts.PageToken.Token)
+	if err != nil {
+		return nil, nil, fmt.Errorf("baton-aws: failed to decode page token: %w", err)
+	}
+
 	permissionSetIDs, err := o.account.getOrFetchPermissionSetIDs(ctx, opts.Session, accountID)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	rv := make([]*v2.Resource, 0, len(permissionSetIDs))
-	for _, psArn := range permissionSetIDs {
-		ps, err := o.account.getPermissionSetWithCache(ctx, opts.Session, psArn)
+	// If no permission sets, we're done.
+	if len(permissionSetIDs) == 0 {
+		return nil, nil, nil
+	}
+
+	// If we've processed all permission sets, we're done.
+	if pageState.PermissionSetIndex >= len(permissionSetIDs) {
+		return nil, nil, nil
+	}
+
+	// Calculate the end of the current batch.
+	batchEnd := pageState.PermissionSetIndex + entitlementsBatchSize
+	if batchEnd > len(permissionSetIDs) {
+		batchEnd = len(permissionSetIDs)
+	}
+
+	rv := make([]*v2.Resource, 0, batchEnd-pageState.PermissionSetIndex)
+	for i := pageState.PermissionSetIndex; i < batchEnd; i++ {
+		ps, err := o.account.getPermissionSetWithCache(ctx, opts.Session, permissionSetIDs[i])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -93,6 +119,17 @@ func (o *permissionSetAssignmentResourceType) List(ctx context.Context, parentRe
 			return nil, nil, err
 		}
 		rv = append(rv, resource)
+	}
+
+	// Determine next page state; an empty token signals completion.
+	if batchEnd < len(permissionSetIDs) {
+		nextPageToken, err := encodePageToken(entitlementsPageState{
+			PermissionSetIndex: batchEnd,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: failed to encode page token: %w", err)
+		}
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: nextPageToken}, nil
 	}
 
 	return rv, nil, nil
