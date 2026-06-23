@@ -64,6 +64,9 @@ var (
 			// Read
 			"organizations:ListAccounts",
 			"organizations:DescribeOrganization",
+			// Sparse ACLs hierarchy (Phase 2): resolve each account's parent (Root/OU) so
+			// c1's by-inheritance review can walk the org tree. Fail-soft if absent.
+			"organizations:ListParents",
 			"sso:ListPermissionSets",
 			"sso:DescribePermissionSet",
 			"sso:ListPermissionSetsProvisionedToAccount",
@@ -167,6 +170,89 @@ var (
 			capabilityPermissions(
 				"iam:ListAccessKeys",
 				"iam:GetAccessKeyLastUsed",
+			),
+		),
+	}
+
+	// resourceTypePermissionSet is the Identity Center permission set modeled as a
+	// role (Sparse ACLs / Cloud Infrastructure Access). It is a pure role catalog
+	// node: its id is the bare permission-set ARN (see permissionSetRoleID), which
+	// the scope-binding trait's role_id must byte-match.
+	resourceTypePermissionSet = &v2.ResourceType{
+		Id:          "permission_set",
+		DisplayName: "Permission Set",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			&v2.OptInRequired{},
+			capabilityPermissions(
+				"sso:ListInstances",
+				"sso:ListPermissionSets",
+				"sso:DescribePermissionSet",
+			),
+		),
+	}
+
+	// resourceTypePermissionSetAssignment is the (permission set → account) binding
+	// carrying TRAIT_SCOPE_BINDING. This single trait is what makes the AWS app
+	// ingest as SPARSE/HYBRID and lights up the RoleScopeBindingRelationship / JIT /
+	// UAR / JML pipelines. Provisioning rides the existing Create/DeleteAccountAssignment
+	// path at the account scope.
+	resourceTypePermissionSetAssignment = &v2.ResourceType{
+		Id:          "permission_set_assignment",
+		DisplayName: "Permission Set Assignment",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_SCOPE_BINDING},
+		Annotations: annotations.New(
+			&v2.OptInRequired{},
+			capabilityPermissions(
+				// Read
+				"sso:ListInstances",
+				"sso:ListPermissionSetsProvisionedToAccount",
+				"sso:DescribePermissionSet",
+				"sso:ListAccountAssignments",
+				// Provision
+				"sso:CreateAccountAssignment",
+				"sso:DeleteAccountAssignment",
+				"sso:DescribeAccountAssignmentCreationStatus",
+				"sso:DescribeAccountAssignmentDeletionStatus",
+				"organizations:DescribeAccount",
+			),
+		),
+	}
+
+	// resourceTypeOrganization is the AWS Organizations root, modeled as the top scope tier
+	// of the Sparse ACLs hierarchy (Root → OU → Account). It holds no binding — AWS has no
+	// native Root-level permission-set assignment — and exists purely as navigation /
+	// by-inheritance review context. SkipEntitlementsAndGrants + OptInRequired, like Azure's
+	// management-group tier.
+	resourceTypeOrganization = &v2.ResourceType{
+		Id:          "organization",
+		DisplayName: "Organization Root",
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			&v2.OptInRequired{},
+			// The root is the crawl seed for the OU tree.
+			&v2.ChildResourceType{ResourceTypeId: "organizational_unit"},
+			capabilityPermissions(
+				"organizations:ListRoots",
+				"organizations:ListOrganizationalUnitsForParent",
+			),
+		),
+	}
+
+	// resourceTypeOrganizationalUnit is an AWS Organizations OU, an intermediate scope tier
+	// between the root and accounts. Like the root it carries no binding (no native OU-level
+	// assignment) and is hierarchy/review context only. It declares itself as a child type so
+	// the SDK recurses into nested OUs. SkipEntitlementsAndGrants + OptInRequired.
+	resourceTypeOrganizationalUnit = &v2.ResourceType{
+		Id:          "organizational_unit",
+		DisplayName: "Organizational Unit",
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			&v2.OptInRequired{},
+			&v2.ChildResourceType{ResourceTypeId: "organizational_unit"},
+			capabilityPermissions(
+				"organizations:ListOrganizationalUnitsForParent",
 			),
 		),
 	}
