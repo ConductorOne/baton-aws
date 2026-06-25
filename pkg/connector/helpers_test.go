@@ -635,12 +635,6 @@ func TestClassifyRoleNHI(t *testing.T) {
 			wantDetail: "aws.service_linked_role",
 		},
 		{
-			name:       "service-linked role via AWSServiceRoleFor name prefix (MANAGED_IDENTITY)",
-			role:       role("arn:aws:iam::123456789012:role/AWSServiceRoleForAutoScaling", "/", ""),
-			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_MANAGED_IDENTITY,
-			wantDetail: "aws.service_linked_role",
-		},
-		{
 			name:       "lambda service principal",
 			role:       role("arn:aws:iam::123456789012:role/lambda-exec", "/", trust(`{"Service":"lambda.amazonaws.com"}`)),
 			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,

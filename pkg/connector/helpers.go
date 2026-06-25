@@ -346,7 +346,7 @@ func (principal *Principal) UnmarshalJSON(data []byte) error {
 	}
 
 	for field, dest := range map[string]*[]string{
-		"AWS":       &principal.AWS,
+		awsDisplayName: &principal.AWS,
 		"Service":   &principal.Service,
 		"Federated": &principal.Federated,
 	} {

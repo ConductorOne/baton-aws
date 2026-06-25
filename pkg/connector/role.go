@@ -301,12 +301,11 @@ func classifyRoleNHI(ctx context.Context, role iamTypes.Role) (v2.NonHumanIdenti
 	return v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE, base
 }
 
-// isServiceLinkedRole reports whether an IAM role is AWS service-linked, which
-// AWS identifies either by the reserved /aws-service-role/ path or the
-// AWSServiceRoleFor* name prefix.
+// isServiceLinkedRole reports whether an IAM role is AWS service-linked.
+// AWS always sets the path /aws-service-role/ on SLRs — this is the only
+// authoritative signal (per IAM docs ARN format arn:aws:iam::*:role/aws-service-role/*).
 func isServiceLinkedRole(role iamTypes.Role) bool {
-	return strings.HasPrefix(awsSdk.ToString(role.Path), "/aws-service-role/") ||
-		strings.HasPrefix(awsSdk.ToString(role.RoleName), "AWSServiceRoleFor")
+	return strings.HasPrefix(awsSdk.ToString(role.Path), "/aws-service-role/")
 }
 
 // serviceTrustDetail returns the short service name (e.g. "lambda", "ec2",
