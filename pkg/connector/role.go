@@ -355,11 +355,8 @@ func isCrossAccountTrust(roleAccountID string, awsPrincipals []string) bool {
 	return false
 }
 
-// arnAccountID extracts the 12-digit account ID from an ARN.
+// arnAccountID extracts the account ID from an ARN, returning false if absent.
 func arnAccountID(arnStr string) (string, bool) {
-	parsed, err := arn.Parse(arnStr)
-	if err != nil || parsed.AccountID == "" {
-		return "", false
-	}
-	return parsed.AccountID, true
+	id, err := AccountIdFromARN(arnStr)
+	return id, err == nil && id != ""
 }

@@ -199,12 +199,12 @@ func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error
 
 	decodedPolicy, err := url.QueryUnescape(policyDocument)
 	if err != nil {
-		return tp, fmt.Errorf("failed to decode trust policy: %w", err)
+		return tp, fmt.Errorf("baton-aws: failed to decode trust policy: %w", err)
 	}
 
 	var policy TrustPolicy
 	if err := json.Unmarshal([]byte(decodedPolicy), &policy); err != nil {
-		return tp, fmt.Errorf("failed to parse trust policy JSON: %w", err)
+		return tp, fmt.Errorf("baton-aws: failed to parse trust policy JSON: %w", err)
 	}
 
 	for _, statement := range policy.Statement {
@@ -222,6 +222,12 @@ func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error
 	return tp, nil
 }
 
+// hasAssumeRoleAction reports whether any action in the list is an sts:AssumeRole*
+// variant (AssumeRole, AssumeRoleWithWebIdentity, AssumeRoleWithSAML).
+// Intentionally broader than the grant-emission path in extractTrustPrincipals,
+// which requires an exact "sts:AssumeRole" match: NHI classification should
+// capture all trust relationships regardless of the assume-role mechanism, while
+// grants are only emitted for direct role assumption.
 func hasAssumeRoleAction(actions Action) bool {
 	for _, a := range actions {
 		if strings.HasPrefix(a, "sts:AssumeRole") {
