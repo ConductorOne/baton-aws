@@ -79,6 +79,7 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 			awsSdk.ToString(role.Arn),
 			[]resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
 			resourceSdk.WithNHIType(nhiType, nhiDetail),
 		)
@@ -123,12 +124,17 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 func (o *roleResourceType) Grants(
 	ctx context.Context,
 	resource *v2.Resource,
-	_ resourceSdk.SyncOpAttrs,
+	opts resourceSdk.SyncOpAttrs,
 ) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
 	if resource == nil || resource.Id == nil || resource.Id.Resource == "" {
 		return nil, nil, fmt.Errorf("invalid role resource: missing resource id")
 	}
 	l := ctxzap.Extract(ctx)
+
+	bag := &pagination.Bag{}
+	if err := bag.Unmarshal(opts.PageToken.Token); err != nil {
+		return nil, nil, err
+	}
 
 	iamClient := o.iamClient
 	if resource.ParentResourceId != nil {
@@ -152,76 +158,93 @@ func (o *roleResourceType) Grants(
 		return nil, nil, fmt.Errorf("invalid role resource in ARN: %s", resource.Id.Resource)
 	}
 
-	roleResp, err := iamClient.GetRole(ctx, &iam.GetRoleInput{
-		RoleName: awsSdk.String(roleName),
-	})
-	if err != nil {
-		l.Warn("baton-aws: failed to get role details, skipping grants for this role",
-			zap.String("role_name", roleName),
-			zap.Error(err),
-		)
-		return nil, nil, nil
-	}
-
-	if roleResp == nil || roleResp.Role == nil {
-		l.Warn("baton-aws: GetRole returned empty role", zap.String("role_name", roleName))
-		return nil, nil, nil
-	}
-
-	if roleResp.Role.AssumeRolePolicyDocument == nil {
-		l.Debug("role has no AssumeRolePolicyDocument, returning no grants",
-			zap.String("role_name", roleName),
-		)
-		return nil, nil, nil
-	}
-
-	principals, err := extractTrustPrincipals(
-		awsSdk.ToString(roleResp.Role.AssumeRolePolicyDocument),
-	)
-	if err != nil {
-		l.Warn("baton-aws: failed to parse trust policy, skipping grants for this role",
-			zap.String("role_name", roleName),
-			zap.String("role_arn", resource.Id.Resource),
-			zap.Error(err),
-		)
-		return nil, nil, nil
-	}
-
 	var grants []*v2.Grant
-	for _, principalARN := range principals {
-		principalResourceType, principalID, ok := detectPrincipalResource(principalARN)
-		if !ok {
-			continue
-		}
-
-		principal, errCreateResource := resourceSdk.NewResourceID(principalResourceType, principalID)
-		if errCreateResource != nil {
-			l.Warn("baton-aws: failed to create principal resource, skipping grant",
-				zap.Error(errCreateResource),
-				zap.String("principal_arn", principalARN),
+	if opts.PageToken.Token == "" {
+		roleResp, err := iamClient.GetRole(ctx, &iam.GetRoleInput{
+			RoleName: awsSdk.String(roleName),
+		})
+		if err != nil {
+			l.Warn("baton-aws: failed to get role details, skipping grants for this role",
+				zap.String("role_name", roleName),
+				zap.Error(err),
 			)
-			continue
+			return nil, nil, nil
 		}
 
-		var grantAnnos annotations.Annotations
-		if principalResourceType == resourceTypeRole {
-			grantAnnos.Update(&v2.GrantExpandable{
-				EntitlementIds: []string{
-					fmt.Sprintf("%s:%s:%s", resourceTypeRole.Id, principalID, roleAssignmentEntitlement),
-				},
-			})
+		if roleResp == nil || roleResp.Role == nil {
+			l.Warn("baton-aws: GetRole returned empty role", zap.String("role_name", roleName))
+			return nil, nil, nil
 		}
 
-		newGrant := grant.NewGrant(
-			resource,
-			roleAssignmentEntitlement,
-			principal,
-		)
+		if roleResp.Role.AssumeRolePolicyDocument != nil {
+			principals, err := extractTrustPrincipals(
+				awsSdk.ToString(roleResp.Role.AssumeRolePolicyDocument),
+			)
+			if err != nil {
+				l.Warn("baton-aws: failed to parse trust policy, skipping grants for this role",
+					zap.String("role_name", roleName),
+					zap.String("role_arn", resource.Id.Resource),
+					zap.Error(err),
+				)
+			} else {
+				for _, principalARN := range principals {
+					principalResourceType, principalID, ok := detectPrincipalResource(principalARN)
+					if !ok {
+						continue
+					}
 
-		if len(grantAnnos) > 0 {
-			newGrant.Annotations = grantAnnos
+					principal, errCreateResource := resourceSdk.NewResourceID(principalResourceType, principalID)
+					if errCreateResource != nil {
+						l.Warn("baton-aws: failed to create principal resource, skipping grant",
+							zap.Error(errCreateResource),
+							zap.String("principal_arn", principalARN),
+						)
+						continue
+					}
+
+					var grantAnnos annotations.Annotations
+					if principalResourceType == resourceTypeRole {
+						grantAnnos.Update(&v2.GrantExpandable{
+							EntitlementIds: []string{
+								fmt.Sprintf("%s:%s:%s", resourceTypeRole.Id, principalID, roleAssignmentEntitlement),
+							},
+						})
+					}
+
+					newGrant := grant.NewGrant(
+						resource,
+						roleAssignmentEntitlement,
+						principal,
+					)
+
+					if len(grantAnnos) > 0 {
+						newGrant.Annotations = grantAnnos
+					}
+					grants = append(grants, newGrant)
+				}
+			}
 		}
-		grants = append(grants, newGrant)
+	}
+
+	policyGrants, nextMarker, err := listAttachedRolePolicyGrants(ctx, iamClient, roleName, resource.Id, bag.PageToken())
+	if err != nil {
+		if isAccessDeniedError(err) {
+			l.Warn("baton-aws: access denied listing attached role policies, skipping managed policy grants for this role",
+				zap.String("role_name", roleName),
+				zap.Error(err),
+			)
+		} else {
+			return nil, nil, err
+		}
+	} else {
+		grants = append(grants, policyGrants...)
+		if nextMarker != "" {
+			token, err := bag.NextToken(nextMarker)
+			if err != nil {
+				return nil, nil, err
+			}
+			return grants, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
+		}
 	}
 
 	return grants, nil, nil
