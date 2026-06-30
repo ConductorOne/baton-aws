@@ -269,6 +269,9 @@
                 "permission": "iam:GetGroup"
               },
               {
+                "permission": "iam:ListAttachedGroupPolicies"
+              },
+              {
                 "permission": "iam:AddUserToGroup"
               },
               {
@@ -291,10 +294,49 @@
             "permission": "iam:GetGroup"
           },
           {
+            "permission": "iam:ListAttachedGroupPolicies"
+          },
+          {
             "permission": "iam:AddUserToGroup"
           },
           {
             "permission": "iam:RemoveUserFromGroup"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType": {
+        "id": "iam_policy",
+        "displayName": "IAM Managed Policy",
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id": "iam_policy"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "iam:ListPolicies"
+              },
+              {
+                "permission": "iam:GetPolicy"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "iam:ListPolicies"
+          },
+          {
+            "permission": "iam:GetPolicy"
           }
         ]
       }
@@ -308,7 +350,7 @@
         ],
         "annotations": [
           {
-            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlements"
           },
           {
             "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
@@ -465,6 +507,67 @@
     },
     {
       "resourceType": {
+        "id": "inline_policy",
+        "displayName": "Inline Policy",
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id": "inline_policy"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "iam:ListUserPolicies"
+              },
+              {
+                "permission": "iam:ListRolePolicies"
+              },
+              {
+                "permission": "iam:ListGroupPolicies"
+              },
+              {
+                "permission": "iam:DeleteUserPolicy"
+              },
+              {
+                "permission": "iam:DeleteRolePolicy"
+              },
+              {
+                "permission": "iam:DeleteGroupPolicy"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "iam:ListUserPolicies"
+          },
+          {
+            "permission": "iam:ListRolePolicies"
+          },
+          {
+            "permission": "iam:ListGroupPolicies"
+          },
+          {
+            "permission": "iam:DeleteUserPolicy"
+          },
+          {
+            "permission": "iam:DeleteRolePolicy"
+          },
+          {
+            "permission": "iam:DeleteGroupPolicy"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType": {
         "id": "role",
         "displayName": "IAM Role",
         "traits": [
@@ -483,6 +586,9 @@
               },
               {
                 "permission": "iam:GetRole"
+              },
+              {
+                "permission": "iam:ListAttachedRolePolicies"
               }
             ]
           }
@@ -498,6 +604,9 @@
           },
           {
             "permission": "iam:GetRole"
+          },
+          {
+            "permission": "iam:ListAttachedRolePolicies"
           }
         ]
       }
