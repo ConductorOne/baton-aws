@@ -19,6 +19,7 @@ type Aws struct {
 	SyncSecrets bool `mapstructure:"sync-secrets"`
 	IamAssumeRoleName string `mapstructure:"iam-assume-role-name"`
 	SyncSsoUserLastLogin bool `mapstructure:"sync-sso-user-last-login"`
+	SyncOnlyAttachedPolicies bool `mapstructure:"sync-only-attached-policies"`
 	CreateAccountResourceType string `mapstructure:"create-account-resource-type"`
 }
 

@@ -57,6 +57,7 @@ type Config struct {
 	SyncSecrets                     bool
 	IamAssumeRoleName               string
 	SyncSSOUserLastLogin            bool
+	SyncOnlyAttachedPolicies        bool
 
 	AccountProvisioningTarget string
 }
@@ -97,8 +98,9 @@ type AWS struct {
 	awsClientFactory    *AWSClientFactory
 	cloudTrailClient    *cloudtrail.Client
 
-	syncSecrets          bool
-	syncSSOUserLastLogin bool
+	syncSecrets              bool
+	syncSSOUserLastLogin     bool
+	syncOnlyAttachedPolicies bool
 
 	accountProvisioningTarget string
 }
@@ -269,6 +271,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		SyncSecrets:                     awsc.SyncSecrets,
 		IamAssumeRoleName:               awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:            awsc.SyncSsoUserLastLogin,
+		SyncOnlyAttachedPolicies:        awsc.SyncOnlyAttachedPolicies,
 		AccountProvisioningTarget:       awsc.CreateAccountResourceType,
 	}
 	if config.AccountProvisioningTarget == "" {
@@ -288,25 +291,26 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 	}
 
 	rv := &AWS{
-		useAssumeRole:           config.UseAssumeRole,
-		orgsEnabled:             config.GlobalAwsOrgsEnabled,
-		ssoEnabled:              config.GlobalAwsSsoEnabled,
-		crossAccountIAMEnabled:  config.GlobalAwsCrossAccountIamEnabled,
-		globalRegion:            config.GlobalRegion,
-		roleARN:                 config.RoleARN,
-		externalID:              config.ExternalID,
-		globalBindingExternalID: config.GlobalBindingExternalID,
-		globalRoleARN:           config.GlobalRoleARN,
-		globalAccessKeyID:       config.GlobalAccessKeyID,
-		globalSecretAccessKey:   config.GlobalSecretAccessKey,
-		ssoRegion:               config.GlobalAwsSsoRegion,
-		baseClient:              httpClient,
-		baseConfig:              baseConfig.Copy(),
-		_onceCallingConfig:      map[string]*sync.Once{},
-		_callingConfig:          map[string]awsSdk.Config{},
-		_callingConfigError:     map[string]error{},
-		syncSecrets:             config.SyncSecrets,
-		syncSSOUserLastLogin:    config.SyncSSOUserLastLogin,
+		useAssumeRole:            config.UseAssumeRole,
+		orgsEnabled:              config.GlobalAwsOrgsEnabled,
+		ssoEnabled:               config.GlobalAwsSsoEnabled,
+		crossAccountIAMEnabled:   config.GlobalAwsCrossAccountIamEnabled,
+		globalRegion:             config.GlobalRegion,
+		roleARN:                  config.RoleARN,
+		externalID:               config.ExternalID,
+		globalBindingExternalID:  config.GlobalBindingExternalID,
+		globalRoleARN:            config.GlobalRoleARN,
+		globalAccessKeyID:        config.GlobalAccessKeyID,
+		globalSecretAccessKey:    config.GlobalSecretAccessKey,
+		ssoRegion:                config.GlobalAwsSsoRegion,
+		baseClient:               httpClient,
+		baseConfig:               baseConfig.Copy(),
+		_onceCallingConfig:       map[string]*sync.Once{},
+		_callingConfig:           map[string]awsSdk.Config{},
+		_callingConfigError:      map[string]error{},
+		syncSecrets:              config.SyncSecrets,
+		syncSSOUserLastLogin:     config.SyncSSOUserLastLogin,
+		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
 
 		accountProvisioningTarget: config.AccountProvisioningTarget,
 	}
@@ -446,6 +450,8 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		iamUserBuilder(c.iamClient, c.awsClientFactory, c),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
+		iamPolicyBuilder(c.iamClient, c.awsClientFactory, c.syncOnlyAttachedPolicies),
+		inlinePolicyBuilder(c.iamClient, c.awsClientFactory),
 	}
 
 	if c.ssoEnabled {
@@ -493,6 +499,8 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		iamUserBuilder(nil, nil, nil),
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
+		iamPolicyBuilder(nil, nil, false),
+		inlinePolicyBuilder(nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil),
