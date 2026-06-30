@@ -128,8 +128,12 @@ func (o *accountIAMResourceType) parseAssumeRole(
 			},
 			&v2.ChildResourceType{
 				ResourceTypeId: resourceTypeRole.Id,
-			}, &v2.ChildResourceType{
+			},
+			&v2.ChildResourceType{
 				ResourceTypeId: resourceTypeIAMGroup.Id,
+			},
+			&v2.ChildResourceType{
+				ResourceTypeId: resourceTypeIAMPolicy.Id,
 			},
 		}, nil
 	}

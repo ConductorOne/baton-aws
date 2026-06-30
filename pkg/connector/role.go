@@ -76,6 +76,7 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 			awsSdk.ToString(role.Arn),
 			[]resourceSdk.RoleTraitOption{resourceSdk.WithRoleProfile(profile)},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
@@ -218,6 +219,20 @@ func (o *roleResourceType) Grants(
 			newGrant.Annotations = grantAnnos
 		}
 		grants = append(grants, newGrant)
+	}
+
+	policyGrants, err := listAttachedRolePolicyGrants(ctx, iamClient, roleName, resource.Id)
+	if err != nil {
+		if isAccessDeniedError(err) {
+			l.Warn("baton-aws: access denied listing attached role policies, skipping managed policy grants for this role",
+				zap.String("role_name", roleName),
+				zap.Error(err),
+			)
+		} else {
+			return nil, nil, err
+		}
+	} else {
+		grants = append(grants, policyGrants...)
 	}
 
 	return grants, nil, nil

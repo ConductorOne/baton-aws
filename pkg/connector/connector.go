@@ -445,6 +445,8 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		iamUserBuilder(c.iamClient, c.awsClientFactory, c),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
+		iamPolicyBuilder(c.iamClient, c.awsClientFactory),
+		inlinePolicyBuilder(c.iamClient, c.awsClientFactory),
 	}
 
 	if c.ssoEnabled {
@@ -492,6 +494,8 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		iamUserBuilder(nil, nil, nil),
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
+		iamPolicyBuilder(nil, nil),
+		inlinePolicyBuilder(nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil),
