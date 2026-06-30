@@ -86,3 +86,36 @@ func (f *AWSClientFactory) GetIAMClient(ctx context.Context, accountId string) (
 	f.iamClientMap[accountId] = iamClient
 	return iamClient, nil
 }
+
+// IAMClientForEntityARN returns defaultClient when the entity lives in the connector's
+// target account (e.g. root or same-account sync). Cross-account access uses GetIAMClient.
+func (f *AWSClientFactory) IAMClientForEntityARN(ctx context.Context, entityARN string, defaultClient *iam.Client) (*iam.Client, error) {
+	if f == nil {
+		if defaultClient == nil {
+			return nil, fmt.Errorf("baton-aws: no iam client available")
+		}
+		return defaultClient, nil
+	}
+
+	accountID, err := AccountIdFromARN(entityARN)
+	if err != nil {
+		return nil, err
+	}
+
+	if f.aws != nil && f.aws.roleARN != "" {
+		connectorAccountID, err := AccountIdFromARN(f.aws.roleARN)
+		if err != nil {
+			return nil, err
+		}
+		if accountID == connectorAccountID {
+			if defaultClient == nil {
+				return nil, fmt.Errorf("baton-aws: no iam client available")
+			}
+			return defaultClient, nil
+		}
+	} else if defaultClient != nil {
+		return defaultClient, nil
+	}
+
+	return f.GetIAMClient(ctx, accountID)
+}

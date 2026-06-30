@@ -17,7 +17,8 @@ import (
 )
 
 const (
-	groupMemberEntitlement = "member"
+	groupMemberEntitlement              = "member"
+	iamGroupGrantsAttachedPoliciesPhase = "attached_policies"
 )
 
 type iamGroupResourceType struct {
@@ -75,6 +76,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 				resourceSdk.WithGroupProfile(profile),
 			},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
@@ -117,19 +119,29 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return nil, nil, err
 	}
 
-	input := &iam.GetGroupInput{
-		GroupName: awsSdk.String(resource.DisplayName),
-	}
-	if bag.PageToken() != "" {
-		input.Marker = awsSdk.String(bag.PageToken())
-	}
-
 	iamClient := o.iamClient
 	if resource.ParentResourceId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
 		if err != nil {
 			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
 		}
+	}
+
+	if bag.ResourceTypeID() == iamGroupGrantsAttachedPoliciesPhase {
+		return o.grantsForAttachedGroupPolicies(ctx, iamClient, resource, bag, nil)
+	}
+
+	if bag.Current() == nil {
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeIAMGroup.Id,
+		})
+	}
+
+	input := &iam.GetGroupInput{
+		GroupName: awsSdk.String(resource.DisplayName),
+	}
+	if bag.PageToken() != "" {
+		input.Marker = awsSdk.String(bag.PageToken())
 	}
 
 	resp, err := iamClient.GetGroup(ctx, input)
@@ -153,18 +165,51 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	if !resp.IsTruncated {
+	if resp.IsTruncated {
+		if resp.Marker != nil {
+			token, err := bag.NextToken(*resp.Marker)
+			if err != nil {
+				return rv, nil, err
+			}
+			return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
+		}
 		return rv, nil, nil
 	}
 
-	if resp.Marker != nil {
-		token, err := bag.NextToken(*resp.Marker)
+	bag.Push(pagination.PageState{
+		ResourceTypeID: iamGroupGrantsAttachedPoliciesPhase,
+	})
+	return o.grantsForAttachedGroupPolicies(ctx, iamClient, resource, bag, rv)
+}
+
+func (o *iamGroupResourceType) grantsForAttachedGroupPolicies(
+	ctx context.Context,
+	iamClient *iam.Client,
+	resource *v2.Resource,
+	bag *pagination.Bag,
+	rv []*v2.Grant,
+) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	groupName, err := iamGroupNameFromARN(resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	policyGrants, nextMarker, err := listAttachedGroupPolicyGrants(ctx, iamClient, groupName, resource.Id, bag.PageToken())
+	if err != nil {
+		if isAccessDeniedError(err) {
+			return rv, nil, nil
+		}
+		return nil, nil, err
+	}
+	rv = append(rv, policyGrants...)
+
+	if nextMarker != "" {
+		token, err := bag.NextToken(nextMarker)
 		if err != nil {
 			return rv, nil, err
 		}
 		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
-
 	return rv, nil, nil
 }
 

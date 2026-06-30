@@ -126,6 +126,10 @@ func iamUserNameFromARN(input string) (string, error) {
 	return val, nil
 }
 
+func iamRoleNameFromARN(input string) (string, error) {
+	return ResourceWithoutPath("role", input)
+}
+
 func extractRequestID(md *middleware.Metadata) proto.Message {
 	if md == nil {
 		return nil
@@ -422,6 +426,11 @@ func wrapAWSError(err error) error {
 	}
 
 	return err
+}
+
+func isAccessDeniedError(err error) bool {
+	var apiErr smithy.APIError
+	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "AccessDenied"
 }
 
 type ssoUserCreateProfile struct {
