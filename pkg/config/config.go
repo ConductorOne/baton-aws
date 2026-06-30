@@ -126,6 +126,12 @@ var (
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
 	)
+	SyncOnlyAttachedPolicies = field.BoolField(
+		"sync-only-attached-policies",
+		field.WithDisplayName("Sync Only Attached Policies"),
+		field.WithDescription("Only sync IAM managed policies that are attached to at least one user, role, or group"),
+		field.WithDefaultValue(false),
+	)
 	GlobalAwsAccountProvisioningTargetField = field.SelectField(
 		"create-account-resource-type",
 		[]string{"iam_user", "sso_user"},
@@ -157,6 +163,7 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		SyncOnlyAttachedPolicies,
 		GlobalAwsAccountProvisioningTargetField,
 	},
 	field.WithConstraints(

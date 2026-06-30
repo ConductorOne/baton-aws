@@ -223,6 +223,12 @@
       "boolField": {}
     },
     {
+      "name": "sync-only-attached-policies",
+      "displayName": "Sync Only Attached Policies",
+      "description": "Only sync IAM managed policies that are attached to at least one user, role, or group",
+      "boolField": {}
+    },
+    {
       "name": "create-account-resource-type",
       "displayName": "Account Provisioning Target",
       "description": "Which AWS user type C1 should create when provisioning accounts. 'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. Only one path can be active at a time per connector instance.",
