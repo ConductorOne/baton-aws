@@ -1,9 +1,14 @@
 package connector
 
 import (
+	"context"
 	"encoding/json"
+	pathpkg "path"
 	"testing"
 
+	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -598,4 +603,94 @@ func TestExtractTrustPrincipals(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, []string{"arn:aws:iam::123456789012:user/test"}, principals)
 	})
+}
+
+func TestClassifyRoleNHI(t *testing.T) {
+	role := func(arn, path, trust string) iamTypes.Role {
+		r := iamTypes.Role{Arn: awsSdk.String(arn), Path: awsSdk.String(path)}
+		// Derive RoleName from the ARN so the name-prefix SLR check is exercised
+		// the same way it is at sync time.
+		r.RoleName = awsSdk.String(pathpkg.Base(arn))
+		if trust != "" {
+			r.AssumeRolePolicyDocument = awsSdk.String(trust)
+		}
+		return r
+	}
+	trust := func(principal string) string {
+		return `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":` +
+			principal + `,"Action":"sts:AssumeRole"}]}`
+	}
+
+	tests := []struct {
+		name       string
+		role       iamTypes.Role
+		wantType   v2.NonHumanIdentityTrait_NhiType
+		wantDetail string
+	}{
+		{
+			name: "service-linked role via path is platform-custodied (MANAGED_IDENTITY)",
+			role: role("arn:aws:iam::123456789012:role/aws-service-role/elasticbeanstalk.amazonaws.com/AWSServiceRoleForElasticBeanstalk",
+				"/aws-service-role/elasticbeanstalk.amazonaws.com/", ""),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_MANAGED_IDENTITY,
+			wantDetail: "aws.service_linked_role",
+		},
+		{
+			name:       "lambda service principal",
+			role:       role("arn:aws:iam::123456789012:role/lambda-exec", "/", trust(`{"Service":"lambda.amazonaws.com"}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role.lambda",
+		},
+		{
+			name:       "ecs-tasks service principal normalizes hyphen",
+			role:       role("arn:aws:iam::123456789012:role/task", "/", trust(`{"Service":"ecs-tasks.amazonaws.com"}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role.ecs_tasks",
+		},
+		{
+			name:       "multiple services are deterministic (smallest)",
+			role:       role("arn:aws:iam::123456789012:role/multi", "/", trust(`{"Service":["lambda.amazonaws.com","ec2.amazonaws.com"]}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role.ec2",
+		},
+		{
+			name: "oidc federated provider",
+			role: role("arn:aws:iam::123456789012:role/irsa", "/",
+				trust(`{"Federated":"arn:aws:iam::123456789012:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/ABC"}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role.oidc",
+		},
+		{
+			name: "saml federated provider",
+			role: role("arn:aws:iam::123456789012:role/saml", "/",
+				trust(`{"Federated":"arn:aws:iam::123456789012:saml-provider/Okta"}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role.saml",
+		},
+		{
+			name:       "cross-account AWS principal",
+			role:       role("arn:aws:iam::123456789012:role/cross", "/", trust(`{"AWS":"arn:aws:iam::999999999999:root"}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role.cross_account",
+		},
+		{
+			name:       "same-account AWS principal falls back to base",
+			role:       role("arn:aws:iam::123456789012:role/same", "/", trust(`{"AWS":"arn:aws:iam::123456789012:user/alice"}`)),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role",
+		},
+		{
+			name:       "no trust document falls back to base",
+			role:       role("arn:aws:iam::123456789012:role/none", "/", ""),
+			wantType:   v2.NonHumanIdentityTrait_NHI_TYPE_ASSUMABLE_ROLE,
+			wantDetail: "aws.role",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotType, gotDetail := classifyRoleNHI(context.Background(), tt.role)
+			assert.Equal(t, tt.wantType, gotType)
+			assert.Equal(t, tt.wantDetail, gotDetail)
+		})
+	}
 }

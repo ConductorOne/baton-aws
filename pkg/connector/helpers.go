@@ -181,6 +181,62 @@ func extractTrustPrincipals(policyDocument string) ([]string, error) {
 	return awsPrincipals, nil
 }
 
+// trustPrincipals holds the principals that a role's trust policy allows to
+// assume it, split by principal kind. It is used to classify the role's NHI
+// type detail at sync time.
+type trustPrincipals struct {
+	aws       []string
+	service   []string
+	federated []string
+}
+
+// extractTrustPrincipalsByKind parses a raw (URL-encoded) IAM trust policy and
+// returns the AWS, Service, and Federated principals from Allow statements that
+// grant an sts:AssumeRole* action (AssumeRole, AssumeRoleWithWebIdentity,
+// AssumeRoleWithSAML).
+func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error) {
+	var tp trustPrincipals
+
+	decodedPolicy, err := url.QueryUnescape(policyDocument)
+	if err != nil {
+		return tp, fmt.Errorf("baton-aws: failed to decode trust policy: %w", err)
+	}
+
+	var policy TrustPolicy
+	if err := json.Unmarshal([]byte(decodedPolicy), &policy); err != nil {
+		return tp, fmt.Errorf("baton-aws: failed to parse trust policy JSON: %w", err)
+	}
+
+	for _, statement := range policy.Statement {
+		if statement.Effect != "Allow" {
+			continue
+		}
+		if !hasAssumeRoleAction(statement.Action) {
+			continue
+		}
+		tp.aws = append(tp.aws, statement.Principal.AWS...)
+		tp.service = append(tp.service, statement.Principal.Service...)
+		tp.federated = append(tp.federated, statement.Principal.Federated...)
+	}
+
+	return tp, nil
+}
+
+// hasAssumeRoleAction reports whether any action in the list is an sts:AssumeRole*
+// variant (AssumeRole, AssumeRoleWithWebIdentity, AssumeRoleWithSAML).
+// Intentionally broader than the grant-emission path in extractTrustPrincipals,
+// which requires an exact "sts:AssumeRole" match: NHI classification should
+// capture all trust relationships regardless of the assume-role mechanism, while
+// grants are only emitted for direct role assumption.
+func hasAssumeRoleAction(actions Action) bool {
+	for _, a := range actions {
+		if strings.HasPrefix(a, "sts:AssumeRole") {
+			return true
+		}
+	}
+	return false
+}
+
 // detectPrincipalResource analyzes a principal ARN and determines:
 // which Baton resource type it corresponds to (IAM user or IAM role).
 func detectPrincipalResource(principalARN string) (*v2.ResourceType, string, bool) {
@@ -270,10 +326,13 @@ func (action *Action) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Principal represents the Principal field in an IAM statement.
-// Only AWS principals (users, roles) are supported.
+// Principal represents the Principal field in an IAM statement. AWS principals
+// drive assume-role grants; Service and Federated principals are kept only to
+// classify the role's NHI type at sync time (see classifyRoleNHI).
 type Principal struct {
-	AWS []string
+	AWS       []string
+	Service   []string
+	Federated []string
 }
 
 func (principal *Principal) UnmarshalJSON(data []byte) error {
@@ -292,28 +351,37 @@ func (principal *Principal) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	// It's an object, extract AWS field if present
-	if awsFieldData, ok := principalObj["AWS"]; ok {
-		// Try string first
-		var singleARN string
-		err = json.Unmarshal(awsFieldData, &singleARN)
-		if err != nil {
-			// Failed as string, try as array
-			var arnArray []string
-			err = json.Unmarshal(awsFieldData, &arnArray)
-			if err != nil {
-				return fmt.Errorf("AWS field must be string or array, got: %s", string(awsFieldData))
-			}
-			principal.AWS = arnArray
-			return nil
+	for field, dest := range map[string]*[]string{
+		awsDisplayName: &principal.AWS,
+		"Service":   &principal.Service,
+		"Federated": &principal.Federated,
+	} {
+		raw, ok := principalObj[field]
+		if !ok {
+			continue
 		}
-
-		principal.AWS = []string{singleARN}
-		return nil
+		values, err := unmarshalStringOrArray(raw)
+		if err != nil {
+			return fmt.Errorf("%s field must be string or array, got: %s", field, string(raw))
+		}
+		*dest = values
 	}
 
-	// No AWS field = service/federated principal, ignore (valid case)
 	return nil
+}
+
+// unmarshalStringOrArray parses a JSON value that may be either a single string
+// or an array of strings.
+func unmarshalStringOrArray(data json.RawMessage) ([]string, error) {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		return []string{single}, nil
+	}
+	var array []string
+	if err := json.Unmarshal(data, &array); err != nil {
+		return nil, err
+	}
+	return array, nil
 }
 
 // awsThrottleErrorCodes contains AWS API error codes that indicate rate limiting.

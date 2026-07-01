@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	awsPartition = "aws"
 	iamType      = "iam"
+	awsPartition = "aws"
 	ssoType      = "sso"
 )
 

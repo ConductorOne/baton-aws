@@ -35,6 +35,7 @@ import (
 const (
 	externalIDLengthMaximum = 65 // TODO: this might be a bug. Error message says max 64 but this allows 65.
 	externalIDLengthMinimum = 32
+	awsDisplayName          = "AWS"
 )
 
 type Config struct {
@@ -353,7 +354,7 @@ func (c *AWS) Metadata(ctx context.Context) (*v2.ConnectorMetadata, error) {
 		return nil, err
 	}
 
-	displayName := "AWS"
+	displayName := awsDisplayName
 	m := map[string]any{}
 
 	if accountId != "" {
@@ -480,7 +481,7 @@ func DefaultCapabilitiesBuilder() connectorbuilder.ConnectorBuilderV2 {
 type defaultCapabilitiesBuilder struct{}
 
 func (d *defaultCapabilitiesBuilder) Metadata(_ context.Context) (*v2.ConnectorMetadata, error) {
-	return &v2.ConnectorMetadata{DisplayName: "AWS"}, nil
+	return &v2.ConnectorMetadata{DisplayName: awsDisplayName}, nil
 }
 
 func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.Annotations, error) {
