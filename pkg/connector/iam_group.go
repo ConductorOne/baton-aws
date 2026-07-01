@@ -75,6 +75,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 				resourceSdk.WithGroupProfile(profile),
 			},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
@@ -151,6 +152,18 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 			),
 		)
 		rv = append(rv, grant)
+	}
+
+	if bag.PageToken() == "" {
+		groupName, err := iamGroupNameFromARN(resource.Id.Resource)
+		if err != nil {
+			return nil, nil, err
+		}
+		policyGrants, err := listAttachedGroupPolicyGrants(ctx, iamClient, groupName, resource.Id)
+		if err != nil {
+			return nil, nil, err
+		}
+		rv = append(rv, policyGrants...)
 	}
 
 	if !resp.IsTruncated {
