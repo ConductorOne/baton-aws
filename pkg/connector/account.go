@@ -123,8 +123,8 @@ type entitlementsPageState struct {
 
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
-	orgClient        *awsOrgs.Client
-	ssoAdminClient   *awsSsoAdmin.Client
+	orgClient        orgsAPI
+	ssoAdminClient   ssoAdminAPI
 	roleArn          string
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 	identityClient   client.IdentityStoreClient
@@ -161,6 +161,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
+	orgReadDenied := false
 	for _, account := range resp.Accounts {
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(account.Id),
@@ -177,17 +178,44 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		l.Debug("baton-aws: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
+		resourceOpts := []resourceSdk.ResourceOption{
+			resourceSdk.WithAnnotation(annos),
+			// Sparse ACLs: advertise the scope-binding type as a child so the SDK
+			// crawls per-(account, permission set) bindings under each account.
+			resourceSdk.WithAnnotation(&v2.ChildResourceType{
+				ResourceTypeId: resourceTypePermissionSetAssignment.Id,
+			}),
+		}
+
+		// Sparse ACLs hierarchy (Phase 2): re-parent the account under its Root/OU so c1's
+		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
+		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
+		parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
+		if err != nil {
+			return nil, nil, err
+		}
+		if accessDenied {
+			orgReadDenied = true
+		}
+		if parentID != nil {
+			resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
+		}
+
 		userResource, err := resourceSdk.NewAppResource(
 			name,
 			resourceTypeAccount,
 			accountId,
 			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
-			resourceSdk.WithAnnotation(annos),
+			resourceOpts...,
 		)
 		if err != nil {
 			return nil, nil, err
 		}
 		rv = append(rv, userResource)
+	}
+	if orgReadDenied {
+		l.Warn("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
+			"Add organizations:ListParents to enable by-inheritance review across the org tree.")
 	}
 
 	if resp.NextToken != nil {
@@ -551,32 +579,89 @@ func (o *accountResourceType) verifyAccountStatus(ctx context.Context, accountID
 	return false, nil
 }
 
-func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
-	principalType := awsSsoAdminTypes.PrincipalType("")
-	principalId := ""
+// resolveSSOPrincipal maps an sso_user / sso_group principal resource to the
+// AWS PrincipalType + native principal id used by Create/DeleteAccountAssignment.
+func resolveSSOPrincipal(principal *v2.Resource) (awsSsoAdminTypes.PrincipalType, string, error) {
 	switch principal.Id.ResourceType {
 	case resourceTypeSSOUser.Id:
-		principalType = awsSsoAdminTypes.PrincipalTypeUser
 		ssoUserID, err := ssoUserIdFromARN(principal.Id.Resource)
 		if err != nil {
-			return nil, err
+			return "", "", err
 		}
-		principalId = ssoUserID
+		return awsSsoAdminTypes.PrincipalTypeUser, ssoUserID, nil
 	case resourceTypeSSOGroup.Id:
-		principalType = awsSsoAdminTypes.PrincipalTypeGroup
 		ssoGroupID, err := ssoGroupIdFromARN(principal.Id.Resource)
 		if err != nil {
-			return nil, err
+			return "", "", err
 		}
-		principalId = ssoGroupID
+		return awsSsoAdminTypes.PrincipalTypeGroup, ssoGroupID, nil
 	default:
-		return nil, fmt.Errorf("baton-aws: invalid principal resource type: %s", principal.Id.ResourceType)
+		return "", "", fmt.Errorf("baton-aws: invalid principal resource type: %s", principal.Id.ResourceType)
 	}
+}
 
+func (o *accountResourceType) Grant(ctx context.Context, principal *v2.Resource, entitlement *v2.Entitlement) (annotations.Annotations, error) {
 	binding := &PermissionSetBinding{}
 	if err := binding.UnmarshalText([]byte(entitlement.Id)); err != nil {
 		return nil, err
 	}
+	return o.provisionAssignment(ctx, binding.AccountID, binding.PermissionSetId, principal)
+}
+
+// accountAssignmentExists reports whether (account, permissionSet, principal) is already an
+// Identity Center account assignment. It paginates ListAccountAssignments fully so a binding
+// on a later page is not missed. Used by provisionAssignment to emit GrantAlreadyExists.
+func (o *accountResourceType) accountAssignmentExists(ctx context.Context, accountID string, permissionSetArn string, principalType awsSsoAdminTypes.PrincipalType, principalId string) (bool, error) {
+	var nextToken *string
+	for {
+		resp, err := o.ssoAdminClient.ListAccountAssignments(ctx, &awsSsoAdmin.ListAccountAssignmentsInput{
+			AccountId:        awsSdk.String(accountID),
+			InstanceArn:      o.identityInstance.InstanceArn,
+			PermissionSetArn: awsSdk.String(permissionSetArn),
+			NextToken:        nextToken,
+		})
+		if err != nil {
+			return false, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListAccountAssignments failed: %w", err))
+		}
+		for _, a := range resp.AccountAssignments {
+			if a.PrincipalType == principalType && awsSdk.ToString(a.PrincipalId) == principalId {
+				return true, nil
+			}
+		}
+		if resp.NextToken == nil || *resp.NextToken == "" {
+			return false, nil
+		}
+		nextToken = resp.NextToken
+	}
+}
+
+// provisionAssignment creates an Identity Center account assignment for the given
+// (account, permission set, principal). It is the shared core of the account-entitlement
+// Grant path and the scope-binding Grant path; both recover (accountID, permissionSetArn)
+// from their own source (entitlement id vs ScopeBindingTrait) and call this with identical
+// AWS semantics (status verification, CreateAccountAssignment at TargetType=AWS_ACCOUNT,
+// and status polling to terminal state).
+func (o *accountResourceType) provisionAssignment(ctx context.Context, accountID string, permissionSetArn string, principal *v2.Resource) (annotations.Annotations, error) {
+	principalType, principalId, err := resolveSSOPrincipal(principal)
+	if err != nil {
+		return nil, err
+	}
+
+	// Idempotency: if the assignment already exists, emit GrantAlreadyExists and skip the
+	// create+status-poll (and the DescribeAccount status check below). CreateAccountAssignment
+	// is natively idempotent, so re-creating would also succeed, but emitting the annotation is
+	// the baton-sdk idiom and mirrors the GrantAlreadyRevoked path in deprovisionAssignment.
+	exists, err := o.accountAssignmentExists(ctx, accountID, permissionSetArn, principalType, principalId)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		annos := annotations.New()
+		annos.Append(&v2.GrantAlreadyExists{})
+		return annos, nil
+	}
+
+	binding := &PermissionSetBinding{AccountID: accountID, PermissionSetId: permissionSetArn}
 
 	// try to verify the account status before creating the assignment
 	// if we have permissions and the account is suspended, fail to avoid ConflictException
@@ -725,36 +810,25 @@ func (o *accountResourceType) checkDeleteAccountAssignmentStatus(ctx context.Con
 }
 
 func (o *accountResourceType) Revoke(ctx context.Context, grant *v2.Grant) (annotations.Annotations, error) {
-	principal := grant.Principal
-	entitlement := grant.Entitlement
-	principalType := awsSsoAdminTypes.PrincipalType("")
-	principalId := ""
-	switch principal.Id.ResourceType {
-	case resourceTypeSSOUser.Id:
-		principalType = awsSsoAdminTypes.PrincipalTypeUser
-		ssoUserID, err := ssoUserIdFromARN(principal.Id.Resource)
-		if err != nil {
-			return nil, err
-		}
-
-		principalId = ssoUserID
-
-	case resourceTypeSSOGroup.Id:
-		principalType = awsSsoAdminTypes.PrincipalTypeGroup
-		ssoGroupID, err := ssoGroupIdFromARN(principal.Id.Resource)
-		if err != nil {
-			return nil, err
-		}
-
-		principalId = ssoGroupID
-	default:
-		return nil, fmt.Errorf("baton-aws: invalid principal resource type: %s", principal.Id.ResourceType)
-	}
-
 	binding := &PermissionSetBinding{}
-	if err := binding.UnmarshalText([]byte(entitlement.Id)); err != nil {
+	if err := binding.UnmarshalText([]byte(grant.Entitlement.Id)); err != nil {
 		return nil, err
 	}
+	return o.deprovisionAssignment(ctx, binding.AccountID, binding.PermissionSetId, grant.Principal)
+}
+
+// deprovisionAssignment deletes an Identity Center account assignment for the given
+// (account, permission set, principal). It is the shared core of the account-entitlement
+// Revoke path and the scope-binding Revoke path, with identical AWS semantics
+// (status verification, DeleteAccountAssignment at TargetType=AWS_ACCOUNT, status polling,
+// and GrantAlreadyRevoked idempotency on 404).
+func (o *accountResourceType) deprovisionAssignment(ctx context.Context, accountID string, permissionSetArn string, principal *v2.Resource) (annotations.Annotations, error) {
+	principalType, principalId, err := resolveSSOPrincipal(principal)
+	if err != nil {
+		return nil, err
+	}
+
+	binding := &PermissionSetBinding{AccountID: accountID, PermissionSetId: permissionSetArn}
 
 	// try to verify the account status before deleting the assignment
 	// if we have permissions and the account is suspended, fail to avoid ConflictException
@@ -871,9 +945,9 @@ func (o *accountResourceType) fetchPermissionSetFromAPI(ctx context.Context, per
 }
 
 func accountBuilder(
-	orgClient *awsOrgs.Client,
+	orgClient orgsAPI,
 	roleArn string,
-	ssoAdminClient *awsSsoAdmin.Client,
+	ssoAdminClient ssoAdminAPI,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
 	identityClient client.IdentityStoreClient,
