@@ -51,9 +51,6 @@ type Config struct {
 	GlobalAwsCrossAccountIamEnabled bool
 	ExternalID                      string
 	RoleARN                         string
-	SCIMToken                       string
-	SCIMEndpoint                    string
-	SCIMEnabled                     bool
 	SyncSecrets                     bool
 	IamAssumeRoleName               string
 	SyncSSOUserLastLogin            bool
