@@ -275,6 +275,9 @@
                 "permission": "iam:GetGroup"
               },
               {
+                "permission": "iam:ListAttachedGroupPolicies"
+              },
+              {
                 "permission": "iam:AddUserToGroup"
               },
               {
@@ -297,10 +300,95 @@
             "permission": "iam:GetGroup"
           },
           {
+            "permission": "iam:ListAttachedGroupPolicies"
+          },
+          {
             "permission": "iam:AddUserToGroup"
           },
           {
             "permission": "iam:RemoveUserFromGroup"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType": {
+        "id": "iam_policy",
+        "displayName": "IAM Managed Policy",
+        "traits": [
+          "TRAIT_ROLE"
+        ],
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id": "iam_policy"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "iam:ListPolicies"
+              },
+              {
+                "permission": "iam:GetPolicy"
+              },
+              {
+                "permission": "iam:GetPolicyVersion"
+              },
+              {
+                "permission": "iam:AttachUserPolicy"
+              },
+              {
+                "permission": "iam:AttachRolePolicy"
+              },
+              {
+                "permission": "iam:AttachGroupPolicy"
+              },
+              {
+                "permission": "iam:DetachUserPolicy"
+              },
+              {
+                "permission": "iam:DetachRolePolicy"
+              },
+              {
+                "permission": "iam:DetachGroupPolicy"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "iam:ListPolicies"
+          },
+          {
+            "permission": "iam:GetPolicy"
+          },
+          {
+            "permission": "iam:GetPolicyVersion"
+          },
+          {
+            "permission": "iam:AttachUserPolicy"
+          },
+          {
+            "permission": "iam:AttachRolePolicy"
+          },
+          {
+            "permission": "iam:AttachGroupPolicy"
+          },
+          {
+            "permission": "iam:DetachUserPolicy"
+          },
+          {
+            "permission": "iam:DetachRolePolicy"
+          },
+          {
+            "permission": "iam:DetachGroupPolicy"
           }
         ]
       }
@@ -314,7 +402,7 @@
         ],
         "annotations": [
           {
-            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlements"
           },
           {
             "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
@@ -465,6 +553,88 @@
           },
           {
             "permission": "iam:TagUser"
+          }
+        ]
+      }
+    },
+    {
+      "resourceType": {
+        "id": "inline_policy",
+        "displayName": "Inline Policy",
+        "traits": [
+          "TRAIT_ROLE"
+        ],
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.V1Identifier",
+            "id": "inline_policy"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "iam:ListUserPolicies"
+              },
+              {
+                "permission": "iam:ListRolePolicies"
+              },
+              {
+                "permission": "iam:ListGroupPolicies"
+              },
+              {
+                "permission": "iam:GetUserPolicy"
+              },
+              {
+                "permission": "iam:GetRolePolicy"
+              },
+              {
+                "permission": "iam:GetGroupPolicy"
+              },
+              {
+                "permission": "iam:DeleteUserPolicy"
+              },
+              {
+                "permission": "iam:DeleteRolePolicy"
+              },
+              {
+                "permission": "iam:DeleteGroupPolicy"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC",
+        "CAPABILITY_PROVISION"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "iam:ListUserPolicies"
+          },
+          {
+            "permission": "iam:ListRolePolicies"
+          },
+          {
+            "permission": "iam:ListGroupPolicies"
+          },
+          {
+            "permission": "iam:GetUserPolicy"
+          },
+          {
+            "permission": "iam:GetRolePolicy"
+          },
+          {
+            "permission": "iam:GetGroupPolicy"
+          },
+          {
+            "permission": "iam:DeleteUserPolicy"
+          },
+          {
+            "permission": "iam:DeleteRolePolicy"
+          },
+          {
+            "permission": "iam:DeleteGroupPolicy"
           }
         ]
       }
@@ -699,6 +869,9 @@
               },
               {
                 "permission": "iam:GetRole"
+              },
+              {
+                "permission": "iam:ListAttachedRolePolicies"
               }
             ]
           }
@@ -714,6 +887,9 @@
           },
           {
             "permission": "iam:GetRole"
+          },
+          {
+            "permission": "iam:ListAttachedRolePolicies"
           }
         ]
       }

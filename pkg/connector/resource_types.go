@@ -27,6 +27,7 @@ var (
 		Annotations: v1AnnotationsWithPermissions("role", capabilityPermissions(
 			"iam:ListRoles",
 			"iam:GetRole",
+			"iam:ListAttachedRolePolicies",
 		)),
 	}
 
@@ -37,6 +38,7 @@ var (
 		Annotations: v1AnnotationsWithPermissions("group", capabilityPermissions(
 			"iam:ListGroups",
 			"iam:GetGroup",
+			"iam:ListAttachedGroupPolicies",
 			"iam:AddUserToGroup",
 			"iam:RemoveUserFromGroup",
 		)),
@@ -131,7 +133,7 @@ var (
 			v2.ResourceType_TRAIT_USER,
 		},
 		Annotations: annotations.New(
-			&v2.SkipEntitlementsAndGrants{},
+			&v2.SkipEntitlements{},
 			&v2.V1Identifier{Id: "iam_user"},
 			capabilityPermissions(
 				// Read
@@ -255,5 +257,41 @@ var (
 				"organizations:ListOrganizationalUnitsForParent",
 			),
 		),
+	}
+
+	resourceTypeIAMPolicy = &v2.ResourceType{
+		Id:          "iam_policy",
+		DisplayName: "IAM Managed Policy",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+		Annotations: v1AnnotationsWithPermissions("iam_policy", capabilityPermissions(
+			// Read
+			"iam:ListPolicies",
+			"iam:GetPolicy",
+			"iam:GetPolicyVersion",
+			// Provision
+			"iam:AttachUserPolicy",
+			"iam:AttachRolePolicy",
+			"iam:AttachGroupPolicy",
+			"iam:DetachUserPolicy",
+			"iam:DetachRolePolicy",
+			"iam:DetachGroupPolicy",
+		)),
+	}
+
+	resourceTypeInlinePolicy = &v2.ResourceType{
+		Id:          "inline_policy",
+		DisplayName: "Inline Policy",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
+		Annotations: v1AnnotationsWithPermissions("inline_policy", capabilityPermissions(
+			"iam:ListUserPolicies",
+			"iam:ListRolePolicies",
+			"iam:ListGroupPolicies",
+			"iam:GetUserPolicy",
+			"iam:GetRolePolicy",
+			"iam:GetGroupPolicy",
+			"iam:DeleteUserPolicy",
+			"iam:DeleteRolePolicy",
+			"iam:DeleteGroupPolicy",
+		)),
 	}
 )

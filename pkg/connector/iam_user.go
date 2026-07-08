@@ -87,6 +87,7 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			awsSdk.ToString(user.Arn),
 			options,
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
@@ -114,8 +115,63 @@ func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ 
 	return nil, nil, nil
 }
 
-func (o *iamUserResourceType) Grants(_ context.Context, _ *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
-	return nil, nil, nil
+func (o *iamUserResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	bag := &pagination.Bag{}
+	if err := bag.Unmarshal(opts.PageToken.Token); err != nil {
+		return nil, nil, err
+	}
+	if bag.Current() == nil {
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeIAMUser.Id,
+		})
+	}
+
+	var iamClient *iam.Client
+	var err error
+	if resource.GetParentResourceId() != nil {
+		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.GetParentResourceId().GetResource())
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: GetIAMClient failed: %w", err)
+		}
+	} else {
+		iamClient, err = o.awsClientFactory.IAMClientForEntityARN(ctx, resource.GetId().GetResource(), o.iamClient)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	userName, err := iamUserNameFromARN(resource.GetId().GetResource())
+	if err != nil {
+		return nil, nil, err
+	}
+
+	grants, nextMarker, err := listAttachedUserPolicyGrants(ctx, iamClient, userName, resource.GetId(), bag.PageToken())
+	if err != nil {
+		var noSuchEntity *iamTypes.NoSuchEntityException
+		if errors.As(err, &noSuchEntity) {
+			ctxzap.Extract(ctx).Warn("baton-aws: user not found, skipping grants for this user",
+				zap.String("user_name", userName),
+				zap.Error(err),
+			)
+			return nil, nil, nil
+		}
+		if isAccessDeniedError(err) {
+			ctxzap.Extract(ctx).Warn("baton-aws: access denied listing attached user policies, skipping managed policy grants for this user",
+				zap.String("user_name", userName),
+				zap.Error(err),
+			)
+			return nil, nil, nil
+		}
+		return nil, nil, err
+	}
+	if nextMarker != "" {
+		token, err := bag.NextToken(nextMarker)
+		if err != nil {
+			return nil, nil, err
+		}
+		return grants, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
+	}
+	return grants, nil, nil
 }
 
 func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS) *iamUserResourceType {

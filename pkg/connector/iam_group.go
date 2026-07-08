@@ -14,10 +14,13 @@ import (
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 )
 
 const (
-	groupMemberEntitlement = "member"
+	groupMemberEntitlement              = "member"
+	iamGroupGrantsAttachedPoliciesPhase = "attached_policies"
 )
 
 type iamGroupResourceType struct {
@@ -75,6 +78,7 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 				resourceSdk.WithGroupProfile(profile),
 			},
 			resourceSdk.WithAnnotation(annos),
+			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
 		)
 		if err != nil {
@@ -117,13 +121,6 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return nil, nil, err
 	}
 
-	input := &iam.GetGroupInput{
-		GroupName: awsSdk.String(resource.DisplayName),
-	}
-	if bag.PageToken() != "" {
-		input.Marker = awsSdk.String(bag.PageToken())
-	}
-
 	iamClient := o.iamClient
 	if resource.ParentResourceId != nil {
 		iamClient, err = o.awsClientFactory.GetIAMClient(ctx, resource.ParentResourceId.Resource)
@@ -132,8 +129,33 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		}
 	}
 
+	if bag.ResourceTypeID() == iamGroupGrantsAttachedPoliciesPhase {
+		return o.grantsForAttachedGroupPolicies(ctx, iamClient, resource, bag, nil)
+	}
+
+	if bag.Current() == nil {
+		bag.Push(pagination.PageState{
+			ResourceTypeID: resourceTypeIAMGroup.Id,
+		})
+	}
+
+	input := &iam.GetGroupInput{
+		GroupName: awsSdk.String(resource.DisplayName),
+	}
+	if bag.PageToken() != "" {
+		input.Marker = awsSdk.String(bag.PageToken())
+	}
+
 	resp, err := iamClient.GetGroup(ctx, input)
 	if err != nil {
+		var noSuchEntity *iamTypes.NoSuchEntityException
+		if errors.As(err, &noSuchEntity) {
+			ctxzap.Extract(ctx).Warn("baton-aws: group not found, skipping grants for this group",
+				zap.String("group_name", resource.DisplayName),
+				zap.Error(err),
+			)
+			return nil, nil, nil
+		}
 		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetGroup failed: %w", err))
 	}
 
@@ -153,11 +175,7 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		rv = append(rv, grant)
 	}
 
-	if !resp.IsTruncated {
-		return rv, nil, nil
-	}
-
-	if resp.Marker != nil {
+	if resp.IsTruncated && resp.Marker != nil {
 		token, err := bag.NextToken(*resp.Marker)
 		if err != nil {
 			return rv, nil, err
@@ -165,6 +183,54 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
 	}
 
+	// Membership is done (IsTruncated without a Marker shouldn't happen, but
+	// treat it as done rather than silently skipping the policy phase).
+	bag.Push(pagination.PageState{
+		ResourceTypeID: iamGroupGrantsAttachedPoliciesPhase,
+	})
+	return o.grantsForAttachedGroupPolicies(ctx, iamClient, resource, bag, rv)
+}
+
+func (o *iamGroupResourceType) grantsForAttachedGroupPolicies(
+	ctx context.Context,
+	iamClient *iam.Client,
+	resource *v2.Resource,
+	bag *pagination.Bag,
+	rv []*v2.Grant,
+) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	groupName, err := iamGroupNameFromARN(resource.Id.Resource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	policyGrants, nextMarker, err := listAttachedGroupPolicyGrants(ctx, iamClient, groupName, resource.Id, bag.PageToken())
+	if err != nil {
+		var noSuchEntity *iamTypes.NoSuchEntityException
+		if errors.As(err, &noSuchEntity) {
+			ctxzap.Extract(ctx).Warn("baton-aws: group not found, skipping grants for this group",
+				zap.String("group_name", groupName),
+				zap.Error(err),
+			)
+			return rv, nil, nil
+		}
+		if isAccessDeniedError(err) {
+			ctxzap.Extract(ctx).Warn("baton-aws: access denied listing attached group policies, skipping managed policy grants for this group",
+				zap.String("group_name", groupName),
+				zap.Error(err),
+			)
+			return rv, nil, nil
+		}
+		return nil, nil, err
+	}
+	rv = append(rv, policyGrants...)
+
+	if nextMarker != "" {
+		token, err := bag.NextToken(nextMarker)
+		if err != nil {
+			return rv, nil, err
+		}
+		return rv, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
+	}
 	return rv, nil, nil
 }
 
