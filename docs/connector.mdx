@@ -23,12 +23,30 @@ If you're setting up AWS with C1 for the first time, you're in the right place.
 | Identity Center groups | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |
 | Accounts via Permission Sets | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
 | Secrets - Access keys | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
+| Organization Root / Organizational Unit (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
+| Permission Set / Permission Set Assignment (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
 
 The AWS connector supports [automatic account provisioning and deprovisioning](/product/admin/account-provisioning) of IAM accounts.
 
 \*The connector can provision to accounts via permissions sets only if Identity Center is enabled.
 
+\*\*Sparse ACL resources are opt-in — see [Sparse ACLs: Organizations and permission sets as scoped bindings](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) below.
+
 [This connector can sync secrets](/product/admin/inventory) and display them on the **Inventory** page.
+
+## Sparse ACLs: Organizations and permission sets as scoped bindings
+
+When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector can additionally model Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:
+
+- **Organization Root** and **Organizational Unit** — the AWS Organizations hierarchy (Root → OU → Account), synced as read-only navigation/review context. Neither carries bindings of its own.
+- **Permission Set** — a role catalog entry for each Identity Center permission set.
+- **Permission Set Assignment** — one binding per (permission set, account) pair that's actually assigned, listing the users and groups granted that permission set on that account. Group grants expand to their members.
+
+Instead of one row per (account, permission set, user) combination, reviewers see "Permission Set X on Account Y" as a single item, with the account's place in the AWS Organizations hierarchy shown for context.
+
+These four resource types are **opt-in** on the C1 platform: even with both checkboxes enabled above, an administrator must separately opt in to each resource type before C1 begins syncing it. Until you opt in, the connector keeps syncing the existing flat account/permission-set entitlement model unchanged.
+
+Syncing the Organization Root / Organizational Unit hierarchy additionally requires the `organizations:ListRoots` and `organizations:ListOrganizationalUnitsForParent` permissions (see the IAM policy in the Identity Center setup tab below). If these permissions are missing, the connector logs a warning and skips the OU hierarchy rather than failing the sync — accounts continue to sync without OU grouping.
 
 ## Gather AWS credentials
 
@@ -350,6 +368,8 @@ The permissions policy below is broken into several sections to align with these
 	        "sso:ListInstances",
 	        "sso:ListPermissionSets",
 	        "sso:ListPermissionSetsProvisionedToAccount",
+	        "organizations:ListRoots",
+	        "organizations:ListOrganizationalUnitsForParent",
 	        "iam:GetUser",
 	        "iam:ListAccessKeys",
 	        "iam:ListSigningCertificates",
@@ -446,6 +466,7 @@ The permissions policy below is broken into several sections to align with these
 	- `identitystore:List...`: These permissions are specific to AWS IAM Identity Center. They allow C1 to list and read information about your users and groups as they are defined within the Identity Center.
 	- `organizations:ListAccounts`: This permission is required to list all the accounts within your AWS Organization, enabling C1 to understand your account structure.
 	- `sso:List..., sso:Describe...`: These permissions allow C1 to list your permission sets and see how they are assigned to accounts and users.
+	- `organizations:ListRoots, organizations:ListOrganizationalUnitsForParent`: **Optional**, only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) above). If omitted, the connector logs a warning and skips the OU hierarchy instead of failing.
 	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for C1 to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
 	**Section 2: Provisioning access (“C1ProvisionAccess”)**
 	This group of permissions is only required if you want to provision (create or delete) user assignments in AWS, including managing IAM users directly. For example, if you plan to use C1 to add a user to a group, assign a permission set to a user, create an IAM user, or fully delete an IAM user, you will need to include these permissions.
