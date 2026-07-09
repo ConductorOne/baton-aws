@@ -36,7 +36,7 @@ The AWS connector supports [automatic account provisioning and deprovisioning](/
 
 ## Sparse ACLs: Organizations and permission sets as scoped bindings
 
-When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector can additionally model Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:
+When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector also models Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:
 
 - **Organization Root** and **Organizational Unit** — the AWS Organizations hierarchy (Root → OU → Account), synced as read-only navigation/review context. Neither carries bindings of its own.
 - **Permission Set** — a role catalog entry for each Identity Center permission set.
@@ -44,9 +44,9 @@ When both **Enable support for AWS Organizations** and **Enable support for AWS 
 
 Instead of one row per (account, permission set, user) combination, reviewers see "Permission Set X on Account Y" as a single item, with the account's place in the AWS Organizations hierarchy shown for context.
 
-These four resource types are **opt-in** on the C1 platform: even with both checkboxes enabled above, an administrator must separately opt in to each resource type before C1 begins syncing it. Until you opt in, the connector keeps syncing the existing flat account/permission-set entitlement model unchanged.
+These four resource types are **opt-in** on the C1 platform: even with both checkboxes enabled above, you must separately opt in to each resource type before C1 begins syncing it. Until you opt in, the connector keeps syncing the existing flat account/permission-set entitlement model unchanged.
 
-Syncing the Organization Root / Organizational Unit hierarchy additionally requires the `organizations:ListRoots` and `organizations:ListOrganizationalUnitsForParent` permissions (see the IAM policy in the Identity Center setup tab below). If these permissions are missing, the connector logs a warning and skips the OU hierarchy rather than failing the sync — accounts continue to sync without OU grouping.
+Syncing the Organization Root / Organizational Unit hierarchy also requires the `organizations:ListRoots` and `organizations:ListOrganizationalUnitsForParent` permissions (see the IAM policy in the Identity Center setup tab below). If these permissions are missing, the connector logs a warning and skips the OU hierarchy rather than failing the sync — accounts continue to sync without OU grouping.
 
 ## Gather AWS credentials
 
