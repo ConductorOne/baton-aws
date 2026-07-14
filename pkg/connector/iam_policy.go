@@ -193,6 +193,9 @@ func (o *iamPolicyResourceType) Entitlements(_ context.Context, resource *v2.Res
 			resourceTypeIAMUser,
 			resourceTypeRole,
 			resourceTypeIAMGroup,
+			// Structural principal: Identity Center permission sets hold their managed
+			// policies through this entitlement (see permissionSetResourceType.Grants).
+			resourceTypePermissionSet,
 		),
 	)
 	attached.Description = fmt.Sprintf("Has the %s managed policy in AWS", resource.DisplayName)

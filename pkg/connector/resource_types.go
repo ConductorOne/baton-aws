@@ -177,20 +177,23 @@ var (
 	}
 
 	// resourceTypePermissionSet is the Identity Center permission set modeled as a
-	// role (Sparse ACLs / Cloud Infrastructure Access). It is a pure role catalog
-	// node: its id is the bare permission-set ARN (see permissionSetRoleID), which
-	// the scope-binding trait's role_id must byte-match.
+	// role (Sparse ACLs / Cloud Infrastructure Access). Its id is the bare
+	// permission-set ARN (see permissionSetRoleID), which the scope-binding trait's
+	// role_id must byte-match. It carries no entitlements of its own (the "assigned"
+	// entitlement lives on the binding), but its Grants phase emits the permission
+	// set's policy composition against iam_policy "attached" entitlements.
 	resourceTypePermissionSet = &v2.ResourceType{
 		Id:          "permission_set",
 		DisplayName: "Permission Set",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_ROLE},
 		Annotations: annotations.New(
-			&v2.SkipEntitlementsAndGrants{},
+			&v2.SkipEntitlements{},
 			&v2.OptInRequired{},
 			capabilityPermissions(
 				"sso:ListInstances",
 				"sso:ListPermissionSets",
 				"sso:DescribePermissionSet",
+				"sso:ListManagedPoliciesInPermissionSet",
 			),
 		),
 	}
@@ -286,6 +289,8 @@ var (
 			"iam:ListUserPolicies",
 			"iam:ListRolePolicies",
 			"iam:ListGroupPolicies",
+			// Permission-set parents (Identity Center inline policy document)
+			"sso:GetInlinePolicyForPermissionSet",
 			"iam:GetUserPolicy",
 			"iam:GetRolePolicy",
 			"iam:GetGroupPolicy",

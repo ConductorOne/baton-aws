@@ -25,6 +25,16 @@ type ssoAdminAPI interface {
 		optFns ...func(*awsSsoAdmin.Options),
 	) (*awsSsoAdmin.ListPermissionSetsProvisionedToAccountOutput, error)
 	DescribePermissionSet(ctx context.Context, params *awsSsoAdmin.DescribePermissionSetInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.DescribePermissionSetOutput, error)
+	ListManagedPoliciesInPermissionSet(
+		ctx context.Context,
+		params *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput,
+		optFns ...func(*awsSsoAdmin.Options),
+	) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error)
+	GetInlinePolicyForPermissionSet(
+		ctx context.Context,
+		params *awsSsoAdmin.GetInlinePolicyForPermissionSetInput,
+		optFns ...func(*awsSsoAdmin.Options),
+	) (*awsSsoAdmin.GetInlinePolicyForPermissionSetOutput, error)
 	ListAccountAssignments(ctx context.Context, params *awsSsoAdmin.ListAccountAssignmentsInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.ListAccountAssignmentsOutput, error)
 	CreateAccountAssignment(ctx context.Context, params *awsSsoAdmin.CreateAccountAssignmentInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.CreateAccountAssignmentOutput, error)
 	DeleteAccountAssignment(ctx context.Context, params *awsSsoAdmin.DeleteAccountAssignmentInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.DeleteAccountAssignmentOutput, error)

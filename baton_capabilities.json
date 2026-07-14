@@ -582,6 +582,9 @@
                 "permission": "iam:ListGroupPolicies"
               },
               {
+                "permission": "sso:GetInlinePolicyForPermissionSet"
+              },
+              {
                 "permission": "iam:GetUserPolicy"
               },
               {
@@ -617,6 +620,9 @@
           },
           {
             "permission": "iam:ListGroupPolicies"
+          },
+          {
+            "permission": "sso:GetInlinePolicyForPermissionSet"
           },
           {
             "permission": "iam:GetUserPolicy"
@@ -728,7 +734,7 @@
         ],
         "annotations": [
           {
-            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlements"
           },
           {
             "@type": "type.googleapis.com/c1.connector.v2.OptInRequired"
@@ -744,6 +750,9 @@
               },
               {
                 "permission": "sso:DescribePermissionSet"
+              },
+              {
+                "permission": "sso:ListManagedPoliciesInPermissionSet"
               }
             ]
           }
@@ -762,6 +771,9 @@
           },
           {
             "permission": "sso:DescribePermissionSet"
+          },
+          {
+            "permission": "sso:ListManagedPoliciesInPermissionSet"
           }
         ]
       },
