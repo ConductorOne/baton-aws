@@ -50,6 +50,20 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
+## Sparse ACLs: permission sets as scoped bindings
+
+With both `--global-aws-orgs-enabled` and `--global-aws-sso-enabled` set, `baton-aws` can additionally model Identity Center permission set assignments as **Sparse ACL** bindings, alongside the legacy flat per-account entitlement model. This adds four resource types:
+
+- **Organization Root** and **Organizational Unit** — the AWS Organizations hierarchy (Root → OU → Account), synced as read-only navigation/review context. Neither carries any bindings of its own.
+- **Permission Set** — a role catalog entry for each Identity Center permission set.
+- **Permission Set Assignment** — one binding per (permission set, account) pair that is actually assigned, carrying the principals (users/groups) granted that permission set on that account. Group grants expand to their members.
+
+Instead of a flat list of one row per (account, permission set, user) combination, reviewers see "Permission Set X on Account Y" as a single reviewable item, with the AWS Organizations hierarchy providing context for where that access applies.
+
+These four resource types are also marked **opt-in** on the ConductorOne platform: even with both flags enabled, a tenant must separately opt in (per resource type) in the C1 UI before C1 begins syncing them. This makes rollout safe — existing connectors keep syncing the legacy flat model until an admin opts in to Sparse ACLs.
+
+`organizations:ListRoots` and `organizations:ListOrganizationalUnitsForParent` are required to sync the Organization Root / Organizational Unit hierarchy; if missing, the connector logs a warning and skips the hierarchy rather than failing the sync (accounts stay flat, ungrouped by OU). See the IAM policies below for where to add them.
+
 ## Sync modes
 
 `--global-aws-orgs-enabled` can be set on its own: the connector discovers every account in the AWS Organization and assumes a role into each one to sync its IAM users, roles, and groups. `--global-aws-sso-enabled` requires `--global-aws-orgs-enabled` to also be set; with both on, the connector syncs Identity Center users, groups, permission sets, and account assignments from the management account (or a delegated administrator account).
@@ -165,6 +179,18 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
+        "organizations:ListRoots",
+        "organizations:ListOrganizationalUnitsForParent"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Optional: only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy.
+      // Requires --global-aws-orgs-enabled and --global-aws-sso-enabled, plus tenant opt-in in the C1 UI.
+      // If omitted, the connector logs a warning and skips the OU hierarchy (accounts stay flat).
+      "Sid": "SparseACLOrganizationHierarchy"
+    },
+    {
+      "Action": [
         "sts:AssumeRole"
       ],
       "Effect": "Allow",
@@ -276,6 +302,18 @@ _These policies have comments prefixed with // that need to be removed before us
       // Without this, the connector will attempt assignments and may get unclear ConflictException errors
       // for suspended accounts. This permission provides clearer error messages.
       "Sid": "AccountStatusValidationForProvisioning"
+    },
+    {
+      "Action": [
+        "organizations:ListRoots",
+        "organizations:ListOrganizationalUnitsForParent"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Optional: only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy.
+      // Requires --global-aws-orgs-enabled and --global-aws-sso-enabled, plus tenant opt-in in the C1 UI.
+      // If omitted, the connector logs a warning and skips the OU hierarchy (accounts stay flat).
+      "Sid": "SparseACLOrganizationHierarchy"
     },
     {
       "Action": [
