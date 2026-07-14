@@ -10,6 +10,8 @@ import (
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
+	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
@@ -27,12 +29,23 @@ import (
 const (
 	inlinePolicyAttachedEntitlement = "attached"
 	inlinePolicyIDSeparator         = "::inline::"
+	// permissionSetInlinePolicyName is the synthetic name segment for a permission
+	// set's inline policy resource id. Identity Center inline policies are anonymous
+	// single documents (unlike IAM's named inline policies), so a fixed name keeps
+	// the id stable: "<permissionSetArn>::inline::inline".
+	permissionSetInlinePolicyName = "inline"
 )
 
 type inlinePolicyResourceType struct {
 	resourceType     *v2.ResourceType
 	iamClient        *iam.Client
 	awsClientFactory *AWSClientFactory
+	// ssoAdminClient/identityInstance back the permission_set parent: its inline
+	// policy lives in Identity Center (GetInlinePolicyForPermissionSet), not IAM.
+	// Both are nil when SSO sync is disabled — in that case permission_set resources
+	// are never emitted, so no permission_set parent is ever crawled.
+	ssoAdminClient   ssoAdminAPI
+	identityInstance *awsSsoAdminTypes.InstanceMetadata
 }
 
 var _ connectorbuilder.ResourceProvisionerV2 = (*inlinePolicyResourceType)(nil)
@@ -44,6 +57,14 @@ func (o *inlinePolicyResourceType) ResourceType(_ context.Context) *v2.ResourceT
 func (o *inlinePolicyResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	if parentId == nil {
 		return nil, nil, nil
+	}
+
+	// Permission sets branch off before any IAM client resolution: their inline policy
+	// is an Identity Center document, and a permission-set ARN has an empty account
+	// field, so IAMClientForEntityARN would resolve account "" and fail in
+	// multi-account mode.
+	if parentId.ResourceType == resourceTypePermissionSet.Id {
+		return o.listPermissionSetInlinePolicy(ctx, parentId)
 	}
 
 	bag := &pagination.Bag{}
@@ -120,6 +141,63 @@ func (o *inlinePolicyResourceType) List(ctx context.Context, parentId *v2.Resour
 	}
 
 	return rv, nil, nil
+}
+
+// listPermissionSetInlinePolicy emits the permission set's inline policy as a single
+// child resource, or nothing when the permission set has no inline policy. Identity
+// Center holds at most one anonymous inline document per permission set, so there is
+// no name listing and no pagination; the document comes back as plain JSON (no URL
+// decoding, unlike the IAM Get*Policy responses).
+func (o *inlinePolicyResourceType) listPermissionSetInlinePolicy(ctx context.Context, parentId *v2.ResourceId) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
+	resp, err := o.ssoAdminClient.GetInlinePolicyForPermissionSet(ctx, &awsSsoAdmin.GetInlinePolicyForPermissionSetInput{
+		InstanceArn:      o.identityInstance.InstanceArn,
+		PermissionSetArn: awsSdk.String(parentId.Resource),
+	})
+	if err != nil {
+		var noSuchEntity *awsSsoAdminTypes.ResourceNotFoundException
+		if errors.As(err, &noSuchEntity) {
+			ctxzap.Extract(ctx).Warn("baton-aws: permission set not found, skipping inline policy for this permission set",
+				zap.String("permission_set_arn", parentId.Resource),
+				zap.Error(err),
+			)
+			return nil, nil, nil
+		}
+		if isAccessDeniedError(err) {
+			ctxzap.Extract(ctx).Warn("baton-aws: access denied getting inline policy for permission set, skipping inline policy for this permission set",
+				zap.String("permission_set_arn", parentId.Resource),
+				zap.Error(err),
+			)
+			return nil, nil, nil
+		}
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.GetInlinePolicyForPermissionSet failed: %w", err))
+	}
+
+	document := awsSdk.ToString(resp.InlinePolicy)
+	if document == "" {
+		return nil, nil, nil
+	}
+
+	profile := map[string]any{
+		"aws_policy_name": permissionSetInlinePolicyName,
+		"aws_parent_arn":  parentId.Resource,
+		"policy_document": document,
+	}
+	policyResource, err := resourceSdk.NewRoleResource(
+		permissionSetInlinePolicyName,
+		resourceTypeInlinePolicy,
+		inlinePolicyResourceID(parentId.Resource, permissionSetInlinePolicyName),
+		[]resourceSdk.RoleTraitOption{
+			resourceSdk.WithRoleProfile(profile),
+		},
+		resourceSdk.WithDescription(
+			fmt.Sprintf("Inline policy attached to permission set %s", parentId.GetResource()),
+		),
+		resourceSdk.WithParentResourceID(parentId),
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	return []*v2.Resource{policyResource}, nil, nil
 }
 
 func (o *inlinePolicyResourceType) listInlinePolicyNames(
@@ -316,6 +394,16 @@ func (o *inlinePolicyResourceType) Revoke(ctx context.Context, grant *v2.Grant) 
 		return nil, status.Errorf(codes.InvalidArgument, "baton-aws: grant principal ARN does not match inline policy parent ARN")
 	}
 
+	// A permission set's inline policy is Identity Center configuration, not an IAM
+	// attachment: removing it (DeleteInlinePolicyFromPermissionSet) only stages the
+	// change and every bound account would need re-provisioning to take effect, so it
+	// is not supported as a grant revocation. Checked before IAM client resolution —
+	// permission-set ARNs have an empty account field.
+	if principalID.GetResourceType() == resourceTypePermissionSet.Id {
+		return nil, status.Errorf(codes.Unimplemented,
+			"baton-aws: permission set inline policies cannot be revoked via provisioning; manage them in IAM Identity Center")
+	}
+
 	iamClient, err := o.awsClientFactory.IAMClientForEntityARN(ctx, principalID.GetResource(), o.iamClient)
 	if err != nil {
 		return nil, err
@@ -358,6 +446,12 @@ func (o *inlinePolicyResourceType) Revoke(ctx context.Context, grant *v2.Grant) 
 		if err == nil {
 			resultMetadata = out.ResultMetadata
 		}
+
+	default:
+		// Fail loudly: falling through with no API call would report a successful
+		// revoke that never happened.
+		return nil, status.Errorf(codes.InvalidArgument,
+			"baton-aws: unsupported inline policy principal resource type %q", principalID.GetResourceType())
 	}
 
 	if deleteErr != nil {
@@ -375,11 +469,18 @@ func (o *inlinePolicyResourceType) Revoke(ctx context.Context, grant *v2.Grant) 
 	return annos, nil
 }
 
-func inlinePolicyBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *inlinePolicyResourceType {
+func inlinePolicyBuilder(
+	iamClient *iam.Client,
+	awsClientFactory *AWSClientFactory,
+	ssoAdminClient ssoAdminAPI,
+	identityInstance *awsSsoAdminTypes.InstanceMetadata,
+) *inlinePolicyResourceType {
 	return &inlinePolicyResourceType{
 		resourceType:     resourceTypeInlinePolicy,
 		iamClient:        iamClient,
 		awsClientFactory: awsClientFactory,
+		ssoAdminClient:   ssoAdminClient,
+		identityInstance: identityInstance,
 	}
 }
 
@@ -403,6 +504,8 @@ func inlinePolicyParentResourceType(parentId *v2.ResourceId) (*v2.ResourceType, 
 		return resourceTypeRole, nil
 	case resourceTypeIAMGroup.Id:
 		return resourceTypeIAMGroup, nil
+	case resourceTypePermissionSet.Id:
+		return resourceTypePermissionSet, nil
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "baton-aws: unsupported inline policy parent resource type %q", parentId.GetResourceType())
 	}

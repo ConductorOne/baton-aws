@@ -448,7 +448,10 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		iamRoleBuilder(c.iamClient, c.awsClientFactory),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory),
 		iamPolicyBuilder(c.iamClient, c.awsClientFactory, c.syncOnlyAttachedPolicies),
-		inlinePolicyBuilder(c.iamClient, c.awsClientFactory),
+		// ssoAdminClient/identityInstance are nil when SSO is disabled; the inline
+		// policy builder only uses them for permission_set parents, which are only
+		// crawled when the permission set builder is registered (SSO+orgs enabled).
+		inlinePolicyBuilder(c.iamClient, c.awsClientFactory, c.ssoAdminClient, c.identityInstance),
 	}
 
 	if c.ssoEnabled {
@@ -508,7 +511,7 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		iamRoleBuilder(nil, nil),
 		iamGroupBuilder(nil, nil),
 		iamPolicyBuilder(nil, nil, false),
-		inlinePolicyBuilder(nil, nil),
+		inlinePolicyBuilder(nil, nil, nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil),

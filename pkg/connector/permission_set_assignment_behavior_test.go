@@ -25,6 +25,8 @@ import (
 type fakeSSOAdmin struct {
 	listPermissionSetsProvisionedToAccountFn func(*awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput) (*awsSsoAdmin.ListPermissionSetsProvisionedToAccountOutput, error)
 	describePermissionSetFn                  func(*awsSsoAdmin.DescribePermissionSetInput) (*awsSsoAdmin.DescribePermissionSetOutput, error)
+	listManagedPoliciesInPermissionSetFn     func(*awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error)
+	getInlinePolicyForPermissionSetFn        func(*awsSsoAdmin.GetInlinePolicyForPermissionSetInput) (*awsSsoAdmin.GetInlinePolicyForPermissionSetOutput, error)
 	listAccountAssignmentsFn                 func(*awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error)
 	createAccountAssignmentFn                func(*awsSsoAdmin.CreateAccountAssignmentInput) (*awsSsoAdmin.CreateAccountAssignmentOutput, error)
 	deleteAccountAssignmentFn                func(*awsSsoAdmin.DeleteAccountAssignmentInput) (*awsSsoAdmin.DeleteAccountAssignmentOutput, error)
@@ -55,6 +57,28 @@ func (f *fakeSSOAdmin) DescribePermissionSet(_ context.Context, in *awsSsoAdmin.
 		return f.describePermissionSetFn(in)
 	}
 	return &awsSsoAdmin.DescribePermissionSetOutput{PermissionSet: &awsSsoAdminTypes.PermissionSet{PermissionSetArn: in.PermissionSetArn}}, nil
+}
+
+func (f *fakeSSOAdmin) ListManagedPoliciesInPermissionSet(
+	_ context.Context,
+	in *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput,
+	_ ...func(*awsSsoAdmin.Options),
+) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+	if f.listManagedPoliciesInPermissionSetFn != nil {
+		return f.listManagedPoliciesInPermissionSetFn(in)
+	}
+	return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{}, nil
+}
+
+func (f *fakeSSOAdmin) GetInlinePolicyForPermissionSet(
+	_ context.Context,
+	in *awsSsoAdmin.GetInlinePolicyForPermissionSetInput,
+	_ ...func(*awsSsoAdmin.Options),
+) (*awsSsoAdmin.GetInlinePolicyForPermissionSetOutput, error) {
+	if f.getInlinePolicyForPermissionSetFn != nil {
+		return f.getInlinePolicyForPermissionSetFn(in)
+	}
+	return &awsSsoAdmin.GetInlinePolicyForPermissionSetOutput{}, nil
 }
 
 func (f *fakeSSOAdmin) ListAccountAssignments(_ context.Context, in *awsSsoAdmin.ListAccountAssignmentsInput, _ ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
@@ -298,6 +322,127 @@ func TestPermissionSetAssignmentList_GatedOnAccountParent(t *testing.T) {
 	assert.Empty(t, resources)
 
 	resources, _, err = psa.List(ctx, &v2.ResourceId{ResourceType: resourceTypePermissionSet.Id, Resource: testPermissionSetArn}, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	assert.Empty(t, resources)
+}
+
+// Grants on the permission_set resource emits the permission set's policy composition:
+// one grant per attached AWS-managed policy, against the iam_policy "attached" entitlement,
+// with the permission set as principal. Pagination passes the AWS NextToken through.
+func TestPermissionSetGrants_EmitsPolicyAttachments(t *testing.T) {
+	ctx := context.Background()
+	const policyArnA = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+	const policyArnB = "arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess"
+
+	calls := 0
+	sso := &fakeSSOAdmin{
+		listManagedPoliciesInPermissionSetFn: func(in *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+			calls++
+			assert.Equal(t, behaviorInstanceArn, awsSdk.ToString(in.InstanceArn))
+			assert.Equal(t, testPermissionSetArn, awsSdk.ToString(in.PermissionSetArn))
+			if calls == 1 {
+				assert.Nil(t, in.NextToken)
+				return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{
+					AttachedManagedPolicies: []awsSsoAdminTypes.AttachedManagedPolicy{
+						{Arn: awsSdk.String(policyArnA), Name: awsSdk.String("AmazonS3ReadOnlyAccess")},
+					},
+					NextToken: awsSdk.String("page-2"),
+				}, nil
+			}
+			assert.Equal(t, "page-2", awsSdk.ToString(in.NextToken))
+			return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{
+				AttachedManagedPolicies: []awsSsoAdminTypes.AttachedManagedPolicy{
+					{Arn: awsSdk.String(policyArnB), Name: awsSdk.String("AmazonEC2ReadOnlyAccess")},
+				},
+			}, nil
+		},
+	}
+	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
+		InstanceArn:     awsSdk.String(behaviorInstanceArn),
+		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
+	}
+	ps := permissionSetBuilder(sso, identityInstance)
+
+	psResource, err := permissionSetResource(&awsSsoAdminTypes.PermissionSet{
+		PermissionSetArn: awsSdk.String(testPermissionSetArn),
+		Name:             awsSdk.String("PowerUserAccess"),
+	})
+	require.NoError(t, err)
+
+	// Page 1
+	grants, res, err := ps.Grants(ctx, psResource, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.Equal(t, "page-2", res.NextPageToken)
+	require.Len(t, grants, 1)
+
+	// Page 2
+	grants2, res2, err := ps.Grants(ctx, psResource, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: res.NextPageToken}})
+	require.NoError(t, err)
+	require.True(t, res2 == nil || res2.NextPageToken == "")
+	require.Len(t, grants2, 1)
+
+	for i, want := range []string{policyArnA, policyArnB} {
+		g := append(grants, grants2...)[i]
+		assert.Equal(t, resourceTypeIAMPolicy.Id, g.Entitlement.Resource.Id.ResourceType)
+		assert.Equal(t, want, g.Entitlement.Resource.Id.Resource)
+		assert.Equal(t, resourceTypeIAMPolicy.Id+":"+want+":"+iamPolicyAttachedEntitlement, g.Entitlement.Id)
+		assert.Equal(t, resourceTypePermissionSet.Id, g.Principal.Id.ResourceType)
+		assert.Equal(t, testPermissionSetArn, g.Principal.Id.Resource)
+	}
+}
+
+// List on inline_policy with a permission_set parent fetches the Identity Center inline
+// policy document (never touching IAM) and emits a single child resource when a document
+// exists, nothing when it is empty.
+func TestInlinePolicyList_PermissionSetParent(t *testing.T) {
+	ctx := context.Background()
+	const document = `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"s3:GetObject","Resource":"*"}]}`
+
+	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
+		InstanceArn:     awsSdk.String(behaviorInstanceArn),
+		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
+	}
+	psParent := &v2.ResourceId{ResourceType: resourceTypePermissionSet.Id, Resource: testPermissionSetArn}
+
+	// Permission set with an inline policy: one child resource carrying the document.
+	sso := &fakeSSOAdmin{
+		getInlinePolicyForPermissionSetFn: func(in *awsSsoAdmin.GetInlinePolicyForPermissionSetInput) (*awsSsoAdmin.GetInlinePolicyForPermissionSetOutput, error) {
+			assert.Equal(t, behaviorInstanceArn, awsSdk.ToString(in.InstanceArn))
+			assert.Equal(t, testPermissionSetArn, awsSdk.ToString(in.PermissionSetArn))
+			return &awsSsoAdmin.GetInlinePolicyForPermissionSetOutput{InlinePolicy: awsSdk.String(document)}, nil
+		},
+	}
+	// nil IAM client and factory prove the permission-set branch never resolves IAM.
+	ip := inlinePolicyBuilder(nil, nil, sso, identityInstance)
+
+	resources, res, err := ip.List(ctx, psParent, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.True(t, res == nil || res.NextPageToken == "")
+	require.Len(t, resources, 1)
+
+	got := resources[0]
+	assert.Equal(t, resourceTypeInlinePolicy.Id, got.Id.ResourceType)
+	assert.Equal(t, inlinePolicyResourceID(testPermissionSetArn, permissionSetInlinePolicyName), got.Id.Resource)
+	require.NotNil(t, got.ParentResourceId)
+	assert.Equal(t, resourceTypePermissionSet.Id, got.ParentResourceId.ResourceType)
+	assert.Equal(t, testPermissionSetArn, got.ParentResourceId.Resource)
+
+	roleTrait, err := resourceSdk.GetRoleTrait(got)
+	require.NoError(t, err)
+	assert.Equal(t, document, roleTrait.GetProfile().GetFields()["policy_document"].GetStringValue())
+
+	// The structural grant hangs the inline policy on the permission set, unexpanded.
+	grants, _, err := ip.Grants(ctx, got, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	assert.Equal(t, resourceTypePermissionSet.Id, grants[0].Principal.Id.ResourceType)
+	assert.Equal(t, testPermissionSetArn, grants[0].Principal.Id.Resource)
+	assert.Empty(t, grants[0].Annotations, "permission set inline policy grants must not carry expansion")
+
+	// Permission set without an inline policy: no child resources.
+	empty := inlinePolicyBuilder(nil, nil, &fakeSSOAdmin{}, identityInstance)
+	resources, _, err = empty.List(ctx, psParent, resourceSdk.SyncOpAttrs{})
 	require.NoError(t, err)
 	assert.Empty(t, resources)
 }
