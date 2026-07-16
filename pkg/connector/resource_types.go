@@ -229,15 +229,15 @@ var (
 	// of the Sparse ACLs hierarchy (Root → OU → Account). It holds no binding — AWS has no
 	// native Root-level permission-set assignment — and exists purely as navigation /
 	// by-inheritance review context. SkipEntitlementsAndGrants + OptInRequired, like Azure's
-	// management-group tier.
+	// management-group tier. The OU child-crawl is driven by a ChildResourceType annotation
+	// attached to each emitted resource instance (see organizationResource in organization.go),
+	// not by an annotation here — the syncer only reads instance-level annotations.
 	resourceTypeOrganization = &v2.ResourceType{
 		Id:          "organization",
 		DisplayName: "Organization Root",
 		Annotations: annotations.New(
 			&v2.SkipEntitlementsAndGrants{},
 			&v2.OptInRequired{},
-			// The root is the crawl seed for the OU tree.
-			&v2.ChildResourceType{ResourceTypeId: "organizational_unit"},
 			capabilityPermissions(
 				"organizations:ListRoots",
 				"organizations:ListOrganizationalUnitsForParent",
@@ -247,15 +247,15 @@ var (
 
 	// resourceTypeOrganizationalUnit is an AWS Organizations OU, an intermediate scope tier
 	// between the root and accounts. Like the root it carries no binding (no native OU-level
-	// assignment) and is hierarchy/review context only. It declares itself as a child type so
-	// the SDK recurses into nested OUs. SkipEntitlementsAndGrants + OptInRequired.
+	// assignment) and is hierarchy/review context only. Nested-OU recursion is driven by a
+	// ChildResourceType annotation attached to each emitted resource instance (see
+	// organizationalUnitResource in organization.go). SkipEntitlementsAndGrants + OptInRequired.
 	resourceTypeOrganizationalUnit = &v2.ResourceType{
 		Id:          "organizational_unit",
 		DisplayName: "Organizational Unit",
 		Annotations: annotations.New(
 			&v2.SkipEntitlementsAndGrants{},
 			&v2.OptInRequired{},
-			&v2.ChildResourceType{ResourceTypeId: "organizational_unit"},
 			capabilityPermissions(
 				"organizations:ListOrganizationalUnitsForParent",
 			),

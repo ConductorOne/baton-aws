@@ -9,6 +9,7 @@ import (
 	awsOrgsTypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,6 +41,41 @@ func TestOrganizationList_EmitsRoots(t *testing.T) {
 	assert.Equal(t, resourceTypeOrganization.Id, resources[0].Id.ResourceType)
 	assert.Equal(t, testRootID, resources[0].Id.Resource)
 	assert.Nil(t, resources[0].ParentResourceId, "root is the top tier; no parent")
+}
+
+// organizationResource must attach a ChildResourceType annotation to the emitted resource
+// instance — this is what the SDK's syncer actually reads to schedule the organizational_unit
+// child crawl (a ResourceType-level annotation alone does not drive dispatch). Regression test
+// for CXP-756, where this was missing and the OU tier silently never synced.
+func TestOrganizationResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
+	r, err := organizationResource(awsOrgsTypes.Root{Id: awsSdk.String(testRootID)})
+	require.NoError(t, err)
+
+	annos := annotations.Annotations(r.GetAnnotations())
+	require.True(t, annos.Contains((*v2.ChildResourceType)(nil)))
+
+	var crt v2.ChildResourceType
+	ok, err := annos.Pick(&crt)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, resourceTypeOrganizationalUnit.Id, crt.ResourceTypeId)
+}
+
+// organizationalUnitResource must attach a ChildResourceType annotation pointing at itself so
+// the SDK recurses into nested OUs. Regression test for CXP-756.
+func TestOrganizationalUnitResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
+	parent := &v2.ResourceId{ResourceType: resourceTypeOrganization.Id, Resource: testRootID}
+	r, err := organizationalUnitResource(awsOrgsTypes.OrganizationalUnit{Id: awsSdk.String(testOUID)}, parent)
+	require.NoError(t, err)
+
+	annos := annotations.Annotations(r.GetAnnotations())
+	require.True(t, annos.Contains((*v2.ChildResourceType)(nil)))
+
+	var crt v2.ChildResourceType
+	ok, err := annos.Pick(&crt)
+	require.NoError(t, err)
+	require.True(t, ok)
+	assert.Equal(t, resourceTypeOrganizationalUnit.Id, crt.ResourceTypeId)
 }
 
 // organization.List degrades to no hierarchy (no error) when org-read permission is missing.
