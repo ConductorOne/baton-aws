@@ -428,9 +428,7 @@ func TestInlinePolicyList_PermissionSetParent(t *testing.T) {
 	assert.Equal(t, resourceTypePermissionSet.Id, got.ParentResourceId.ResourceType)
 	assert.Equal(t, testPermissionSetArn, got.ParentResourceId.Resource)
 
-	roleTrait, err := resourceSdk.GetRoleTrait(got)
-	require.NoError(t, err)
-	assert.Equal(t, document, roleTrait.GetProfile().GetFields()["policy_document"].GetStringValue())
+	assert.Equal(t, document, got.GetProfile().GetFields()["policy_document"].GetStringValue())
 
 	// The structural grant hangs the inline policy on the permission set, unexpanded.
 	grants, _, err := ip.Grants(ctx, got, resourceSdk.SyncOpAttrs{})

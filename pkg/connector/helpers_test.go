@@ -492,6 +492,17 @@ func TestExtractTrustPrincipals(t *testing.T) {
 		assert.Equal(t, []string{"arn:aws:iam::123456789012:user/test"}, principals)
 	})
 
+	t.Run("should ignore non-string condition values", func(t *testing.T) {
+		policyDocument := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow",` +
+			`"Principal":{"AWS":"arn:aws:iam::123456789012:user/test"},` +
+			`"Action":"sts:AssumeRole","Condition":{"Bool":{"aws:MultiFactorAuthPresent":true}}}]}`
+
+		principals, err := extractTrustPrincipals(policyDocument)
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"arn:aws:iam::123456789012:user/test"}, principals)
+	})
+
 	t.Run("should filter out Deny statements", func(t *testing.T) {
 		// URL-encoded with Deny and Allow statements
 		policyDocument := `%7B%22Version%22%3A%222012-10-17%22%2C%22Statement%22%3A%5B%7B%22Effect%22%3A%22Deny%22%2C` +

@@ -105,15 +105,12 @@ func (o *inlinePolicyResourceType) List(ctx context.Context, parentId *v2.Resour
 			profile["policy_document"] = policyDocument
 		}
 
-		roleTraits := []resourceSdk.RoleTraitOption{
-			resourceSdk.WithRoleProfile(profile),
-		}
-
 		policyResource, err := resourceSdk.NewRoleResource(
 			policyName,
 			resourceTypeInlinePolicy,
 			resourceID,
-			roleTraits,
+			nil,
+			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithDescription(
 				fmt.Sprintf("Inline policy %s attached to %s IAM %s",
 					policyName,
@@ -186,9 +183,8 @@ func (o *inlinePolicyResourceType) listPermissionSetInlinePolicy(ctx context.Con
 		permissionSetInlinePolicyName,
 		resourceTypeInlinePolicy,
 		inlinePolicyResourceID(parentId.Resource, permissionSetInlinePolicyName),
-		[]resourceSdk.RoleTraitOption{
-			resourceSdk.WithRoleProfile(profile),
-		},
+		nil,
+		resourceSdk.WithResourceProfile(profile),
 		resourceSdk.WithDescription(
 			fmt.Sprintf("Inline policy attached to permission set %s", parentId.GetResource()),
 		),

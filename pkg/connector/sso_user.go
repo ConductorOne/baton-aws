@@ -75,10 +75,7 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			Id: userARN,
 		}
 		profile := ssoUserProfile(ctx, user)
-		userOptions := []resourceSdk.UserTraitOption{
-			resourceSdk.WithUserProfile(profile),
-			resourceSdk.WithStatus(status),
-		}
+		userOptions := make([]resourceSdk.UserTraitOption, 0)
 		foundPrimaryEmail := false
 		emailFromUsername := getSsoUserEmail(user)
 		if emailFromUsername != "" {
@@ -101,6 +98,8 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			resourceTypeSSOUser,
 			userARN,
 			userOptions,
+			resourceSdk.WithResourceProfile(profile),
+			resourceSdk.WithResourceStatus(v2.Status_ResourceStatus(status), ""),
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {
@@ -214,14 +213,14 @@ func (o *ssoUserResourceType) CreateAccount(
 		resourceTypeSSOUser,
 		userARN,
 		[]resourceSdk.UserTraitOption{
-			resourceSdk.WithUserProfile(map[string]interface{}{
-				"aws_user_type": ssoType,
-				"aws_user_name": profile.DisplayName,
-				"aws_user_id":   awsSdk.ToString(out.UserId),
-			}),
 			resourceSdk.WithEmail(profile.Email, true),
-			resourceSdk.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
 		},
+		resourceSdk.WithResourceProfile(map[string]interface{}{
+			"aws_user_type": ssoType,
+			"aws_user_name": profile.DisplayName,
+			"aws_user_id":   awsSdk.ToString(out.UserId),
+		}),
+		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
 	)
 	if err != nil {
@@ -288,14 +287,14 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 		resourceTypeSSOUser,
 		userARN,
 		[]resourceSdk.UserTraitOption{
-			resourceSdk.WithUserProfile(map[string]interface{}{
-				"aws_user_type": ssoType,
-				"aws_user_name": displayName,
-				"aws_user_id":   awsSdk.ToString(existing.UserId),
-			}),
 			resourceSdk.WithEmail(email, true),
-			resourceSdk.WithStatus(v2.UserTrait_Status_STATUS_ENABLED),
 		},
+		resourceSdk.WithResourceProfile(map[string]interface{}{
+			"aws_user_type": ssoType,
+			"aws_user_name": displayName,
+			"aws_user_id":   awsSdk.ToString(existing.UserId),
+		}),
+		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
 	)
 }

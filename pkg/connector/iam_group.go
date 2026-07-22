@@ -74,9 +74,8 @@ func (o *iamGroupResourceType) List(ctx context.Context, parentId *v2.ResourceId
 			awsSdk.ToString(group.GroupName),
 			resourceTypeIAMGroup,
 			awsSdk.ToString(group.Arn),
-			[]resourceSdk.GroupTraitOption{
-				resourceSdk.WithGroupProfile(profile),
-			},
+			nil,
+			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithAnnotation(annos),
 			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),

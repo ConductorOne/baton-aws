@@ -72,9 +72,7 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		}
 		profile := iamUserProfile(ctx, user)
 		lastLogin := getLastLogin(ctx, iamClient, user)
-		options := []resourceSdk.UserTraitOption{
-			resourceSdk.WithUserProfile(profile),
-		}
+		options := make([]resourceSdk.UserTraitOption, 0)
 		for _, email := range getUserEmails(user) {
 			options = append(options, resourceSdk.WithEmail(email, true))
 		}
@@ -86,6 +84,7 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			resourceTypeIAMUser,
 			awsSdk.ToString(user.Arn),
 			options,
+			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithAnnotation(annos),
 			resourceSdk.WithAnnotation(childResourceTypeInlinePolicy),
 			resourceSdk.WithParentResourceID(parentId),
@@ -335,9 +334,7 @@ func (o *iamUserResourceType) CreateAccount(
 
 func iamUserToResource(ctx context.Context, user *iamTypes.User, email string) (*v2.Resource, error) {
 	arn := awsSdk.ToString(user.Arn)
-	options := []resourceSdk.UserTraitOption{
-		resourceSdk.WithUserProfile(iamUserProfile(ctx, *user)),
-	}
+	options := make([]resourceSdk.UserTraitOption, 0)
 	seen := map[string]bool{}
 	if email != "" {
 		options = append(options, resourceSdk.WithEmail(email, true))
@@ -355,6 +352,7 @@ func iamUserToResource(ctx context.Context, user *iamTypes.User, email string) (
 		resourceTypeIAMUser,
 		arn,
 		options,
+		resourceSdk.WithResourceProfile(iamUserProfile(ctx, *user)),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: arn}),
 	)
 }

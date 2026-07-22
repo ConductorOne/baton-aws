@@ -152,14 +152,12 @@ func (o *iamPolicyResourceType) List(ctx context.Context, parentId *v2.ResourceI
 			policyParent = nil
 		}
 
-		roleTraits := []resourceSdk.RoleTraitOption{
-			resourceSdk.WithRoleProfile(profile),
-		}
 		policyResource, err := resourceSdk.NewRoleResource(
 			awsSdk.ToString(policy.PolicyName),
 			resourceTypeIAMPolicy,
 			policyARN,
-			roleTraits,
+			nil,
+			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithAnnotation(&v2.SkipGrants{}),
 			resourceSdk.WithParentResourceID(policyParent),
 			resourceSdk.WithDescription(awsSdk.ToString(policy.Description)),

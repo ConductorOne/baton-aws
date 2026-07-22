@@ -85,7 +85,6 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 					Resource:      *user.UserId,
 					BatonResource: false,
 				}),
-				resourceSdk.WithSecretCreatedAt(*key.CreateDate),
 				resourceSdk.WithSecretIdentityID(&v2.ResourceId{
 					ResourceType:  resourceTypeIAMUser.Id,
 					Resource:      *user.UserId,
@@ -105,6 +104,7 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 				resourceTypeSecret,
 				*key.AccessKeyId,
 				options,
+				resourceSdk.WithResourceCreatedAt(*key.CreateDate),
 				resourceSdk.WithAnnotation(annos),
 			)
 			if err != nil {
