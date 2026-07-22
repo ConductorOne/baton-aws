@@ -33,7 +33,7 @@ func TestIssueSTSWebIdentitySession(t *testing.T) {
 			return &sts.AssumeRoleWithWebIdentityOutput{
 				Credentials: &ststypes.Credentials{
 					AccessKeyId:     awsSdk.String("AKIAEXAMPLE"),
-					SecretAccessKey: awsSdk.String("secret"),
+					SecretAccessKey: awsSdk.String("secret"), //nolint:gosec // synthetic test credential
 					SessionToken:    awsSdk.String("token"),
 					Expiration:      awsSdk.Time(expires),
 				},

@@ -32,15 +32,40 @@ var assumeRoleWithWebIdentitySchema = &v2.BatonActionSchema{
 	DisplayName: "Issue AWS STS Session",
 	Description: "Exchange a short-lived C1-issued OIDC token for an AWS STS role session. The target role trust policy must explicitly trust the C1 issuer, audience, and subject profile.",
 	Arguments: []*configv1.Field{
-		{Name: "role_arn", DisplayName: "Role ARN", Description: "Customer role trusted to accept the C1 OIDC token.", IsRequired: true, Field: &configv1.Field_StringField{}},
-		{Name: "web_identity_token", DisplayName: "OIDC token", Description: "Short-lived token minted by the configured C1 OIDC issuer for this request.", IsRequired: true, IsSecret: true, Field: &configv1.Field_StringField{}},
-		{Name: "age_recipient", DisplayName: "Encryption recipient", Description: "Platform-provided age recipient. STS credentials are encrypted to it before leaving the connector.", IsRequired: true, Field: &configv1.Field_StringField{}},
-		{Name: "session_name", DisplayName: "Session name", Description: "Auditable AWS role session name.", IsRequired: true, Field: &configv1.Field_StringField{}},
-		{Name: "duration_seconds", DisplayName: "Duration seconds", Description: "Requested STS session lifetime (900-43200, additionally limited by the role).", IsRequired: true, Field: &configv1.Field_IntField{}},
-		{Name: "policy_json", DisplayName: "Session policy", Description: "Optional restrictive inline session policy, for example an aws:SourceIp deny boundary.", Field: &configv1.Field_StringField{}},
+		{
+			Name: "role_arn", DisplayName: "Role ARN", Description: "Customer role trusted to accept the C1 OIDC token.",
+			IsRequired: true, Field: &configv1.Field_StringField{},
+		},
+		{
+			Name: "web_identity_token", DisplayName: "OIDC token",
+			Description: "Short-lived token minted by the configured C1 OIDC issuer for this request.",
+			IsRequired:  true, IsSecret: true, Field: &configv1.Field_StringField{},
+		},
+		{
+			Name: "age_recipient", DisplayName: "Encryption recipient",
+			Description: "Platform-provided age recipient. STS credentials are encrypted before leaving the connector.",
+			IsRequired:  true, Field: &configv1.Field_StringField{},
+		},
+		{
+			Name: "session_name", DisplayName: "Session name", Description: "Auditable AWS role session name.",
+			IsRequired: true, Field: &configv1.Field_StringField{},
+		},
+		{
+			Name: "duration_seconds", DisplayName: "Duration seconds",
+			Description: "Requested STS session lifetime (900-43200, additionally limited by the role).",
+			IsRequired:  true, Field: &configv1.Field_IntField{},
+		},
+		{
+			Name: "policy_json", DisplayName: "Session policy",
+			Description: "Optional restrictive inline session policy, for example an aws:SourceIp deny boundary.",
+			Field:       &configv1.Field_StringField{},
+		},
 	},
 	ReturnTypes: []*configv1.Field{
-		{Name: "encrypted_credentials", DisplayName: "Encrypted credential envelope", Description: "Base64-encoded age ciphertext; never plaintext STS material.", Field: &configv1.Field_StringField{}},
+		{
+			Name: "encrypted_credentials", DisplayName: "Encrypted credential envelope",
+			Description: "Base64-encoded age ciphertext; never plaintext STS material.", Field: &configv1.Field_StringField{},
+		},
 		{Name: "encryption_key_id", DisplayName: "Encryption key ID", Field: &configv1.Field_StringField{}},
 		{Name: "expiration", DisplayName: "Expiration", Field: &configv1.Field_StringField{}},
 		{Name: "assumed_role_arn", DisplayName: "Assumed role ARN", Field: &configv1.Field_StringField{}},

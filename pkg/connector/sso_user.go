@@ -63,12 +63,12 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
-		status := v2.UserTrait_Status_STATUS_UNSPECIFIED
+		status := v2.Status_RESOURCE_STATUS_UNSPECIFIED
 		switch user.UserStatus {
 		case awsIdentityStoreTypes.UserStatusEnabled:
-			status = v2.UserTrait_Status_STATUS_ENABLED
+			status = v2.Status_RESOURCE_STATUS_ENABLED
 		case awsIdentityStoreTypes.UserStatusDisabled:
-			status = v2.UserTrait_Status_STATUS_DISABLED
+			status = v2.Status_RESOURCE_STATUS_DISABLED
 		}
 		userARN := ssoUserToARN(o.region, awsSdk.ToString(o.identityInstance.IdentityStoreId), awsSdk.ToString(user.UserId))
 		annos := &v2.V1Identifier{
