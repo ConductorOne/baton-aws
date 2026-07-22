@@ -200,12 +200,13 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		if parentID != nil {
 			resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
 		}
+		resourceOpts = append(resourceOpts, resourceSdk.WithResourceProfile(profile))
 
 		userResource, err := resourceSdk.NewAppResource(
 			name,
 			resourceTypeAccount,
 			accountId,
-			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
+			nil,
 			resourceOpts...,
 		)
 		if err != nil {

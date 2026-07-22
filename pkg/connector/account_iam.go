@@ -78,7 +78,8 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 			awsSdk.ToString(account.Name),
 			resourceTypeAccountIam,
 			awsSdk.ToString(account.Id),
-			[]resourceSdk.AppTraitOption{resourceSdk.WithAppProfile(profile)},
+			nil,
+			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithAnnotation(annos),
 			resourceSdk.WithAnnotation(childForIam...),
 		)

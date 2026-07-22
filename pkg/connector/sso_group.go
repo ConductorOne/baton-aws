@@ -71,7 +71,8 @@ func (o *ssoGroupResourceType) List(ctx context.Context, _ *v2.ResourceId, opts 
 			awsSdk.ToString(group.DisplayName),
 			resourceTypeSSOGroup,
 			groupArn,
-			[]resourceSdk.GroupTraitOption{resourceSdk.WithGroupProfile(profile)},
+			nil,
+			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithAnnotation(annos),
 		)
 		if err != nil {

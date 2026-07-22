@@ -32,7 +32,7 @@ func TestIamUserToResource_AttachesEmailAndProfile(t *testing.T) {
 	assert.Equal(t, "ci-iam-1@example.com", emails[0].GetAddress())
 	assert.True(t, emails[0].GetIsPrimary(), "passed-in email should be marked primary")
 
-	profile := trait.GetProfile().AsMap()
+	profile := resource.GetProfile().AsMap()
 	assert.Equal(t, "arn:aws:iam::123456789012:user/ci-iam-1", profile["aws_arn"])
 	assert.Equal(t, "AIDAEXAMPLE", profile["aws_user_id"])
 	assert.Equal(t, iamType, profile["aws_user_type"])
