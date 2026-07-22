@@ -1,4 +1,4 @@
-package connector
+package awstrust
 
 import (
 	"encoding/json"

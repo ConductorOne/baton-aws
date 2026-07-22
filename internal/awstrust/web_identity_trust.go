@@ -1,7 +1,10 @@
-package connector
+// Package awstrust evaluates AWS IAM OIDC trust bindings without performing
+// AWS API calls or accepting web identity tokens.
+package awstrust
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"path"
 	"regexp"
@@ -18,6 +21,95 @@ const (
 )
 
 var awsAccountIDPattern = regexp.MustCompile(`^[0-9]{12}$`)
+
+const trustPolicyAllowEffect = "Allow"
+
+type trustPolicy struct {
+	Version   string      `json:"Version"`
+	Statement []statement `json:"Statement"`
+}
+
+func (policy *trustPolicy) UnmarshalJSON(data []byte) error {
+	type alias trustPolicy
+	aux := &struct {
+		Statement json.RawMessage `json:"Statement"`
+		*alias
+	}{alias: (*alias)(policy)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return fmt.Errorf("failed to parse trust policy JSON: %w", err)
+	}
+	if err := json.Unmarshal(aux.Statement, &policy.Statement); err == nil {
+		return nil
+	}
+	var single statement
+	if err := json.Unmarshal(aux.Statement, &single); err != nil {
+		return fmt.Errorf("statement must be object or array")
+	}
+	policy.Statement = []statement{single}
+	return nil
+}
+
+type statement struct {
+	Effect    string    `json:"Effect"`
+	Action    action    `json:"Action"`
+	Principal principal `json:"Principal"`
+	Condition condition `json:"Condition"`
+}
+
+type condition map[string]map[string]stringValues
+type stringValues []string
+type action []string
+
+func (values *stringValues) UnmarshalJSON(data []byte) error {
+	parsed, err := unmarshalStringOrArray(data)
+	if err != nil {
+		return fmt.Errorf("condition value must be string or array: %w", err)
+	}
+	*values = parsed
+	return nil
+}
+
+func (actions *action) UnmarshalJSON(data []byte) error {
+	parsed, err := unmarshalStringOrArray(data)
+	if err != nil {
+		return fmt.Errorf("action must be string or array: %w", err)
+	}
+	*actions = parsed
+	return nil
+}
+
+type principal struct {
+	Federated []string
+}
+
+func (value *principal) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return fmt.Errorf("principal must be an object: %w", err)
+	}
+	raw, ok := fields["Federated"]
+	if !ok {
+		return nil
+	}
+	parsed, err := unmarshalStringOrArray(raw)
+	if err != nil {
+		return fmt.Errorf("federated principal must be string or array: %w", err)
+	}
+	value.Federated = parsed
+	return nil
+}
+
+func unmarshalStringOrArray(data []byte) ([]string, error) {
+	var single string
+	if err := json.Unmarshal(data, &single); err == nil {
+		return []string{single}, nil
+	}
+	var values []string
+	if err := json.Unmarshal(data, &values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
 
 // ExpectedWebIdentityTrust is the immutable expected shape of one C1 OIDC
 // provider and role binding. Production callers must source these values from
@@ -202,26 +294,26 @@ func parseIAMARN(value string, resourcePrefix string) (arn.ARN, bool) {
 	return parsed, true
 }
 
-func parseTrustPolicyDocument(document string) (TrustPolicy, bool) {
-	var policy TrustPolicy
+func parseTrustPolicyDocument(document string) (trustPolicy, bool) {
+	var policy trustPolicy
 	if err := json.Unmarshal([]byte(document), &policy); err == nil {
 		return policy, true
 	}
 	decoded, err := url.QueryUnescape(document)
 	if err != nil {
-		return TrustPolicy{}, false
+		return trustPolicy{}, false
 	}
 	if err := json.Unmarshal([]byte(decoded), &policy); err != nil {
-		return TrustPolicy{}, false
+		return trustPolicy{}, false
 	}
 	return policy, true
 }
 
-func evaluateTrustPolicy(expected ExpectedWebIdentityTrust, conditionPrefix string, policy TrustPolicy) []TrustMismatch {
+func evaluateTrustPolicy(expected ExpectedWebIdentityTrust, conditionPrefix string, policy trustPolicy) []TrustMismatch {
 	audienceKey := conditionPrefix + ":aud"
 	subjectKey := conditionPrefix + ":sub"
 
-	candidates := make([]Statement, 0)
+	candidates := make([]statement, 0)
 	for _, statement := range policy.Statement {
 		if statement.Effect == trustPolicyAllowEffect && slices.Contains(statement.Principal.Federated, expected.ProviderARN) {
 			candidates = append(candidates, statement)
@@ -231,7 +323,7 @@ func evaluateTrustPolicy(expected ExpectedWebIdentityTrust, conditionPrefix stri
 		return []TrustMismatch{{Code: TrustMismatchProviderAllowStatementMissing, Context: "provider"}}
 	}
 
-	actionCandidates := make([]Statement, 0, len(candidates))
+	actionCandidates := make([]statement, 0, len(candidates))
 	for _, statement := range candidates {
 		if slices.Contains(statement.Action, assumeRoleWithWebIdentityAction) {
 			actionCandidates = append(actionCandidates, statement)
@@ -267,7 +359,7 @@ func evaluateTrustPolicy(expected ExpectedWebIdentityTrust, conditionPrefix stri
 	return nil
 }
 
-func statementMismatches(expected ExpectedWebIdentityTrust, audienceKey string, subjectKey string, statement Statement) []TrustMismatch {
+func statementMismatches(expected ExpectedWebIdentityTrust, audienceKey string, subjectKey string, statement statement) []TrustMismatch {
 	mismatches := make([]TrustMismatch, 0, 3)
 	if operator := unsupportedUnrelatedConditionOperator(statement.Condition, audienceKey, subjectKey); operator != "" {
 		mismatches = appendMismatch(mismatches, TrustMismatchConditionOperatorUnsupported, operator)
@@ -289,7 +381,7 @@ const (
 	conditionUnsafe
 )
 
-func matchExactCondition(condition Condition, key string, expected string) conditionMatch {
+func matchExactCondition(condition condition, key string, expected string) conditionMatch {
 	for operator, entries := range condition {
 		if operator != "StringEquals" {
 			if _, ok := entries[key]; !ok {
@@ -311,7 +403,7 @@ func matchExactCondition(condition Condition, key string, expected string) condi
 	return conditionExact
 }
 
-func unsupportedUnrelatedConditionOperator(condition Condition, audienceKey string, subjectKey string) string {
+func unsupportedUnrelatedConditionOperator(condition condition, audienceKey string, subjectKey string) string {
 	operators := make([]string, 0)
 	for operator, entries := range condition {
 		if operator == "StringEquals" || operator == "StringLike" {
@@ -332,7 +424,7 @@ func unsupportedUnrelatedConditionOperator(condition Condition, audienceKey stri
 	return operators[0]
 }
 
-func appendConditionMismatch(mismatches []TrustMismatch, condition Condition, key string, expected string, audience bool) []TrustMismatch {
+func appendConditionMismatch(mismatches []TrustMismatch, condition condition, key string, expected string, audience bool) []TrustMismatch {
 	switch matchExactCondition(condition, key, expected) {
 	case conditionExact:
 		return mismatches
@@ -356,12 +448,12 @@ func appendConditionMismatch(mismatches []TrustMismatch, condition Condition, ke
 	}
 }
 
-func broadlyTrustsProvider(statement Statement, audienceKey string, subjectKey string, expected ExpectedWebIdentityTrust) bool {
+func broadlyTrustsProvider(statement statement, audienceKey string, subjectKey string, expected ExpectedWebIdentityTrust) bool {
 	return matchExactCondition(statement.Condition, audienceKey, expected.Audience) != conditionExact ||
 		matchExactCondition(statement.Condition, subjectKey, expected.Subject) != conditionExact
 }
 
-func actionAllowsWebIdentity(actions Action) bool {
+func actionAllowsWebIdentity(actions action) bool {
 	for _, action := range actions {
 		matched, err := path.Match(strings.ToLower(action), strings.ToLower(assumeRoleWithWebIdentityAction))
 		if err == nil && matched {
