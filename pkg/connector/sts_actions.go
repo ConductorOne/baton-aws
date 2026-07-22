@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	filippoage "filippo.io/age"
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -125,7 +126,7 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 	if output == nil || output.Credentials == nil || output.AssumedRoleUser == nil {
 		return nil, nil, status.Error(codes.Internal, "baton-aws: STS returned an incomplete session")
 	}
-	expiration := awsSdk.ToTime(output.Credentials.Expiration).UTC().Format("2006-01-02T15:04:05Z07:00")
+	expiration := awsSdk.ToTime(output.Credentials.Expiration).UTC().Format(time.RFC3339)
 	plaintext, err := json.Marshal(map[string]string{
 		"access_key_id":     awsSdk.ToString(output.Credentials.AccessKeyId),
 		"secret_access_key": awsSdk.ToString(output.Credentials.SecretAccessKey),
