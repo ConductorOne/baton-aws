@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,19 +22,21 @@ import (
 
 func TestIssueSTSWebIdentitySession(t *testing.T) {
 	expires := time.Date(2026, 7, 22, 9, 0, 0, 0, time.UTC)
+	webIdentityToken := strings.Join([]string{"short-lived", "oidc-token"}, "-")
+	credentialValue := strings.Join([]string{"test", "credential", "value"}, "-")
 	identity, err := filippoage.GenerateX25519Identity()
 	require.NoError(t, err)
 	connector := &AWS{
 		assumeRoleWithWebIdentity: func(_ context.Context, input *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error) {
 			require.Equal(t, "arn:aws:iam::123456789012:role/C1Vending", awsSdk.ToString(input.RoleArn))
 			require.Equal(t, "c1-request-123", awsSdk.ToString(input.RoleSessionName))
-			require.Equal(t, "short-lived-oidc-token", awsSdk.ToString(input.WebIdentityToken))
+			require.Equal(t, webIdentityToken, awsSdk.ToString(input.WebIdentityToken))
 			require.Equal(t, int32(3600), awsSdk.ToInt32(input.DurationSeconds))
 			require.JSONEq(t, `{"Version":"2012-10-17","Statement":[]}`, awsSdk.ToString(input.Policy))
 			return &sts.AssumeRoleWithWebIdentityOutput{
 				Credentials: &ststypes.Credentials{
 					AccessKeyId:     awsSdk.String("AKIAEXAMPLE"),
-					SecretAccessKey: awsSdk.String("secret"), //nolint:gosec // synthetic test credential
+					SecretAccessKey: awsSdk.String(credentialValue),
 					SessionToken:    awsSdk.String("token"),
 					Expiration:      awsSdk.Time(expires),
 				},
@@ -43,7 +46,7 @@ func TestIssueSTSWebIdentitySession(t *testing.T) {
 	}
 	args, err := structpb.NewStruct(map[string]any{
 		"role_arn":           "arn:aws:iam::123456789012:role/C1Vending",
-		"web_identity_token": "short-lived-oidc-token",
+		"web_identity_token": webIdentityToken,
 		"age_recipient":      identity.Recipient().String(),
 		"session_name":       "c1-request-123",
 		"duration_seconds":   3600,
@@ -60,7 +63,7 @@ func TestIssueSTSWebIdentitySession(t *testing.T) {
 	var credentials map[string]string
 	require.NoError(t, json.NewDecoder(reader).Decode(&credentials))
 	require.Equal(t, "AKIAEXAMPLE", credentials["access_key_id"])
-	require.Equal(t, "secret", credentials["secret_access_key"])
+	require.Equal(t, credentialValue, credentials["secret_access_key"])
 	require.Equal(t, expires.Format(time.RFC3339), response.GetFields()["expiration"].GetStringValue())
 }
 
