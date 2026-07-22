@@ -27,8 +27,9 @@ const (
 	MembershipEntitlementIDTemplate   = "%s:%s:member"
 	V1MembershipEntitlementIDTemplate = "membership:%s"
 	// The format of grant IDs follows: 'grant:principal-type:principal-id:entitlement'.
-	GrantIDTemplate   = "grant:%s:%s:%s"
-	V1GrantIDTemplate = "grant:%s:%s"
+	GrantIDTemplate        = "grant:%s:%s:%s"
+	V1GrantIDTemplate      = "grant:%s:%s"
+	trustPolicyAllowEffect = "Allow"
 )
 
 func v1AnnotationsForResourceType(resourceTypeID string) annotations.Annotations {
@@ -166,7 +167,7 @@ func extractTrustPrincipals(policyDocument string) ([]string, error) {
 
 	awsPrincipals := make([]string, 0)
 	for _, statements := range policy.Statement {
-		if statements.Effect != "Allow" {
+		if statements.Effect != trustPolicyAllowEffect {
 			continue
 		}
 
@@ -212,7 +213,7 @@ func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error
 	}
 
 	for _, statement := range policy.Statement {
-		if statement.Effect != "Allow" {
+		if statement.Effect != trustPolicyAllowEffect {
 			continue
 		}
 		if !hasAssumeRoleAction(statement.Action) {
@@ -306,6 +307,25 @@ type Statement struct {
 	Effect    string    `json:"Effect"`
 	Action    Action    `json:"Action"`
 	Principal Principal `json:"Principal"`
+	Condition Condition `json:"Condition"`
+}
+
+// Condition preserves every IAM condition operator and its condition keys.
+// IAM permits condition values to be either a string or a list of strings.
+// Keeping unknown operators lets security-sensitive evaluators fail closed
+// instead of silently discarding policy semantics they do not understand.
+type Condition map[string]map[string]StringValues
+
+// StringValues handles both string and list forms used by IAM policy fields.
+type StringValues []string
+
+func (values *StringValues) UnmarshalJSON(data []byte) error {
+	parsed, err := unmarshalStringOrArray(data)
+	if err != nil {
+		return fmt.Errorf("condition value must be string or array: %w", err)
+	}
+	*values = parsed
+	return nil
 }
 
 // Action handles both string and array forms.
