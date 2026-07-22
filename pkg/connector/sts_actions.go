@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	filippoage "filippo.io/age"
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
 	configv1 "github.com/conductorone/baton-sdk/pb/c1/config/v1"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/actions"
@@ -93,7 +95,7 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 	}
 	output, err := c.assumeRoleWithWebIdentity(ctx, input)
 	if err != nil {
-		return nil, nil, fmt.Errorf("baton-aws: assume role with web identity: %w", err)
+		return nil, nil, mapSTSWebIdentityError(err)
 	}
 	if output == nil || output.Credentials == nil || output.AssumedRoleUser == nil {
 		return nil, nil, status.Error(codes.Internal, "baton-aws: STS returned an incomplete session")
@@ -130,4 +132,22 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 		return nil, nil, fmt.Errorf("baton-aws: build encrypted STS action response: %w", err)
 	}
 	return response, nil, nil
+}
+
+func mapSTSWebIdentityError(err error) error {
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return status.Error(codes.Internal, "baton-aws: AWS STS request failed")
+	}
+	message := "baton-aws: AWS STS request failed: " + apiErr.ErrorMessage()
+	switch apiErr.ErrorCode() {
+	case "AccessDenied", "AccessDeniedException", "AuthorizationError":
+		return status.Error(codes.PermissionDenied, message)
+	case "ExpiredToken", "ExpiredTokenException", "InvalidIdentityToken", "IDPRejectedClaim":
+		return status.Error(codes.Unauthenticated, message)
+	case "Throttling", "ThrottlingException", "TooManyRequestsException":
+		return status.Error(codes.ResourceExhausted, message)
+	default:
+		return status.Error(codes.Internal, message)
+	}
 }

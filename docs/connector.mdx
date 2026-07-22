@@ -34,6 +34,31 @@ The AWS connector supports [automatic account provisioning and deprovisioning](/
 
 [This connector can sync secrets](/product/admin/inventory) and display them on the **Inventory** page.
 
+## AWS STS web identity action
+
+The connector exposes the global `assume_role_with_web_identity` action for
+approved, short-lived AWS credential vending. C1 supplies a request-scoped OIDC
+token and age encryption recipient. The connector exchanges the token with AWS
+STS, encrypts the returned credential envelope before it crosses the connector
+boundary, and returns ciphertext plus expiration and assumed-role audit
+metadata.
+
+The action accepts:
+
+- `role_arn`: the target customer IAM role;
+- `web_identity_token`: a short-lived C1-issued OIDC token;
+- `age_recipient`: the request-scoped public encryption recipient;
+- `session_name`: the AWS audit/session name;
+- `duration_seconds`: 900 through 43,200, also limited by the IAM role; and
+- `policy_json`: an optional restrictive inline session policy.
+
+Before enabling the action, create an IAM OIDC provider for the C1 issuer and a
+role trust policy allowing `sts:AssumeRoleWithWebIdentity`. Restrict the trust
+policy to the documented C1 issuer, intended audience, and tenant/requestor
+subject profile. Do not use a wildcard issuer, audience, or subject. The role's
+permissions policy defines the maximum AWS access; the optional session policy
+can only narrow it further.
+
 ## Sparse ACLs: Organizations and permission sets as scoped bindings
 
 When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector also models Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:

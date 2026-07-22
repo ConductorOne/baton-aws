@@ -12,7 +12,10 @@ import (
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	ststypes "github.com/aws/aws-sdk-go-v2/service/sts/types"
+	"github.com/aws/smithy-go"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -59,6 +62,24 @@ func TestIssueSTSWebIdentitySession(t *testing.T) {
 	require.Equal(t, "AKIAEXAMPLE", credentials["access_key_id"])
 	require.Equal(t, "secret", credentials["secret_access_key"])
 	require.Equal(t, expires.Format(time.RFC3339), response.GetFields()["expiration"].GetStringValue())
+}
+
+func TestMapSTSWebIdentityError(t *testing.T) {
+	tests := []struct {
+		code string
+		want codes.Code
+	}{
+		{code: "AccessDenied", want: codes.PermissionDenied},
+		{code: "InvalidIdentityToken", want: codes.Unauthenticated},
+		{code: "ThrottlingException", want: codes.ResourceExhausted},
+		{code: "Other", want: codes.Internal},
+	}
+	for _, test := range tests {
+		t.Run(test.code, func(t *testing.T) {
+			err := mapSTSWebIdentityError(&smithy.GenericAPIError{Code: test.code, Message: "test"})
+			require.Equal(t, test.want, status.Code(err))
+		})
+	}
 }
 
 func TestIssueSTSWebIdentitySessionRejectsInvalidDuration(t *testing.T) {
