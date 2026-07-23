@@ -264,12 +264,79 @@ func TestAccountList_FlatWhenOrgReadDenied(t *testing.T) {
 	assert.Nil(t, resources[0].ParentResourceId, "account stays flat when re-parenting is denied")
 }
 
+// account.List must not call ListParents at all, and must leave the account flat, when neither
+// hierarchy type is opted into this sync run — otherwise the account gets a parent pointing at
+// a resource type that will never be synced ("MISSING RESOURCE"). Regression test for CXP-768.
+func TestAccountList_SkipsReparentWhenHierarchyNotSynced(t *testing.T) {
+	ctx := context.Background()
+	orgs := &fakeOrgs{
+		listAccountsFn: func(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+			return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{
+				Id:     awsSdk.String(testAccountID),
+				Name:   awsSdk.String("prod"),
+				Status: awsOrgsTypes.AccountStatusActive,
+			}}}, nil
+		},
+		listParentsFn: func(_ *awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error) {
+			return &awsOrgs.ListParentsOutput{Parents: []awsOrgsTypes.Parent{{
+				Id:   awsSdk.String(testOUID),
+				Type: awsOrgsTypes.ParentTypeOrganizationalUnit,
+			}}}, nil
+		},
+	}
+	acct := newOrgAccountWithSyncFilter(orgs, false, false)
+
+	resources, _, err := acct.List(ctx, nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].ParentResourceId, "account must stay flat when hierarchy isn't synced")
+	assert.Equal(t, 0, orgs.listParentsCalls, "must not call ListParents when neither hierarchy type is synced")
+}
+
+// account.List resolves the parent but only attaches it when the resolved parent's specific
+// type (organization vs organizational_unit) is one this run will actually sync — partial
+// opt-in must not produce a dangling parent either.
+func TestAccountList_SkipsReparentWhenResolvedParentTypeNotSynced(t *testing.T) {
+	ctx := context.Background()
+	orgs := &fakeOrgs{
+		listAccountsFn: func(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+			return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{
+				Id:     awsSdk.String(testAccountID),
+				Name:   awsSdk.String("prod"),
+				Status: awsOrgsTypes.AccountStatusActive,
+			}}}, nil
+		},
+		listParentsFn: func(_ *awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error) {
+			return &awsOrgs.ListParentsOutput{Parents: []awsOrgsTypes.Parent{{
+				Id:   awsSdk.String(testOUID),
+				Type: awsOrgsTypes.ParentTypeOrganizationalUnit,
+			}}}, nil
+		},
+	}
+	// organization is opted in but organizational_unit is not; the account's actual parent
+	// resolves to an OU, so it must still be left flat.
+	acct := newOrgAccountWithSyncFilter(orgs, true, false)
+
+	resources, _, err := acct.List(ctx, nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].ParentResourceId, "account must stay flat when its resolved parent type isn't synced")
+	assert.Equal(t, 1, orgs.listParentsCalls, "must still resolve the parent when at least one hierarchy type is synced")
+}
+
 // newOrgAccount builds an accountResourceType backed by the given fakeOrgs (SSO client unused
-// by the List/re-parent path under test).
+// by the List/re-parent path under test), with the org/OU hierarchy types opted into this sync.
 func newOrgAccount(orgs *fakeOrgs) *accountResourceType {
+	return newOrgAccountWithSyncFilter(orgs, true, true)
+}
+
+// newOrgAccountWithSyncFilter is like newOrgAccount but lets the test control whether the
+// organization/organizational_unit hierarchy types are opted into this sync run, to exercise
+// the CXP-768 re-parenting gate.
+func newOrgAccountWithSyncFilter(orgs *fakeOrgs, willSyncOrganization, willSyncOrganizationalUnit bool) *accountResourceType {
 	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	return accountBuilder(orgs, "", &fakeSSOAdmin{}, identityInstance, behaviorRegion, nil)
+	return accountBuilder(orgs, "", &fakeSSOAdmin{}, identityInstance, behaviorRegion, nil, willSyncOrganization, willSyncOrganizationalUnit)
 }
