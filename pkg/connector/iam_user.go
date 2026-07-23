@@ -390,7 +390,14 @@ func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	if err != nil {
 		if errors.As(err, &noSuchEntity) {
 			l.Info("User not found, returning success for delete operation")
-			return nil, nil
+			// The addressed IAM user is authoritatively absent: GetUser
+			// returned NoSuchEntity for this exact user name in the resolved
+			// account (default client, or the parentResourceID account). Emit
+			// the typed already-absent marker so callers can treat this as
+			// success-equivalent for the desired provider state (SPEC-09a).
+			// A later baton-sdk bump can replace this with
+			// resource.ResourceDoesNotExistAnnotations() (baton-sdk#1033).
+			return annotations.New(&v2.ResourceDoesNotExist{}), nil
 		}
 		return nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetUser failed: %w", err))
 	}
