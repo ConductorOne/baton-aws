@@ -75,6 +75,9 @@ func TestMapSTSWebIdentityError(t *testing.T) {
 	}{
 		{code: "AccessDenied", want: codes.PermissionDenied},
 		{code: "InvalidIdentityToken", want: codes.Unauthenticated},
+		{code: "InvalidParameterValue", want: codes.InvalidArgument},
+		{code: "MalformedPolicyDocument", want: codes.InvalidArgument},
+		{code: "PackedPolicyTooLarge", want: codes.InvalidArgument},
 		{code: "ThrottlingException", want: codes.ResourceExhausted},
 		{code: "Other", want: codes.Internal},
 	}

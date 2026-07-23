@@ -189,6 +189,8 @@ func mapSTSWebIdentityError(err error) error {
 		return status.Error(codes.PermissionDenied, message)
 	case "ExpiredToken", "ExpiredTokenException", "InvalidIdentityToken", "IDPRejectedClaim":
 		return status.Error(codes.Unauthenticated, message)
+	case "InvalidParameterValue", "MalformedPolicyDocument", "PackedPolicyTooLarge":
+		return status.Error(codes.InvalidArgument, message)
 	case "Throttling", "ThrottlingException", "TooManyRequestsException":
 		return status.Error(codes.ResourceExhausted, message)
 	default:
