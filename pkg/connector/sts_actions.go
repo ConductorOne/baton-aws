@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
@@ -27,6 +28,10 @@ import (
 )
 
 const actionAssumeRoleWithWebIdentity = "assume_role_with_web_identity"
+
+const maxSTSSessionPolicyLength = 2048
+
+var roleSessionNamePattern = regexp.MustCompile(`^[\w+=,.@-]{2,64}$`)
 
 var assumeRoleWithWebIdentitySchema = &v2.BatonActionSchema{
 	Name:        actionAssumeRoleWithWebIdentity,
@@ -95,13 +100,16 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 	if !ok || strings.TrimSpace(recipientText) == "" {
 		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: age_recipient is required")
 	}
+	if strings.TrimSpace(recipientText) != recipientText || strings.ContainsAny(recipientText, "\r\n") {
+		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: age_recipient must be a single canonical recipient string")
+	}
 	recipients, err := filippoage.ParseRecipients(strings.NewReader(recipientText))
 	if err != nil || len(recipients) != 1 {
 		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: age_recipient must contain exactly one valid recipient")
 	}
 	sessionName, ok := actions.GetStringArg(args, "session_name")
-	if !ok || strings.TrimSpace(sessionName) == "" {
-		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: session_name is required")
+	if !ok || !roleSessionNamePattern.MatchString(sessionName) {
+		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: session_name must be 2-64 AWS-compatible characters")
 	}
 	duration, ok := actions.GetIntArg(args, "duration_seconds")
 	if !ok || duration < 900 || duration > 43200 {
@@ -114,6 +122,9 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 		DurationSeconds:  awsSdk.Int32(int32(duration)),
 	}
 	if policy, exists := actions.GetStringArg(args, "policy_json"); exists && strings.TrimSpace(policy) != "" {
+		if len(policy) > maxSTSSessionPolicyLength || !json.Valid([]byte(policy)) {
+			return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: policy_json must be valid JSON and no more than 2048 characters")
+		}
 		input.Policy = awsSdk.String(policy)
 	}
 	if c.assumeRoleWithWebIdentity == nil {
@@ -125,6 +136,13 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 	}
 	if output == nil || output.Credentials == nil || output.AssumedRoleUser == nil {
 		return nil, nil, status.Error(codes.Internal, "baton-aws: STS returned an incomplete session")
+	}
+	if awsSdk.ToString(output.Credentials.AccessKeyId) == "" ||
+		awsSdk.ToString(output.Credentials.SecretAccessKey) == "" ||
+		awsSdk.ToString(output.Credentials.SessionToken) == "" ||
+		output.Credentials.Expiration == nil || output.Credentials.Expiration.IsZero() ||
+		awsSdk.ToString(output.AssumedRoleUser.Arn) == "" {
+		return nil, nil, status.Error(codes.Internal, "baton-aws: STS returned incomplete credential material")
 	}
 	expiration := awsSdk.ToTime(output.Credentials.Expiration).UTC().Format(time.RFC3339)
 	plaintext, err := json.Marshal(map[string]string{

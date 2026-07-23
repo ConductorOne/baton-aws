@@ -65,6 +65,7 @@ func TestIssueSTSWebIdentitySession(t *testing.T) {
 	require.Equal(t, "AKIAEXAMPLE", credentials["access_key_id"])
 	require.Equal(t, credentialValue, credentials["secret_access_key"])
 	require.Equal(t, expires.Format(time.RFC3339), response.GetFields()["expiration"].GetStringValue())
+	require.Equal(t, "arn:aws:sts::123456789012:assumed-role/C1Vending/c1-request-123", response.GetFields()["assumed_role_arn"].GetStringValue())
 }
 
 func TestMapSTSWebIdentityError(t *testing.T) {
@@ -98,4 +99,61 @@ func TestIssueSTSWebIdentitySessionRejectsInvalidDuration(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = (&AWS{}).issueSTSWebIdentitySession(context.Background(), args)
 	require.ErrorContains(t, err, "between 900 and 43200")
+}
+
+func TestIssueSTSWebIdentitySessionRejectsInvalidInputs(t *testing.T) {
+	identity, err := filippoage.GenerateX25519Identity()
+	require.NoError(t, err)
+	valid := map[string]any{
+		"role_arn":           "arn:aws:iam::123456789012:role/C1Vending",
+		"web_identity_token": "token",
+		"age_recipient":      identity.Recipient().String(),
+		"session_name":       "request-123",
+		"duration_seconds":   3600,
+	}
+	tests := []struct {
+		name    string
+		field   string
+		value   any
+		message string
+	}{
+		{name: "noncanonical recipient", field: "age_recipient", value: " " + identity.Recipient().String(), message: "single canonical recipient"},
+		{name: "invalid session name", field: "session_name", value: "contains spaces", message: "AWS-compatible"},
+		{name: "invalid policy JSON", field: "policy_json", value: "not-json", message: "valid JSON"},
+		{name: "oversized policy", field: "policy_json", value: `"` + strings.Repeat("a", maxSTSSessionPolicyLength) + `"`, message: "2048"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			values := make(map[string]any, len(valid)+1)
+			for key, value := range valid {
+				values[key] = value
+			}
+			values[test.field] = test.value
+			args, err := structpb.NewStruct(values)
+			require.NoError(t, err)
+			_, _, err = (&AWS{}).issueSTSWebIdentitySession(context.Background(), args)
+			require.ErrorContains(t, err, test.message)
+		})
+	}
+}
+
+func TestIssueSTSWebIdentitySessionRejectsIncompleteCredentials(t *testing.T) {
+	identity, err := filippoage.GenerateX25519Identity()
+	require.NoError(t, err)
+	args, err := structpb.NewStruct(map[string]any{
+		"role_arn":           "arn:aws:iam::123456789012:role/C1Vending",
+		"web_identity_token": "token",
+		"age_recipient":      identity.Recipient().String(),
+		"session_name":       "request-123",
+		"duration_seconds":   3600,
+	})
+	require.NoError(t, err)
+	connector := &AWS{assumeRoleWithWebIdentity: func(context.Context, *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+		return &sts.AssumeRoleWithWebIdentityOutput{
+			Credentials:     &ststypes.Credentials{},
+			AssumedRoleUser: &ststypes.AssumedRoleUser{},
+		}, nil
+	}}
+	_, _, err = connector.issueSTSWebIdentitySession(context.Background(), args)
+	require.ErrorContains(t, err, "incomplete credential material")
 }
