@@ -87,13 +87,14 @@ type AWS struct {
 	_identityInstancesCacheErr error
 	_identityInstancesCache    []*awsSsoAdminTypes.InstanceMetadata
 
-	iamClient           *iam.Client
-	orgClient           *awsOrgs.Client
-	ssoAdminClient      *awsSsoAdmin.Client
-	identityStoreClient client.IdentityStoreClient
-	identityInstance    *awsSsoAdminTypes.InstanceMetadata
-	awsClientFactory    *AWSClientFactory
-	cloudTrailClient    *cloudtrail.Client
+	iamClient                 *iam.Client
+	orgClient                 *awsOrgs.Client
+	ssoAdminClient            *awsSsoAdmin.Client
+	identityStoreClient       client.IdentityStoreClient
+	identityInstance          *awsSsoAdminTypes.InstanceMetadata
+	awsClientFactory          *AWSClientFactory
+	cloudTrailClient          *cloudtrail.Client
+	assumeRoleWithWebIdentity func(context.Context, *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error)
 
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
@@ -313,6 +314,10 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
+	webIdentityClient := sts.NewFromConfig(rv.baseConfig)
+	rv.assumeRoleWithWebIdentity = func(ctx context.Context, input *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+		return webIdentityClient.AssumeRoleWithWebIdentity(ctx, input)
+	}
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
 		return nil, nil, fmt.Errorf("baton-aws: SSO Support requires Org support to also be enabled. Please enable both")
