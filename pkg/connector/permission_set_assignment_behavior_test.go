@@ -149,6 +149,8 @@ type fakeOrgs struct {
 	listOUsFn         func(*awsOrgs.ListOrganizationalUnitsForParentInput) (*awsOrgs.ListOrganizationalUnitsForParentOutput, error)
 	listParentsFn     func(*awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error)
 	describeAccountFn func(*awsOrgs.DescribeAccountInput) (*awsOrgs.DescribeAccountOutput, error)
+
+	listParentsCalls int
 }
 
 func (f *fakeOrgs) DescribeAccount(_ context.Context, in *awsOrgs.DescribeAccountInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.DescribeAccountOutput, error) {
@@ -184,6 +186,7 @@ func (f *fakeOrgs) ListOrganizationalUnitsForParent(
 }
 
 func (f *fakeOrgs) ListParents(_ context.Context, in *awsOrgs.ListParentsInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.ListParentsOutput, error) {
+	f.listParentsCalls++
 	if f.listParentsFn != nil {
 		return f.listParentsFn(in)
 	}
@@ -202,7 +205,7 @@ func newBehaviorAccount(sso *fakeSSOAdmin) *accountResourceType {
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	return accountBuilder(&fakeOrgs{}, "", sso, identityInstance, behaviorRegion, &test.MockedIdentityStoreClient{})
+	return accountBuilder(&fakeOrgs{}, "", sso, identityInstance, behaviorRegion, &test.MockedIdentityStoreClient{}, true, true)
 }
 
 func behaviorBinding(t *testing.T) (*v2.Resource, *v2.Entitlement) {

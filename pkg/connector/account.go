@@ -129,6 +129,14 @@ type accountResourceType struct {
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 	identityClient   client.IdentityStoreClient
 	region           string
+
+	// willSyncOrganization/willSyncOrganizationalUnit report whether this sync run will
+	// actually sync the corresponding (OptInRequired) hierarchy resource type. Account
+	// re-parenting (see List) is gated on these so accounts never point at a Root/OU
+	// resource that this run never syncs, which would otherwise leave a dangling
+	// "MISSING RESOURCE" parent. See CXP-768.
+	willSyncOrganization       bool
+	willSyncOrganizationalUnit bool
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -190,15 +198,29 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		// Sparse ACLs hierarchy (Phase 2): re-parent the account under its Root/OU so c1's
 		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
 		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
-		parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
-		if err != nil {
-			return nil, nil, err
-		}
-		if accessDenied {
-			orgReadDenied = true
-		}
-		if parentID != nil {
-			resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
+		//
+		// Gated on willSyncOrganization/willSyncOrganizationalUnit (CXP-768): organization and
+		// organizational_unit are OptInRequired, so a sync run may never emit them. Pointing an
+		// account's parent at a resource type this run isn't syncing produces a dangling
+		// "MISSING RESOURCE" parent that c1 silently drops (see permissionSetRoleID's comment on
+		// dangling references). Skip the ListParents call entirely when neither hierarchy type
+		// will be synced; when only one is, still resolve the parent but only attach it if its
+		// resolved type is one this run will actually sync.
+		if o.willSyncOrganization || o.willSyncOrganizationalUnit {
+			parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
+			if err != nil {
+				return nil, nil, err
+			}
+			if accessDenied {
+				orgReadDenied = true
+			}
+			if parentID != nil {
+				willSyncParentType := (parentID.ResourceType == resourceTypeOrganization.Id && o.willSyncOrganization) ||
+					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.willSyncOrganizationalUnit)
+				if willSyncParentType {
+					resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
+				}
+			}
 		}
 		resourceOpts = append(resourceOpts, resourceSdk.WithResourceProfile(profile))
 
@@ -952,15 +974,19 @@ func accountBuilder(
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
 	identityClient client.IdentityStoreClient,
+	willSyncOrganization bool,
+	willSyncOrganizationalUnit bool,
 ) *accountResourceType {
 	return &accountResourceType{
-		resourceType:     resourceTypeAccount,
-		orgClient:        orgClient,
-		roleArn:          roleArn,
-		ssoAdminClient:   ssoAdminClient,
-		identityClient:   identityClient,
-		identityInstance: identityInstance,
-		region:           region,
+		resourceType:               resourceTypeAccount,
+		orgClient:                  orgClient,
+		roleArn:                    roleArn,
+		ssoAdminClient:             ssoAdminClient,
+		identityClient:             identityClient,
+		identityInstance:           identityInstance,
+		region:                     region,
+		willSyncOrganization:       willSyncOrganization,
+		willSyncOrganizationalUnit: willSyncOrganizationalUnit,
 	}
 }
 
