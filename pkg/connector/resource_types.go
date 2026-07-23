@@ -229,7 +229,10 @@ var (
 	// of the Sparse ACLs hierarchy (Root → OU → Account). It holds no binding — AWS has no
 	// native Root-level permission-set assignment — and exists purely as navigation /
 	// by-inheritance review context. SkipEntitlementsAndGrants + OptInRequired, like Azure's
-	// management-group tier.
+	// management-group tier. The ChildResourceType annotation here feeds capabilities
+	// metadata generation; the actual OU child-crawl is driven by the matching annotation
+	// attached to each emitted resource instance (see organizationResource in
+	// organization.go) — the syncer only reads instance-level annotations for that.
 	resourceTypeOrganization = &v2.ResourceType{
 		Id:          "organization",
 		DisplayName: "Organization Root",
@@ -248,7 +251,9 @@ var (
 	// resourceTypeOrganizationalUnit is an AWS Organizations OU, an intermediate scope tier
 	// between the root and accounts. Like the root it carries no binding (no native OU-level
 	// assignment) and is hierarchy/review context only. It declares itself as a child type so
-	// the SDK recurses into nested OUs. SkipEntitlementsAndGrants + OptInRequired.
+	// capabilities metadata reflects nested-OU recursion; the actual recursion is driven by the
+	// matching annotation attached to each emitted resource instance (see
+	// organizationalUnitResource in organization.go). SkipEntitlementsAndGrants + OptInRequired.
 	resourceTypeOrganizationalUnit = &v2.ResourceType{
 		Id:          "organizational_unit",
 		DisplayName: "Organizational Unit",

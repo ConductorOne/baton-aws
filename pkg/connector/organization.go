@@ -49,6 +49,12 @@ func organizationResource(root awsOrgsTypes.Root) (*v2.Resource, error) {
 		name,
 		resourceTypeOrganization,
 		awsSdk.ToString(root.Id),
+		// Sparse ACLs: the root is the crawl seed for the OU tree — this annotation is
+		// what the SDK actually reads to schedule the organizational_unit child sync
+		// (a ResourceType-level annotation alone does not drive dispatch).
+		resourceSdk.WithAnnotation(&v2.ChildResourceType{
+			ResourceTypeId: resourceTypeOrganizationalUnit.Id,
+		}),
 	)
 }
 
@@ -139,13 +145,18 @@ func organizationalUnitResource(ou awsOrgsTypes.OrganizationalUnit, parentResour
 		resourceTypeOrganizationalUnit,
 		awsSdk.ToString(ou.Id),
 		resourceSdk.WithParentResourceID(parentResourceID),
+		// Nested OUs: self-referencing child type so the SDK recurses into sub-OUs.
+		resourceSdk.WithAnnotation(&v2.ChildResourceType{
+			ResourceTypeId: resourceTypeOrganizationalUnit.Id,
+		}),
 	)
 }
 
 func (o *organizationalUnitResourceType) List(ctx context.Context, parentResourceID *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
 	// OUs only exist beneath a root or another OU; they are never a top-level resource. Crawl
 	// only when listed as a child of one of those tiers (the SDK drives this via the
-	// ChildResourceType annotations on organization / organizational_unit).
+	// ChildResourceType annotation each organization/organizational_unit resource attaches
+	// to itself — see organizationResource / organizationalUnitResource).
 	if parentResourceID == nil ||
 		(parentResourceID.ResourceType != resourceTypeOrganization.Id &&
 			parentResourceID.ResourceType != resourceTypeOrganizationalUnit.Id) {
