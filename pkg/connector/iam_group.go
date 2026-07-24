@@ -24,9 +24,10 @@ const (
 )
 
 type iamGroupResourceType struct {
-	resourceType     *v2.ResourceType
-	iamClient        *iam.Client
-	awsClientFactory *AWSClientFactory
+	resourceType        *v2.ResourceType
+	iamClient           *iam.Client
+	awsClientFactory    *AWSClientFactory
+	syncIAMPolicyGrants bool
 }
 
 func (o *iamGroupResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -129,6 +130,12 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 	}
 
 	if bag.ResourceTypeID() == iamGroupGrantsAttachedPoliciesPhase {
+		if !o.syncIAMPolicyGrants {
+			// Shouldn't normally be resumed into this phase when the gate is off (we never
+			// push it below), but guard defensively: terminate cleanly rather than paginate
+			// through policy calls for a resource type that isn't being synced.
+			return nil, nil, nil
+		}
 		return o.grantsForAttachedGroupPolicies(ctx, iamClient, resource, bag, nil)
 	}
 
@@ -184,6 +191,14 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	// Membership is done (IsTruncated without a Marker shouldn't happen, but
 	// treat it as done rather than silently skipping the policy phase).
+	//
+	// The attached-policies phase emits cross-type iam_policy "attached" grants (a sync
+	// optimization); skip entering it entirely when iam_policy isn't being synced, rather
+	// than push a phase we don't intend to honor.
+	if !o.syncIAMPolicyGrants {
+		return rv, nil, nil
+	}
+
 	bag.Push(pagination.PageState{
 		ResourceTypeID: iamGroupGrantsAttachedPoliciesPhase,
 	})
@@ -233,11 +248,12 @@ func (o *iamGroupResourceType) grantsForAttachedGroupPolicies(
 	return rv, nil, nil
 }
 
-func iamGroupBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *iamGroupResourceType {
+func iamGroupBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, syncIAMPolicyGrants bool) *iamGroupResourceType {
 	return &iamGroupResourceType{
-		resourceType:     resourceTypeIAMGroup,
-		iamClient:        iamClient,
-		awsClientFactory: awsClientFactory,
+		resourceType:        resourceTypeIAMGroup,
+		iamClient:           iamClient,
+		awsClientFactory:    awsClientFactory,
+		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
 }
 

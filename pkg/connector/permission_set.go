@@ -27,9 +27,10 @@ func permissionSetRoleID(permissionSetArn string) string {
 }
 
 type permissionSetResourceType struct {
-	resourceType     *v2.ResourceType
-	ssoAdminClient   ssoAdminAPI
-	identityInstance *awsSsoAdminTypes.InstanceMetadata
+	resourceType        *v2.ResourceType
+	ssoAdminClient      ssoAdminAPI
+	identityInstance    *awsSsoAdminTypes.InstanceMetadata
+	syncIAMPolicyGrants bool
 }
 
 func (o *permissionSetResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -115,6 +116,14 @@ func (o *permissionSetResourceType) Entitlements(_ context.Context, _ *v2.Resour
 // converge on the iam_policy "attached" entitlement. User-level grants stay on the
 // binding's "assigned" entitlement; these grants are structural only (no expansion).
 func (o *permissionSetResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	// This method exists only to emit cross-type iam_policy "attached" grants (a sync
+	// optimization on top of AWS API responses already fetched during this builder's own
+	// sync). If iam_policy isn't being synced, skip entirely rather than emit grants
+	// referencing an unsynced resource type.
+	if !o.syncIAMPolicyGrants {
+		return nil, nil, nil
+	}
+
 	input := &awsSsoAdmin.ListManagedPoliciesInPermissionSetInput{
 		InstanceArn:      o.identityInstance.InstanceArn,
 		PermissionSetArn: awsSdk.String(resource.Id.Resource),
@@ -170,10 +179,11 @@ func (o *permissionSetResourceType) Grants(ctx context.Context, resource *v2.Res
 	return rv, nil, nil
 }
 
-func permissionSetBuilder(ssoAdminClient ssoAdminAPI, identityInstance *awsSsoAdminTypes.InstanceMetadata) *permissionSetResourceType {
+func permissionSetBuilder(ssoAdminClient ssoAdminAPI, identityInstance *awsSsoAdminTypes.InstanceMetadata, syncIAMPolicyGrants bool) *permissionSetResourceType {
 	return &permissionSetResourceType{
-		resourceType:     resourceTypePermissionSet,
-		ssoAdminClient:   ssoAdminClient,
-		identityInstance: identityInstance,
+		resourceType:        resourceTypePermissionSet,
+		ssoAdminClient:      ssoAdminClient,
+		identityInstance:    identityInstance,
+		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
 }

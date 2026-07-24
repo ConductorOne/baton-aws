@@ -361,7 +361,7 @@ func TestPermissionSetGrants_EmitsPolicyAttachments(t *testing.T) {
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	ps := permissionSetBuilder(sso, identityInstance)
+	ps := permissionSetBuilder(sso, identityInstance, true)
 
 	psResource, err := permissionSetResource(&awsSsoAdminTypes.PermissionSet{
 		PermissionSetArn: awsSdk.String(testPermissionSetArn),
@@ -390,6 +390,43 @@ func TestPermissionSetGrants_EmitsPolicyAttachments(t *testing.T) {
 		assert.Equal(t, resourceTypePermissionSet.Id, g.Principal.Id.ResourceType)
 		assert.Equal(t, testPermissionSetArn, g.Principal.Id.Resource)
 	}
+}
+
+// When the sync filter excludes iam_policy, permission_set.Grants must not emit any
+// iam_policy "attached" grants (nor even call ListManagedPoliciesInPermissionSet) —
+// only the same-type role/binding grants live elsewhere. This is the mirror case of
+// TestPermissionSetGrants_EmitsPolicyAttachments: same setup, gate off, so it would fail
+// against pre-fix (unconditional-emission) code.
+func TestPermissionSetGrants_SkipsPolicyAttachmentsWhenGateOff(t *testing.T) {
+	ctx := context.Background()
+	called := false
+	sso := &fakeSSOAdmin{
+		listManagedPoliciesInPermissionSetFn: func(in *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+			called = true
+			return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{
+				AttachedManagedPolicies: []awsSsoAdminTypes.AttachedManagedPolicy{
+					{Arn: awsSdk.String("arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"), Name: awsSdk.String("AmazonS3ReadOnlyAccess")},
+				},
+			}, nil
+		},
+	}
+	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
+		InstanceArn:     awsSdk.String(behaviorInstanceArn),
+		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
+	}
+	ps := permissionSetBuilder(sso, identityInstance, false)
+
+	psResource, err := permissionSetResource(&awsSsoAdminTypes.PermissionSet{
+		PermissionSetArn: awsSdk.String(testPermissionSetArn),
+		Name:             awsSdk.String("PowerUserAccess"),
+	})
+	require.NoError(t, err)
+
+	grants, res, err := ps.Grants(ctx, psResource, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	assert.Empty(t, grants)
+	assert.Nil(t, res)
+	assert.False(t, called, "must not call ListManagedPoliciesInPermissionSet when iam_policy grants are gated off")
 }
 
 // List on inline_policy with a permission_set parent fetches the Identity Center inline

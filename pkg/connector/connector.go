@@ -99,6 +99,7 @@ type AWS struct {
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
 	syncOnlyAttachedPolicies bool
+	syncIAMPolicyGrants      bool
 
 	accountProvisioningTarget string
 }
@@ -241,8 +242,15 @@ func validateConfig(awsc *cfg.Aws) error {
 	return nil
 }
 
-func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+func New(ctx context.Context, awsc *cfg.Aws, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
 	l := ctxzap.Extract(ctx)
+
+	// syncIAMPolicyGrants gates the cross-type iam_policy grants that iamUser, role,
+	// iamGroup, and permissionSet emit as a sync optimization. When the caller has
+	// explicitly filtered resource types and iam_policy isn't among them, emitting
+	// those grants is invalid/wasteful. A nil opts (e.g. capabilities generation or
+	// callers that don't pass one) is treated the same as "no filter" -> sync everything.
+	syncIAMPolicyGrants := opts == nil || opts.WillSyncResourceType("iam_policy")
 
 	err := field.Validate(cfg.Config, awsc)
 	if err != nil {
@@ -309,6 +317,7 @@ func New(ctx context.Context, awsc *cfg.Aws, _ *cli.ConnectorOpts) (connectorbui
 		syncSecrets:              config.SyncSecrets,
 		syncSSOUserLastLogin:     config.SyncSSOUserLastLogin,
 		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
+		syncIAMPolicyGrants:      syncIAMPolicyGrants,
 
 		accountProvisioningTarget: config.AccountProvisioningTarget,
 	}
@@ -449,9 +458,9 @@ func (c *AWS) shouldSyncCrossAccountIAM() bool {
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(c.iamClient, c.awsClientFactory, c),
-		iamRoleBuilder(c.iamClient, c.awsClientFactory),
-		iamGroupBuilder(c.iamClient, c.awsClientFactory),
+		iamUserBuilder(c.iamClient, c.awsClientFactory, c, c.syncIAMPolicyGrants),
+		iamRoleBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants),
+		iamGroupBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants),
 		iamPolicyBuilder(c.iamClient, c.awsClientFactory, c.syncOnlyAttachedPolicies),
 		// ssoAdminClient/identityInstance are nil when SSO is disabled; the inline
 		// policy builder only uses them for permission_set parents, which are only
@@ -478,7 +487,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 			acct,
 			// Sparse ACLs (Cloud Infrastructure Access): permission set as role, and the
 			// per-(account, permission set) scope-binding. Both are OptInRequired.
-			permissionSetBuilder(c.ssoAdminClient, c.identityInstance),
+			permissionSetBuilder(c.ssoAdminClient, c.identityInstance, c.syncIAMPolicyGrants),
 			permissionSetAssignmentBuilder(acct),
 			// Sparse ACLs hierarchy: Organization Root → OU scope tiers (account re-parenting
 			// happens in accountBuilder.List). Hierarchy/review context only — no bindings.
@@ -512,15 +521,15 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(nil, nil, nil),
-		iamRoleBuilder(nil, nil),
-		iamGroupBuilder(nil, nil),
+		iamUserBuilder(nil, nil, nil, true),
+		iamRoleBuilder(nil, nil, true),
+		iamGroupBuilder(nil, nil, true),
 		iamPolicyBuilder(nil, nil, false),
 		inlinePolicyBuilder(nil, nil, nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil),
-		permissionSetBuilder(nil, nil),
+		permissionSetBuilder(nil, nil, true),
 		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil)),
 		organizationBuilder(nil),
 		organizationalUnitBuilder(nil),

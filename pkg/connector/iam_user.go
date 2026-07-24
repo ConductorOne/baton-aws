@@ -22,10 +22,11 @@ import (
 )
 
 type iamUserResourceType struct {
-	resourceType     *v2.ResourceType
-	iamClient        *iam.Client
-	awsClientFactory *AWSClientFactory
-	aws              *AWS
+	resourceType        *v2.ResourceType
+	iamClient           *iam.Client
+	awsClientFactory    *AWSClientFactory
+	aws                 *AWS
+	syncIAMPolicyGrants bool
 }
 
 var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
@@ -115,6 +116,14 @@ func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ 
 }
 
 func (o *iamUserResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
+	// This method exists only to emit cross-type iam_policy "attached" grants (a sync
+	// optimization on top of AWS API responses already fetched during this builder's own
+	// sync). If iam_policy isn't being synced, skip entirely rather than emit grants
+	// referencing an unsynced resource type.
+	if !o.syncIAMPolicyGrants {
+		return nil, nil, nil
+	}
+
 	bag := &pagination.Bag{}
 	if err := bag.Unmarshal(opts.PageToken.Token); err != nil {
 		return nil, nil, err
@@ -173,12 +182,13 @@ func (o *iamUserResourceType) Grants(ctx context.Context, resource *v2.Resource,
 	return grants, nil, nil
 }
 
-func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS) *iamUserResourceType {
+func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS, syncIAMPolicyGrants bool) *iamUserResourceType {
 	return &iamUserResourceType{
-		resourceType:     resourceTypeIAMUser,
-		iamClient:        iamClient,
-		awsClientFactory: awsClientFactory,
-		aws:              aws,
+		resourceType:        resourceTypeIAMUser,
+		iamClient:           iamClient,
+		awsClientFactory:    awsClientFactory,
+		aws:                 aws,
+		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
 }
 
