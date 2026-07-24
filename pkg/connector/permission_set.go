@@ -9,11 +9,13 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 // permissionSetRoleID is the SINGLE place an Identity Center permission-set role id is
@@ -34,7 +36,18 @@ type permissionSetResourceType struct {
 }
 
 func (o *permissionSetResourceType) ResourceType(_ context.Context) *v2.ResourceType {
-	return o.resourceType
+	if o.syncIAMPolicyGrants {
+		return o.resourceType
+	}
+
+	rt, ok := proto.Clone(o.resourceType).(*v2.ResourceType)
+	if !ok {
+		return o.resourceType
+	}
+	annos := annotations.Annotations(rt.Annotations)
+	annos.Update(&v2.SkipEntitlementsAndGrants{})
+	rt.Annotations = annos
+	return rt
 }
 
 func (o *permissionSetResourceType) List(ctx context.Context, _ *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
@@ -116,14 +129,6 @@ func (o *permissionSetResourceType) Entitlements(_ context.Context, _ *v2.Resour
 // converge on the iam_policy "attached" entitlement. User-level grants stay on the
 // binding's "assigned" entitlement; these grants are structural only (no expansion).
 func (o *permissionSetResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
-	// This method exists only to emit cross-type iam_policy "attached" grants (a sync
-	// optimization on top of AWS API responses already fetched during this builder's own
-	// sync). If iam_policy isn't being synced, skip entirely rather than emit grants
-	// referencing an unsynced resource type.
-	if !o.syncIAMPolicyGrants {
-		return nil, nil, nil
-	}
-
 	input := &awsSsoAdmin.ListManagedPoliciesInPermissionSetInput{
 		InstanceArn:      o.identityInstance.InstanceArn,
 		PermissionSetArn: awsSdk.String(resource.Id.Resource),

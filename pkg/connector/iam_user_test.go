@@ -7,6 +7,7 @@ import (
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,28 +79,39 @@ func TestIamUserToResource_DedupesEmailFromUsername(t *testing.T) {
 	assert.Equal(t, "dup@example.com", emails[0].GetAddress())
 }
 
-// Grants on iamUserResourceType exists only to emit cross-type iam_policy "attached"
-// grants. When syncIAMPolicyGrants is false, it must short-circuit before ever touching
-// the IAM client/factory: both are nil here, so if the gate were missing (pre-fix
-// behavior) this would panic on a nil-pointer dereference rather than return cleanly.
-func TestIamUserGrants_SkipsWhenIAMPolicyGrantsGateOff(t *testing.T) {
+// ResourceType on iamUserResourceType is the gate for cross-type iam_policy "attached"
+// grants: when iam_policy IS being synced, it must return the resource type unchanged
+// (already carrying the static SkipEntitlements annotation). When iam_policy is NOT being
+// synced, it must attach SkipEntitlementsAndGrants so the SDK skips this resource type's
+// Grants() call entirely rather than emit grants referencing an unsynced resource type.
+func TestIamUserResourceType_SkipsEntitlementsWhenSyncingIAMPolicy(t *testing.T) {
 	o := &iamUserResourceType{
 		resourceType:        resourceTypeIAMUser,
-		iamClient:           nil,
-		awsClientFactory:    nil,
-		aws:                 nil,
+		syncIAMPolicyGrants: true,
+	}
+
+	rt := o.ResourceType(context.Background())
+	require.NotNil(t, rt)
+
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlements{}))
+	assert.False(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+}
+
+func TestIamUserResourceType_SkipsEntitlementsAndGrantsWhenNotSyncingIAMPolicy(t *testing.T) {
+	o := &iamUserResourceType{
+		resourceType:        resourceTypeIAMUser,
 		syncIAMPolicyGrants: false,
 	}
 
-	resource := &v2.Resource{
-		Id: &v2.ResourceId{
-			ResourceType: resourceTypeIAMUser.Id,
-			Resource:     "arn:aws:iam::123456789012:user/ci-iam-1",
-		},
-	}
+	rt := o.ResourceType(context.Background())
+	require.NotNil(t, rt)
 
-	grants, results, err := o.Grants(context.Background(), resource, resourceSdk.SyncOpAttrs{})
-	require.NoError(t, err)
-	assert.Empty(t, grants)
-	assert.Nil(t, results)
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+
+	// The package-level var must not have been mutated by the clone-and-annotate path;
+	// other builder instances across the test run share this same var.
+	sharedAnnos := annotations.Annotations(resourceTypeIAMUser.Annotations)
+	assert.False(t, sharedAnnos.Contains(&v2.SkipEntitlementsAndGrants{}))
 }

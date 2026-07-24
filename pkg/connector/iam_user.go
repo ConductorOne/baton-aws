@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type iamUserResourceType struct {
@@ -32,7 +33,18 @@ type iamUserResourceType struct {
 var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
 
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
-	return o.resourceType
+	if o.syncIAMPolicyGrants {
+		return o.resourceType
+	}
+
+	rt, ok := proto.Clone(o.resourceType).(*v2.ResourceType)
+	if !ok {
+		return o.resourceType
+	}
+	annos := annotations.Annotations(rt.Annotations)
+	annos.Update(&v2.SkipEntitlementsAndGrants{})
+	rt.Annotations = annos
+	return rt
 }
 
 func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
@@ -116,14 +128,6 @@ func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ 
 }
 
 func (o *iamUserResourceType) Grants(ctx context.Context, resource *v2.Resource, opts resourceSdk.SyncOpAttrs) ([]*v2.Grant, *resourceSdk.SyncOpResults, error) {
-	// This method exists only to emit cross-type iam_policy "attached" grants (a sync
-	// optimization on top of AWS API responses already fetched during this builder's own
-	// sync). If iam_policy isn't being synced, skip entirely rather than emit grants
-	// referencing an unsynced resource type.
-	if !o.syncIAMPolicyGrants {
-		return nil, nil, nil
-	}
-
 	bag := &pagination.Bag{}
 	if err := bag.Unmarshal(opts.PageToken.Token); err != nil {
 		return nil, nil, err

@@ -13,6 +13,7 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/conductorone/baton-aws/test"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
@@ -392,41 +393,44 @@ func TestPermissionSetGrants_EmitsPolicyAttachments(t *testing.T) {
 	}
 }
 
-// When the sync filter excludes iam_policy, permission_set.Grants must not emit any
-// iam_policy "attached" grants (nor even call ListManagedPoliciesInPermissionSet) —
-// only the same-type role/binding grants live elsewhere. This is the mirror case of
-// TestPermissionSetGrants_EmitsPolicyAttachments: same setup, gate off, so it would fail
-// against pre-fix (unconditional-emission) code.
-func TestPermissionSetGrants_SkipsPolicyAttachmentsWhenGateOff(t *testing.T) {
-	ctx := context.Background()
-	called := false
-	sso := &fakeSSOAdmin{
-		listManagedPoliciesInPermissionSetFn: func(in *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
-			called = true
-			return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{
-				AttachedManagedPolicies: []awsSsoAdminTypes.AttachedManagedPolicy{
-					{Arn: awsSdk.String("arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"), Name: awsSdk.String("AmazonS3ReadOnlyAccess")},
-				},
-			}, nil
-		},
-	}
+// ResourceType on permissionSetResourceType is the gate for cross-type iam_policy "attached"
+// grants: when iam_policy IS being synced, it must return the resource type unchanged
+// (already carrying the static SkipEntitlements annotation). When iam_policy is NOT being
+// synced, it must attach SkipEntitlementsAndGrants so the SDK skips this resource type's
+// Grants() call entirely rather than emit grants referencing an unsynced resource type. This
+// is the mirror case of TestPermissionSetGrants_EmitsPolicyAttachments.
+func TestPermissionSetResourceType_SkipsEntitlementsWhenSyncingIAMPolicy(t *testing.T) {
 	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	ps := permissionSetBuilder(sso, identityInstance, false)
+	ps := permissionSetBuilder(&fakeSSOAdmin{}, identityInstance, true)
 
-	psResource, err := permissionSetResource(&awsSsoAdminTypes.PermissionSet{
-		PermissionSetArn: awsSdk.String(testPermissionSetArn),
-		Name:             awsSdk.String("PowerUserAccess"),
-	})
-	require.NoError(t, err)
+	rt := ps.ResourceType(context.Background())
+	require.NotNil(t, rt)
 
-	grants, res, err := ps.Grants(ctx, psResource, resourceSdk.SyncOpAttrs{})
-	require.NoError(t, err)
-	assert.Empty(t, grants)
-	assert.Nil(t, res)
-	assert.False(t, called, "must not call ListManagedPoliciesInPermissionSet when iam_policy grants are gated off")
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlements{}))
+	assert.False(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+}
+
+func TestPermissionSetResourceType_SkipsEntitlementsAndGrantsWhenNotSyncingIAMPolicy(t *testing.T) {
+	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
+		InstanceArn:     awsSdk.String(behaviorInstanceArn),
+		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
+	}
+	ps := permissionSetBuilder(&fakeSSOAdmin{}, identityInstance, false)
+
+	rt := ps.ResourceType(context.Background())
+	require.NotNil(t, rt)
+
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+
+	// The package-level var must not have been mutated by the clone-and-annotate path;
+	// other builder instances across the test run share this same var.
+	sharedAnnos := annotations.Annotations(resourceTypePermissionSet.Annotations)
+	assert.False(t, sharedAnnos.Contains(&v2.SkipEntitlementsAndGrants{}))
 }
 
 // List on inline_policy with a permission_set parent fetches the Identity Center inline
