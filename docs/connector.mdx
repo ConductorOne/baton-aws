@@ -59,6 +59,14 @@ subject profile. Do not use a wildcard issuer, audience, or subject. The role's
 permissions policy defines the maximum AWS access; the optional session policy
 can only narrow it further.
 
+Synced IAM role profiles include `aws_max_session_duration_seconds`, the
+provider-observed `MaxSessionDuration` ceiling returned by IAM. C1 must combine
+that ceiling with its own access policy when choosing `duration_seconds`. AWS
+does not expose an authoritative role property that says whether a future
+session will be issued directly or through role chaining; C1 must derive that
+topology from its configured issuance mode and apply the corresponding AWS
+limit.
+
 ## Sparse ACLs: Organizations and permission sets as scoped bindings
 
 When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector also models Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:

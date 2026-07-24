@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -102,6 +103,44 @@ func TestIssueSTSWebIdentitySessionRejectsInvalidDuration(t *testing.T) {
 	require.NoError(t, err)
 	_, _, err = (&AWS{}).issueSTSWebIdentitySession(context.Background(), args)
 	require.ErrorContains(t, err, "between 900 and 43200")
+}
+
+func TestIssueSTSWebIdentitySessionDurationBounds(t *testing.T) {
+	identity, err := filippoage.GenerateX25519Identity()
+	require.NoError(t, err)
+	tests := []struct {
+		name       string
+		duration   int
+		wantCode   codes.Code
+		wantCalled bool
+	}{
+		{name: "below minimum", duration: 899, wantCode: codes.InvalidArgument},
+		{name: "minimum", duration: 900, wantCode: codes.Internal, wantCalled: true},
+		{name: "maximum", duration: 43200, wantCode: codes.Internal, wantCalled: true},
+		{name: "above maximum", duration: 43201, wantCode: codes.InvalidArgument},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			called := false
+			connector := &AWS{assumeRoleWithWebIdentity: func(_ context.Context, input *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error) {
+				called = true
+				require.EqualValues(t, test.duration, awsSdk.ToInt32(input.DurationSeconds))
+				return nil, errors.New("test upstream failure")
+			}}
+			args, err := structpb.NewStruct(map[string]any{
+				"role_arn":           "arn:aws:iam::123456789012:role/C1Vending",
+				"web_identity_token": "token",
+				"age_recipient":      identity.Recipient().String(),
+				"session_name":       "request-123",
+				"duration_seconds":   test.duration,
+			})
+			require.NoError(t, err)
+
+			_, _, err = connector.issueSTSWebIdentitySession(context.Background(), args)
+			require.Equal(t, test.wantCode, status.Code(err))
+			require.Equal(t, test.wantCalled, called)
+		})
+	}
 }
 
 func TestIssueSTSWebIdentitySessionRejectsInvalidInputs(t *testing.T) {
