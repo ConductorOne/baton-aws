@@ -22,7 +22,8 @@ import (
 )
 
 const (
-	roleAssignmentEntitlement = "assignment"
+	roleAssignmentEntitlement          = "assignment"
+	roleMaxSessionDurationProfileField = "aws_max_session_duration_seconds"
 )
 
 type roleResourceType struct {
@@ -274,6 +275,11 @@ func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{}
 	profile["aws_tags"] = roleTagsToMap(role)
 	profile["aws_role_name"] = awsSdk.ToString(role.RoleName)
 	profile["aws_role_description"] = awsSdk.ToString(role.Description)
+	// MaxSessionDuration is an IAM-owned role setting returned by ListRoles.
+	// Keep it distinct from any product-requested TTL or issuance topology.
+	if role.MaxSessionDuration != nil {
+		profile[roleMaxSessionDurationProfileField] = awsSdk.ToInt32(role.MaxSessionDuration)
+	}
 
 	return profile
 }
