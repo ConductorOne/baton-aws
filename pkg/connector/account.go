@@ -134,7 +134,7 @@ type accountResourceType struct {
 	// actually sync the corresponding (OptInRequired) hierarchy resource type. Account
 	// re-parenting (see List) is gated on these so accounts never point at a Root/OU
 	// resource that this run never syncs, which would otherwise leave a dangling
-	// "MISSING RESOURCE" parent. See CXP-768.
+	// "MISSING RESOURCE" parent.
 	willSyncOrganization       bool
 	willSyncOrganizationalUnit bool
 }
@@ -199,7 +199,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
 		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
 		//
-		// Gated on willSyncOrganization/willSyncOrganizationalUnit (CXP-768): organization and
+		// Gated on willSyncOrganization/willSyncOrganizationalUnit: organization and
 		// organizational_unit are OptInRequired, so a sync run may never emit them. Pointing an
 		// account's parent at a resource type this run isn't syncing produces a dangling
 		// "MISSING RESOURCE" parent that c1 silently drops (see permissionSetRoleID's comment on
@@ -215,8 +215,12 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 				orgReadDenied = true
 			}
 			if parentID != nil {
+				// OU sync is itself contingent on organization sync: the OU crawl is seeded
+				// exclusively from Root (see organization.go), so an OU can never actually be
+				// synced when organization is not. Require willSyncOrganization here too, or a
+				// partial opt-in (OU in, org out) would attach a parent that never gets emitted.
 				willSyncParentType := (parentID.ResourceType == resourceTypeOrganization.Id && o.willSyncOrganization) ||
-					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.willSyncOrganizationalUnit)
+					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.willSyncOrganizationalUnit && o.willSyncOrganization)
 				if willSyncParentType {
 					resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
 				}

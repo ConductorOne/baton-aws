@@ -46,7 +46,7 @@ func TestOrganizationList_EmitsRoots(t *testing.T) {
 // organizationResource must attach a ChildResourceType annotation to the emitted resource
 // instance — this is what the SDK's syncer actually reads to schedule the organizational_unit
 // child crawl (a ResourceType-level annotation alone does not drive dispatch). Regression test
-// for CXP-756, where this was missing and the OU tier silently never synced.
+// for the case where this was missing and the OU tier silently never synced.
 func TestOrganizationResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
 	r, err := organizationResource(awsOrgsTypes.Root{Id: awsSdk.String(testRootID)})
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestOrganizationResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
 }
 
 // organizationalUnitResource must attach a ChildResourceType annotation pointing at itself so
-// the SDK recurses into nested OUs. Regression test for CXP-756.
+// the SDK recurses into nested OUs. Regression test for the same issue as above.
 func TestOrganizationalUnitResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
 	parent := &v2.ResourceId{ResourceType: resourceTypeOrganization.Id, Resource: testRootID}
 	r, err := organizationalUnitResource(awsOrgsTypes.OrganizationalUnit{Id: awsSdk.String(testOUID)}, parent)
@@ -266,7 +266,7 @@ func TestAccountList_FlatWhenOrgReadDenied(t *testing.T) {
 
 // account.List must not call ListParents at all, and must leave the account flat, when neither
 // hierarchy type is opted into this sync run — otherwise the account gets a parent pointing at
-// a resource type that will never be synced ("MISSING RESOURCE"). Regression test for CXP-768.
+// a resource type that will never be synced ("MISSING RESOURCE").
 func TestAccountList_SkipsReparentWhenHierarchyNotSynced(t *testing.T) {
 	ctx := context.Background()
 	orgs := &fakeOrgs{
@@ -332,7 +332,7 @@ func newOrgAccount(orgs *fakeOrgs) *accountResourceType {
 
 // newOrgAccountWithSyncFilter is like newOrgAccount but lets the test control whether the
 // organization/organizational_unit hierarchy types are opted into this sync run, to exercise
-// the CXP-768 re-parenting gate.
+// the re-parenting gate.
 func newOrgAccountWithSyncFilter(orgs *fakeOrgs, willSyncOrganization, willSyncOrganizationalUnit bool) *accountResourceType {
 	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),

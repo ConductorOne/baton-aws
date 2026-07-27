@@ -98,7 +98,7 @@ type AWS struct {
 
 	// willSyncOrganization/willSyncOrganizationalUnit report whether this sync run's
 	// resource-type filter (if any) includes the OptInRequired org/OU hierarchy types.
-	// See accountResourceType.List (CXP-768).
+	// See accountResourceType.List.
 	willSyncOrganization       bool
 	willSyncOrganizationalUnit bool
 
