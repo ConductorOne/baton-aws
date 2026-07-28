@@ -62,38 +62,48 @@ var (
 		Id:          "account", // this is "application" in c1
 		DisplayName: "Account",
 		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_APP},
-		Annotations: v1AnnotationsWithPermissions("account", capabilityPermissions(
-			// Read
-			"organizations:ListAccounts",
-			"organizations:DescribeOrganization",
-			// Sparse ACLs hierarchy (Phase 2): resolve each account's parent (Root/OU) so
-			// c1's by-inheritance review can walk the org tree. Fail-soft if absent.
-			"organizations:ListParents",
-			"sso:ListPermissionSets",
-			"sso:DescribePermissionSet",
-			"sso:ListPermissionSetsProvisionedToAccount",
-			"sso:ListAccountAssignments",
-			"sso:ListInstances",
-			// Provision
-			"sso:CreateAccountAssignment",
-			"sso:DeleteAccountAssignment",
-			"sso:DescribeAccountAssignmentCreationStatus",
-			"sso:DescribeAccountAssignmentDeletionStatus",
-			// Supplemental: AWS-internal deps for SSO provisioning on SSO-provisioned roles
-			"iam:ListPolicies",
-			"iam:AttachRolePolicy",
-			"iam:CreateRole",
-			"iam:DeleteRole",
-			"iam:DeleteRolePolicy",
-			"iam:DetachRolePolicy",
-			"iam:GetRole",
-			"iam:ListAttachedRolePolicies",
-			"iam:ListRolePolicies",
-			"iam:PutRolePolicy",
-			"iam:UpdateRole",
-			"iam:UpdateRoleDescription",
-			"iam:GetSAMLProvider",
-		)),
+		Annotations: annotations.New(
+			&v2.V1Identifier{Id: "account"},
+			// Sparse ACLs: the per-(account, permission set) scope binding is a child of the
+			// account. This type-level annotation feeds capabilities metadata generation; the
+			// actual child crawl is dispatched by the matching annotation attached to each
+			// emitted account resource (see account.go). Both are required and must stay in
+			// sync — CXP-756 was the inverse omission, where only the type-level annotation
+			// existed and the SDK therefore never scheduled the child sync.
+			&v2.ChildResourceType{ResourceTypeId: resourceTypePermissionSetAssignment.Id},
+			capabilityPermissions(
+				// Read
+				"organizations:ListAccounts",
+				"organizations:DescribeOrganization",
+				// Sparse ACLs hierarchy (Phase 2): resolve each account's parent (Root/OU) so
+				// c1's by-inheritance review can walk the org tree. Fail-soft if absent.
+				"organizations:ListParents",
+				"sso:ListPermissionSets",
+				"sso:DescribePermissionSet",
+				"sso:ListPermissionSetsProvisionedToAccount",
+				"sso:ListAccountAssignments",
+				"sso:ListInstances",
+				// Provision
+				"sso:CreateAccountAssignment",
+				"sso:DeleteAccountAssignment",
+				"sso:DescribeAccountAssignmentCreationStatus",
+				"sso:DescribeAccountAssignmentDeletionStatus",
+				// Supplemental: AWS-internal deps for SSO provisioning on SSO-provisioned roles
+				"iam:ListPolicies",
+				"iam:AttachRolePolicy",
+				"iam:CreateRole",
+				"iam:DeleteRole",
+				"iam:DeleteRolePolicy",
+				"iam:DetachRolePolicy",
+				"iam:GetRole",
+				"iam:ListAttachedRolePolicies",
+				"iam:ListRolePolicies",
+				"iam:PutRolePolicy",
+				"iam:UpdateRole",
+				"iam:UpdateRoleDescription",
+				"iam:GetSAMLProvider",
+			),
+		),
 	}
 	resourceTypeAccountIam = &v2.ResourceType{
 		Id:          "account_iam",
