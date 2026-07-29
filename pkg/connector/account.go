@@ -199,14 +199,14 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
 		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
 		//
-		// Gated on willSyncOrganization/willSyncOrganizationalUnit: organization and
-		// organizational_unit are OptInRequired, so a sync run may never emit them. Pointing an
-		// account's parent at a resource type this run isn't syncing produces a dangling
-		// "MISSING RESOURCE" parent that c1 silently drops (see permissionSetRoleID's comment on
-		// dangling references). Skip the ListParents call entirely when neither hierarchy type
-		// will be synced; when only one is, still resolve the parent but only attach it if its
-		// resolved type is one this run will actually sync.
-		if o.willSyncOrganization || o.willSyncOrganizationalUnit {
+		// Gated on willSyncOrganization: organization and organizational_unit are OptInRequired,
+		// so a sync run may never emit them. Pointing an account's parent at a resource type this
+		// run isn't syncing produces a dangling "MISSING RESOURCE" parent that c1 silently drops
+		// (see permissionSetRoleID's comment on dangling references). The OU crawl is itself
+		// seeded exclusively from Root (see organization.go), so an OU can never actually be
+		// synced when organization is not - skip the ListParents call entirely in that case
+		// rather than resolving a parent that can never be attached.
+		if o.willSyncOrganization {
 			parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
 			if err != nil {
 				return nil, nil, err
@@ -215,12 +215,8 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 				orgReadDenied = true
 			}
 			if parentID != nil {
-				// OU sync is itself contingent on organization sync: the OU crawl is seeded
-				// exclusively from Root (see organization.go), so an OU can never actually be
-				// synced when organization is not. Require willSyncOrganization here too, or a
-				// partial opt-in (OU in, org out) would attach a parent that never gets emitted.
-				willSyncParentType := (parentID.ResourceType == resourceTypeOrganization.Id && o.willSyncOrganization) ||
-					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.willSyncOrganizationalUnit && o.willSyncOrganization)
+				willSyncParentType := parentID.ResourceType == resourceTypeOrganization.Id ||
+					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.willSyncOrganizationalUnit)
 				if willSyncParentType {
 					resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
 				}
