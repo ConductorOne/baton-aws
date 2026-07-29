@@ -501,7 +501,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
 		acct := accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient,
-			c.willSyncOrganization, c.willSyncOrganizationalUnit)
+			HierarchySyncFlags{Organization: c.willSyncOrganization, OrganizationalUnit: c.willSyncOrganizationalUnit})
 		rs = append(rs,
 			acct,
 			// Sparse ACLs (Cloud Infrastructure Access): permission set as role, and the
@@ -547,9 +547,9 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		inlinePolicyBuilder(nil, nil, nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
-		accountBuilder(nil, "", nil, nil, "", nil, true, true),
+		accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}),
 		permissionSetBuilder(nil, nil, true),
-		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, true, true)),
+		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true})),
 		organizationBuilder(nil),
 		organizationalUnitBuilder(nil),
 		accountIAMBuilder(nil, nil, nil),

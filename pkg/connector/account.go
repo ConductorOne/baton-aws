@@ -121,6 +121,16 @@ type entitlementsPageState struct {
 	PermissionSetIndex int `json:"psi"`
 }
 
+// HierarchySyncFlags reports whether a sync run will actually emit the (OptInRequired)
+// organization/organizational_unit resource types. Grouped into a named struct rather than
+// two positional bools so a call site can't silently swap Organization and
+// OrganizationalUnit - the compiler catches a missing/misnamed field, and a transposition
+// requires actually swapping the field names, not just their order.
+type HierarchySyncFlags struct {
+	Organization       bool
+	OrganizationalUnit bool
+}
+
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        orgsAPI
@@ -130,13 +140,11 @@ type accountResourceType struct {
 	identityClient   client.IdentityStoreClient
 	region           string
 
-	// willSyncOrganization/willSyncOrganizationalUnit report whether this sync run will
-	// actually sync the corresponding (OptInRequired) hierarchy resource type. Account
-	// re-parenting (see List) is gated on these so accounts never point at a Root/OU
-	// resource that this run never syncs, which would otherwise leave a dangling
-	// "MISSING RESOURCE" parent.
-	willSyncOrganization       bool
-	willSyncOrganizationalUnit bool
+	// hierarchySync reports whether this sync run will actually sync the corresponding
+	// (OptInRequired) hierarchy resource type. Account re-parenting (see List) is gated on
+	// this so accounts never point at a Root/OU resource that this run never syncs, which
+	// would otherwise leave a dangling "MISSING RESOURCE" parent.
+	hierarchySync HierarchySyncFlags
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -206,7 +214,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		// seeded exclusively from Root (see organization.go), so an OU can never actually be
 		// synced when organization is not - skip the ListParents call entirely in that case
 		// rather than resolving a parent that can never be attached.
-		if o.willSyncOrganization {
+		if o.hierarchySync.Organization {
 			parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
 			if err != nil {
 				return nil, nil, err
@@ -216,7 +224,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			}
 			if parentID != nil {
 				willSyncParentType := parentID.ResourceType == resourceTypeOrganization.Id ||
-					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.willSyncOrganizationalUnit)
+					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.hierarchySync.OrganizationalUnit)
 				if willSyncParentType {
 					resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
 				}
@@ -974,19 +982,17 @@ func accountBuilder(
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
 	identityClient client.IdentityStoreClient,
-	willSyncOrganization bool,
-	willSyncOrganizationalUnit bool,
+	hierarchySync HierarchySyncFlags,
 ) *accountResourceType {
 	return &accountResourceType{
-		resourceType:               resourceTypeAccount,
-		orgClient:                  orgClient,
-		roleArn:                    roleArn,
-		ssoAdminClient:             ssoAdminClient,
-		identityClient:             identityClient,
-		identityInstance:           identityInstance,
-		region:                     region,
-		willSyncOrganization:       willSyncOrganization,
-		willSyncOrganizationalUnit: willSyncOrganizationalUnit,
+		resourceType:     resourceTypeAccount,
+		orgClient:        orgClient,
+		roleArn:          roleArn,
+		ssoAdminClient:   ssoAdminClient,
+		identityClient:   identityClient,
+		identityInstance: identityInstance,
+		region:           region,
+		hierarchySync:    hierarchySync,
 	}
 }
 

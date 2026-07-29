@@ -338,5 +338,6 @@ func newOrgAccountWithSyncFilter(orgs *fakeOrgs, willSyncOrganization, willSyncO
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	return accountBuilder(orgs, "", &fakeSSOAdmin{}, identityInstance, behaviorRegion, nil, willSyncOrganization, willSyncOrganizationalUnit)
+	return accountBuilder(orgs, "", &fakeSSOAdmin{}, identityInstance, behaviorRegion, nil,
+		HierarchySyncFlags{Organization: willSyncOrganization, OrganizationalUnit: willSyncOrganizationalUnit})
 }

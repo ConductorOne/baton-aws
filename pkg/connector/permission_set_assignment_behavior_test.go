@@ -218,7 +218,8 @@ func newBehaviorAccount(sso *fakeSSOAdmin) *accountResourceType {
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	return accountBuilder(&fakeOrgs{}, "", sso, identityInstance, behaviorRegion, &test.MockedIdentityStoreClient{}, true, true)
+	return accountBuilder(&fakeOrgs{}, "", sso, identityInstance, behaviorRegion, &test.MockedIdentityStoreClient{},
+		HierarchySyncFlags{Organization: true, OrganizationalUnit: true})
 }
 
 func behaviorBinding(t *testing.T) (*v2.Resource, *v2.Entitlement) {
