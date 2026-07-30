@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	aws_middleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -21,6 +22,14 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
+)
+
+const (
+	// errCodeAccessDenied is the unmodeled code IAM (and STS) return for an authorization
+	// failure; errCodeAccessDeniedException is the code carried by service-modeled
+	// AccessDeniedException types, e.g. SSO Admin's.
+	errCodeAccessDenied          = "AccessDenied"
+	errCodeAccessDeniedException = "AccessDeniedException"
 )
 
 const (
@@ -428,13 +437,62 @@ func wrapAWSError(err error) error {
 	return err
 }
 
+// isCredentialsRetrievalError reports whether err originated in an STS credential
+// retrieval rather than in the API call the caller actually made.
+//
+// Cross-account clients hold auto-refreshing assumed-role credentials, so when a
+// re-assume fails mid-sync (role deleted, trust policy edited, SCP change) STS returns
+// AccessDenied and the SDK surfaces it at the call site — the whole chain is %w-wrapped
+// and reachable by errors.As:
+//
+//	iam.<Op> err → smithy.OperationError{ServiceID:"IAM"} → "get identity: %w"
+//	  → "get credentials: %w" → CredentialsCache → AssumeRoleProvider
+//	  → smithy.OperationError{ServiceID:"STS"} → GenericAPIError{Code:"AccessDenied"}
+//
+// Without this check isAccessDeniedError matches that error and the fail-soft skips
+// treat a credentials outage as "this resource denied us", producing a sync that reports
+// success with grants silently missing. Absent grants read as revoked access downstream,
+// so a partial sync is worse than a hard failure: credential problems must be loud.
+//
+// A plain errors.As is not enough: it matches the OUTERMOST *smithy.OperationError, which
+// is the caller's own service (IAM), and would never see the STS one nested beneath it.
+// So each match that is not STS is stepped past, and the search resumes underneath it.
+func isCredentialsRetrievalError(err error) bool {
+	for e := err; e != nil; {
+		var opErr *smithy.OperationError
+		if !errors.As(e, &opErr) {
+			return false
+		}
+		if opErr.ServiceID == sts.ServiceID {
+			return true
+		}
+		e = errors.Unwrap(opErr)
+	}
+	return false
+}
+
+// isAccessDeniedError reports whether err is a resource-level authorization denial that
+// the caller may safely skip.
+//
+// Both spellings are matched: IAM models no AccessDenied* error type and returns an
+// unmodeled GenericAPIError with code "AccessDenied", while SSO Admin returns a typed
+// *ssoadmin.AccessDeniedException whose ErrorCode() is "AccessDeniedException". Matching
+// only the former left the fail-soft skips in permission_set.go and inline_policy.go dead
+// for SSO Admin, failing the sync instead of degrading.
+//
+// Credential-retrieval failures are explicitly excluded — see isCredentialsRetrievalError.
 func isAccessDeniedError(err error) bool {
+	if isCredentialsRetrievalError(err) {
+		return false
+	}
+
 	var apiErr smithy.APIError
 	if !errors.As(err, &apiErr) {
 		return false
 	}
+
 	switch apiErr.ErrorCode() {
-	case "AccessDenied", "AccessDeniedException":
+	case errCodeAccessDenied, errCodeAccessDeniedException:
 		return true
 	default:
 		return false
