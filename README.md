@@ -138,12 +138,30 @@ _These policies have comments prefixed with // that need to be removed before us
     {
       "Action": [
         "iam:ListUsers",
+        "iam:GetUser",
         "iam:ListGroups",
-        "iam:ListRoles",
         "iam:GetGroup",
+        "iam:ListAttachedGroupPolicies",
+        "iam:ListRoles",
         "iam:GetRole",
+        "iam:ListAttachedRolePolicies",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
+        "iam:ListSigningCertificates",
+        "iam:ListSSHPublicKeys",
+        "iam:ListServiceSpecificCredentials",
+        "iam:ListMFADevices",
+        "iam:ListUserPolicies",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListGroupsForUser",
+        "iam:ListRolePolicies",
+        "iam:ListGroupPolicies",
+        "iam:GetUserPolicy",
+        "iam:GetRolePolicy",
+        "iam:GetGroupPolicy",
+        "iam:ListPolicies",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
       ],
       "Effect": "Allow",
       "Resource": "*",
@@ -161,16 +179,23 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
-        "identitystore:GetGroupMembershipId",
         "identitystore:ListUsers",
         "identitystore:ListGroups",
         "identitystore:ListGroupMemberships",
+        "identitystore:GetGroupMembershipId",
         "organizations:ListAccounts",
-        "sso:DescribePermissionSet",
-        "sso:ListAccountAssignments",
+        "organizations:DescribeOrganization",
+        "organizations:ListParents",
+        "organizations:ListRoots",
+        "organizations:ListOrganizationalUnitsForParent",
         "sso:ListInstances",
         "sso:ListPermissionSets",
-        "sso:ListPermissionSetsProvisionedToAccount"
+        "sso:DescribePermissionSet",
+        "sso:ListManagedPoliciesInPermissionSet",
+        "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+        "sso:GetInlinePolicyForPermissionSet",
+        "sso:ListPermissionSetsProvisionedToAccount",
+        "sso:ListAccountAssignments"
       ],
       "Effect": "Allow",
       "Resource": "*",
@@ -210,12 +235,30 @@ _These policies have comments prefixed with // that need to be removed before us
     {
       "Action": [
         "iam:ListUsers",
+        "iam:GetUser",
         "iam:ListGroups",
-        "iam:ListRoles",
         "iam:GetGroup",
+        "iam:ListAttachedGroupPolicies",
+        "iam:ListRoles",
         "iam:GetRole",
+        "iam:ListAttachedRolePolicies",
         "iam:ListAccessKeys",
-        "iam:GetAccessKeyLastUsed"
+        "iam:GetAccessKeyLastUsed",
+        "iam:ListSigningCertificates",
+        "iam:ListSSHPublicKeys",
+        "iam:ListServiceSpecificCredentials",
+        "iam:ListMFADevices",
+        "iam:ListUserPolicies",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListGroupsForUser",
+        "iam:ListRolePolicies",
+        "iam:ListGroupPolicies",
+        "iam:GetUserPolicy",
+        "iam:GetRolePolicy",
+        "iam:GetGroupPolicy",
+        "iam:ListPolicies",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
       ],
       "Effect": "Allow",
       "Resource": "*",
@@ -233,16 +276,23 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
-        "identitystore:GetGroupMembershipId",
         "identitystore:ListUsers",
         "identitystore:ListGroups",
         "identitystore:ListGroupMemberships",
+        "identitystore:GetGroupMembershipId",
         "organizations:ListAccounts",
-        "sso:DescribePermissionSet",
-        "sso:ListAccountAssignments",
+        "organizations:DescribeOrganization",
+        "organizations:ListParents",
+        "organizations:ListRoots",
+        "organizations:ListOrganizationalUnitsForParent",
         "sso:ListInstances",
         "sso:ListPermissionSets",
-        "sso:ListPermissionSetsProvisionedToAccount"
+        "sso:DescribePermissionSet",
+        "sso:ListManagedPoliciesInPermissionSet",
+        "sso:ListCustomerManagedPolicyReferencesInPermissionSet",
+        "sso:GetInlinePolicyForPermissionSet",
+        "sso:ListPermissionSetsProvisionedToAccount",
+        "sso:ListAccountAssignments"
       ],
       "Effect": "Allow",
       "Resource": "*",
@@ -258,6 +308,40 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Enable provisioning of IAM users to Groups
       "Sid": "IAMUserToGroupProvisioning"
+    },
+    {
+      "Action": [
+        "iam:AttachUserPolicy",
+        "iam:AttachRolePolicy",
+        "iam:AttachGroupPolicy",
+        "iam:DetachUserPolicy",
+        "iam:DetachRolePolicy",
+        "iam:DetachGroupPolicy",
+        "iam:DeleteUserPolicy",
+        "iam:DeleteRolePolicy",
+        "iam:DeleteGroupPolicy"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Attach/detach managed policies and revoke IAM inline policies
+      "Sid": "IAMPolicyProvisioning"
+    },
+    {
+      "Action": [
+        "iam:CreateUser",
+        "iam:TagUser",
+        "iam:DeleteLoginProfile",
+        "iam:DeleteAccessKey",
+        "iam:DeleteSigningCertificate",
+        "iam:DeleteSSHPublicKey",
+        "iam:DeleteServiceSpecificCredential",
+        "iam:DeactivateMFADevice",
+        "iam:DeleteUser"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Create and delete IAM users (delete requires clearing credentials first)
+      "Sid": "IAMUserAccountProvisioning"
     },
     {
       "Action": [
@@ -382,17 +466,36 @@ Each sub-account will need to have the following policy attached to the role tha
     {
       "Action": [
         "iam:ListUsers",
+        "iam:GetUser",
         "iam:ListGroups",
-        "iam:ListRoles",
         "iam:GetGroup",
+        "iam:ListAttachedGroupPolicies",
+        "iam:ListRoles",
         "iam:GetRole",
+        "iam:ListAttachedRolePolicies",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
+        "iam:ListSigningCertificates",
+        "iam:ListSSHPublicKeys",
+        "iam:ListServiceSpecificCredentials",
+        "iam:ListMFADevices",
+        "iam:ListUserPolicies",
+        "iam:ListAttachedUserPolicies",
+        "iam:ListGroupsForUser",
+        "iam:ListRolePolicies",
+        "iam:ListGroupPolicies",
+        "iam:GetUserPolicy",
+        "iam:GetRolePolicy",
+        "iam:GetGroupPolicy",
+        "iam:ListPolicies",
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:ListAccountAliases"
       ],
       "Effect": "Allow",
       "Resource": "*",
       "Sid": "MinimumRequiredPermissionsSyncIAMUsersGroupsRoles"
-    },
+    }
   ],
   "Version": "2012-10-17"
 }

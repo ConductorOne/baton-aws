@@ -225,6 +225,9 @@ var (
 				"sso:ListPermissionSetsProvisionedToAccount",
 				"sso:DescribePermissionSet",
 				"sso:ListAccountAssignments",
+				// Policy-composition grants (expandable to assigned users/groups)
+				"sso:ListManagedPoliciesInPermissionSet",
+				"sso:ListCustomerManagedPolicyReferencesInPermissionSet",
 				// Provision
 				"sso:CreateAccountAssignment",
 				"sso:DeleteAccountAssignment",
