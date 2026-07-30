@@ -18,13 +18,20 @@ import (
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
 	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
 
-const iamPolicyAttachedEntitlement = "attached"
+const (
+	iamPolicyAttachedEntitlement = "attached"
+
+	// AWS-managed policy documents are global; cache them so multi-account List
+	// does not re-fetch the same public document once per account.
+	iamPolicyDocumentCacheKeyPrefix = "aws-connector-iam-policy-document:"
+)
 
 type iamPolicyResourceType struct {
 	resourceType     *v2.ResourceType
@@ -47,11 +54,31 @@ func isAWSManagedPolicyARN(policyARN string) bool {
 	return err == nil && parsed.AccountID == "aws"
 }
 
+func iamPolicyDocumentCacheKey(policyARN string) string {
+	return iamPolicyDocumentCacheKeyPrefix + policyARN
+}
+
 // getPolicyDocument fetches and URL-decodes the default-version policy JSON
-// for a managed policy. Returns "" (no error) when the policy has disappeared
-// since listing or the caller lacks the iam:GetPolicy/iam:GetPolicyVersion
-// permission.
-func (o *iamPolicyResourceType) getPolicyDocument(ctx context.Context, iamClient *iam.Client, policyARN string) (string, error) {
+// for a managed policy. AWS-managed documents are session-cached by ARN so
+// multi-account List pays GetPolicy/GetPolicyVersion once per public policy.
+// Returns "" (no error) when the policy has disappeared since listing or the
+// caller lacks the iam:GetPolicy/iam:GetPolicyVersion permission.
+func (o *iamPolicyResourceType) getPolicyDocument(
+	ctx context.Context,
+	ss sessions.SessionStore,
+	iamClient *iam.Client,
+	policyARN string,
+) (string, error) {
+	fetch := func() (string, error) {
+		return o.fetchPolicyDocument(ctx, iamClient, policyARN)
+	}
+	if isAWSManagedPolicyARN(policyARN) {
+		return getOrSetCache(ctx, ss, iamPolicyDocumentCacheKey(policyARN), fetch)
+	}
+	return fetch()
+}
+
+func (o *iamPolicyResourceType) fetchPolicyDocument(ctx context.Context, iamClient *iam.Client, policyARN string) (string, error) {
 	var rawDocument string
 	policyResp, getErr := iamClient.GetPolicy(ctx, &iam.GetPolicyInput{
 		PolicyArn: awsSdk.String(policyARN),
@@ -129,18 +156,12 @@ func (o *iamPolicyResourceType) List(ctx context.Context, parentId *v2.ResourceI
 			"aws_policy_arn":  policyARN,
 		}
 
-		// Skip document fetching for AWS-managed policies: their contents are
-		// public and identical everywhere, and fetching costs two extra IAM
-		// calls per policy (thousands per account against IAM's low rate
-		// limits when syncing the full AWS-managed catalog).
-		if !awsManaged {
-			policyDocument, err := o.getPolicyDocument(ctx, iamClient, policyARN)
-			if err != nil {
-				return nil, nil, err
-			}
-			if policyDocument != "" {
-				profile["policy_document"] = policyDocument
-			}
+		policyDocument, err := o.getPolicyDocument(ctx, opts.Session, iamClient, policyARN)
+		if err != nil {
+			return nil, nil, err
+		}
+		if policyDocument != "" {
+			profile["policy_document"] = policyDocument
 		}
 
 		// AWS-managed policies have the same ARN in every account, so they get
