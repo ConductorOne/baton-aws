@@ -52,6 +52,10 @@
             "id": "account"
           },
           {
+            "@type": "type.googleapis.com/c1.connector.v2.ChildResourceType",
+            "resourceTypeId": "permission_set_assignment"
+          },
+          {
             "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
             "permissions": [
               {
