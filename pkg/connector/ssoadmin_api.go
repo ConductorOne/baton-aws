@@ -35,6 +35,11 @@ type ssoAdminAPI interface {
 		params *awsSsoAdmin.GetInlinePolicyForPermissionSetInput,
 		optFns ...func(*awsSsoAdmin.Options),
 	) (*awsSsoAdmin.GetInlinePolicyForPermissionSetOutput, error)
+	ListCustomerManagedPolicyReferencesInPermissionSet(
+		ctx context.Context,
+		params *awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput,
+		optFns ...func(*awsSsoAdmin.Options),
+	) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error)
 	ListAccountAssignments(ctx context.Context, params *awsSsoAdmin.ListAccountAssignmentsInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.ListAccountAssignmentsOutput, error)
 	CreateAccountAssignment(ctx context.Context, params *awsSsoAdmin.CreateAccountAssignmentInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.CreateAccountAssignmentOutput, error)
 	DeleteAccountAssignment(ctx context.Context, params *awsSsoAdmin.DeleteAccountAssignmentInput, optFns ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.DeleteAccountAssignmentOutput, error)
