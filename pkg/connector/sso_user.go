@@ -251,7 +251,13 @@ func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 	if err != nil {
 		var notFound *awsIdentityStoreTypes.ResourceNotFoundException
 		if errors.As(err, &notFound) {
-			return nil, nil
+			// The addressed Identity Center user is authoritatively absent:
+			// DeleteUser returned ResourceNotFoundException for this identity
+			// store + user id. Emit the typed already-absent marker so callers
+			// can treat this as success-equivalent for the desired provider
+			// state (SPEC-09a). A later baton-sdk bump can replace this with
+			// resource.ResourceDoesNotExistAnnotations() (baton-sdk#1033).
+			return annotations.New(&v2.ResourceDoesNotExist{}), nil
 		}
 		return nil, fmt.Errorf("baton-aws: delete identity center user failed: %w", err)
 	}
