@@ -19,19 +19,32 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type iamUserResourceType struct {
-	resourceType     *v2.ResourceType
-	iamClient        *iam.Client
-	awsClientFactory *AWSClientFactory
-	aws              *AWS
+	resourceType        *v2.ResourceType
+	iamClient           *iam.Client
+	awsClientFactory    *AWSClientFactory
+	aws                 *AWS
+	syncIAMPolicyGrants bool
 }
 
 var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
 
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
-	return o.resourceType
+	if o.syncIAMPolicyGrants {
+		return o.resourceType
+	}
+
+	rt, ok := proto.Clone(o.resourceType).(*v2.ResourceType)
+	if !ok {
+		return o.resourceType
+	}
+	annos := annotations.Annotations(rt.Annotations)
+	annos.Update(&v2.SkipEntitlementsAndGrants{})
+	rt.Annotations = annos
+	return rt
 }
 
 func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
@@ -173,12 +186,13 @@ func (o *iamUserResourceType) Grants(ctx context.Context, resource *v2.Resource,
 	return grants, nil, nil
 }
 
-func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS) *iamUserResourceType {
+func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS, syncIAMPolicyGrants bool) *iamUserResourceType {
 	return &iamUserResourceType{
-		resourceType:     resourceTypeIAMUser,
-		iamClient:        iamClient,
-		awsClientFactory: awsClientFactory,
-		aws:              aws,
+		resourceType:        resourceTypeIAMUser,
+		iamClient:           iamClient,
+		awsClientFactory:    awsClientFactory,
+		aws:                 aws,
+		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
 }
 

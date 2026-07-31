@@ -6,6 +6,8 @@ import (
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -75,4 +77,41 @@ func TestIamUserToResource_DedupesEmailFromUsername(t *testing.T) {
 	emails := trait.GetEmails()
 	require.Len(t, emails, 1, "email passed in must not be duplicated by getUserEmails")
 	assert.Equal(t, "dup@example.com", emails[0].GetAddress())
+}
+
+// ResourceType on iamUserResourceType is the gate for cross-type iam_policy "attached"
+// grants: when iam_policy IS being synced, it must return the resource type unchanged
+// (already carrying the static SkipEntitlements annotation). When iam_policy is NOT being
+// synced, it must attach SkipEntitlementsAndGrants so the SDK skips this resource type's
+// Grants() call entirely rather than emit grants referencing an unsynced resource type.
+func TestIamUserResourceType_SkipsEntitlementsWhenSyncingIAMPolicy(t *testing.T) {
+	o := &iamUserResourceType{
+		resourceType:        resourceTypeIAMUser,
+		syncIAMPolicyGrants: true,
+	}
+
+	rt := o.ResourceType(context.Background())
+	require.NotNil(t, rt)
+
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlements{}))
+	assert.False(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+}
+
+func TestIamUserResourceType_SkipsEntitlementsAndGrantsWhenNotSyncingIAMPolicy(t *testing.T) {
+	o := &iamUserResourceType{
+		resourceType:        resourceTypeIAMUser,
+		syncIAMPolicyGrants: false,
+	}
+
+	rt := o.ResourceType(context.Background())
+	require.NotNil(t, rt)
+
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+
+	// The package-level var must not have been mutated by the clone-and-annotate path;
+	// other builder instances across the test run share this same var.
+	sharedAnnos := annotations.Annotations(resourceTypeIAMUser.Annotations)
+	assert.False(t, sharedAnnos.Contains(&v2.SkipEntitlementsAndGrants{}))
 }

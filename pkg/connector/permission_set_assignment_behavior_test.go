@@ -374,7 +374,7 @@ func TestPermissionSetGrants_EmitsPolicyAttachments(t *testing.T) {
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	ps := permissionSetBuilder(sso, identityInstance)
+	ps := permissionSetBuilder(sso, identityInstance, true)
 
 	psResource, err := permissionSetResource(&awsSsoAdminTypes.PermissionSet{
 		PermissionSetArn: awsSdk.String(testPermissionSetArn),
@@ -403,6 +403,46 @@ func TestPermissionSetGrants_EmitsPolicyAttachments(t *testing.T) {
 		assert.Equal(t, resourceTypePermissionSet.Id, g.Principal.Id.ResourceType)
 		assert.Equal(t, testPermissionSetArn, g.Principal.Id.Resource)
 	}
+}
+
+// ResourceType on permissionSetResourceType is the gate for cross-type iam_policy "attached"
+// grants: when iam_policy IS being synced, it must return the resource type unchanged
+// (already carrying the static SkipEntitlements annotation). When iam_policy is NOT being
+// synced, it must attach SkipEntitlementsAndGrants so the SDK skips this resource type's
+// Grants() call entirely rather than emit grants referencing an unsynced resource type. This
+// is the mirror case of TestPermissionSetGrants_EmitsPolicyAttachments.
+func TestPermissionSetResourceType_SkipsEntitlementsWhenSyncingIAMPolicy(t *testing.T) {
+	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
+		InstanceArn:     awsSdk.String(behaviorInstanceArn),
+		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
+	}
+	ps := permissionSetBuilder(&fakeSSOAdmin{}, identityInstance, true)
+
+	rt := ps.ResourceType(context.Background())
+	require.NotNil(t, rt)
+
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlements{}))
+	assert.False(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+}
+
+func TestPermissionSetResourceType_SkipsEntitlementsAndGrantsWhenNotSyncingIAMPolicy(t *testing.T) {
+	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
+		InstanceArn:     awsSdk.String(behaviorInstanceArn),
+		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
+	}
+	ps := permissionSetBuilder(&fakeSSOAdmin{}, identityInstance, false)
+
+	rt := ps.ResourceType(context.Background())
+	require.NotNil(t, rt)
+
+	annos := annotations.Annotations(rt.Annotations)
+	assert.True(t, annos.Contains(&v2.SkipEntitlementsAndGrants{}))
+
+	// The package-level var must not have been mutated by the clone-and-annotate path;
+	// other builder instances across the test run share this same var.
+	sharedAnnos := annotations.Annotations(resourceTypePermissionSet.Annotations)
+	assert.False(t, sharedAnnos.Contains(&v2.SkipEntitlementsAndGrants{}))
 }
 
 // List on inline_policy with a permission_set parent fetches the Identity Center inline

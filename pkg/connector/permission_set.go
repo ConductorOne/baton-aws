@@ -9,11 +9,13 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	grantSdk "github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 )
 
 // permissionSetRoleID is the SINGLE place an Identity Center permission-set role id is
@@ -27,13 +29,25 @@ func permissionSetRoleID(permissionSetArn string) string {
 }
 
 type permissionSetResourceType struct {
-	resourceType     *v2.ResourceType
-	ssoAdminClient   ssoAdminAPI
-	identityInstance *awsSsoAdminTypes.InstanceMetadata
+	resourceType        *v2.ResourceType
+	ssoAdminClient      ssoAdminAPI
+	identityInstance    *awsSsoAdminTypes.InstanceMetadata
+	syncIAMPolicyGrants bool
 }
 
 func (o *permissionSetResourceType) ResourceType(_ context.Context) *v2.ResourceType {
-	return o.resourceType
+	if o.syncIAMPolicyGrants {
+		return o.resourceType
+	}
+
+	rt, ok := proto.Clone(o.resourceType).(*v2.ResourceType)
+	if !ok {
+		return o.resourceType
+	}
+	annos := annotations.Annotations(rt.Annotations)
+	annos.Update(&v2.SkipEntitlementsAndGrants{})
+	rt.Annotations = annos
+	return rt
 }
 
 func (o *permissionSetResourceType) List(ctx context.Context, _ *v2.ResourceId, opts resourceSdk.SyncOpAttrs) ([]*v2.Resource, *resourceSdk.SyncOpResults, error) {
@@ -170,10 +184,11 @@ func (o *permissionSetResourceType) Grants(ctx context.Context, resource *v2.Res
 	return rv, nil, nil
 }
 
-func permissionSetBuilder(ssoAdminClient ssoAdminAPI, identityInstance *awsSsoAdminTypes.InstanceMetadata) *permissionSetResourceType {
+func permissionSetBuilder(ssoAdminClient ssoAdminAPI, identityInstance *awsSsoAdminTypes.InstanceMetadata, syncIAMPolicyGrants bool) *permissionSetResourceType {
 	return &permissionSetResourceType{
-		resourceType:     resourceTypePermissionSet,
-		ssoAdminClient:   ssoAdminClient,
-		identityInstance: identityInstance,
+		resourceType:        resourceTypePermissionSet,
+		ssoAdminClient:      ssoAdminClient,
+		identityInstance:    identityInstance,
+		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
 }

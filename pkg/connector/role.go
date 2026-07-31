@@ -27,9 +27,10 @@ const (
 )
 
 type roleResourceType struct {
-	resourceType     *v2.ResourceType
-	iamClient        *iam.Client
-	awsClientFactory *AWSClientFactory
+	resourceType        *v2.ResourceType
+	iamClient           *iam.Client
+	awsClientFactory    *AWSClientFactory
+	syncIAMPolicyGrants bool
 }
 
 func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -228,35 +229,42 @@ func (o *roleResourceType) Grants(
 		}
 	}
 
-	policyGrants, nextMarker, err := listAttachedRolePolicyGrants(ctx, iamClient, roleName, resource.Id, bag.PageToken())
-	if err != nil {
-		if isAccessDeniedError(err) {
-			l.Warn("baton-aws: access denied listing attached role policies, skipping managed policy grants for this role",
-				zap.String("role_name", roleName),
-				zap.Error(err),
-			)
-		} else {
-			return nil, nil, err
-		}
-	} else {
-		grants = append(grants, policyGrants...)
-		if nextMarker != "" {
-			token, err := bag.NextToken(nextMarker)
-			if err != nil {
+	// The attached-policy lookup emits cross-type iam_policy "attached" grants (a sync
+	// optimization on top of AWS API responses already fetched here). If iam_policy isn't
+	// being synced, skip this portion; the same-type trust-policy-principal grants above
+	// must still be emitted regardless.
+	if o.syncIAMPolicyGrants {
+		policyGrants, nextMarker, err := listAttachedRolePolicyGrants(ctx, iamClient, roleName, resource.Id, bag.PageToken())
+		if err != nil {
+			if isAccessDeniedError(err) {
+				l.Warn("baton-aws: access denied listing attached role policies, skipping managed policy grants for this role",
+					zap.String("role_name", roleName),
+					zap.Error(err),
+				)
+			} else {
 				return nil, nil, err
 			}
-			return grants, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
+		} else {
+			grants = append(grants, policyGrants...)
+			if nextMarker != "" {
+				token, err := bag.NextToken(nextMarker)
+				if err != nil {
+					return nil, nil, err
+				}
+				return grants, &resourceSdk.SyncOpResults{NextPageToken: token}, nil
+			}
 		}
 	}
 
 	return grants, nil, nil
 }
 
-func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory) *roleResourceType {
+func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, syncIAMPolicyGrants bool) *roleResourceType {
 	return &roleResourceType{
-		resourceType:     resourceTypeRole,
-		iamClient:        iamClient,
-		awsClientFactory: awsClientFactory,
+		resourceType:        resourceTypeRole,
+		iamClient:           iamClient,
+		awsClientFactory:    awsClientFactory,
+		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
 }
 
