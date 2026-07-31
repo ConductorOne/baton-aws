@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -58,7 +59,27 @@ func fakeCredentials(expiresIn time.Duration) *stsTypes.Credentials {
 	}
 }
 
-func newTestFactory(stsClient stscreds.AssumeRoleAPIClient) *AWSClientFactory {
+// isolateAWSEnv detaches the process's ambient AWS configuration for the duration of a
+// test. getConfig goes through awsConfig.LoadDefaultConfig, which reads the environment
+// and the shared config files, so without this a developer machine with AWS_PROFILE set
+// fails these tests with "failed to get shared config profile" instead of exercising the
+// code under test. Only profile/credential-file resolution is neutralized — tests that
+// assert on ambient settings set their own AWS_* vars on top of this.
+func isolateAWSEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_DEFAULT_PROFILE", "")
+	t.Setenv("AWS_CONFIG_FILE", os.DevNull)
+	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.DevNull)
+	// Credentials are always supplied explicitly here, so a stray IMDS probe would only
+	// add latency and a dependency on the host.
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+}
+
+func newTestFactory(t *testing.T, stsClient stscreds.AssumeRoleAPIClient) *AWSClientFactory {
+	t.Helper()
+	isolateAWSEnv(t)
+
 	return &AWSClientFactory{
 		mutex:        sync.Mutex{},
 		config:       Config{GlobalRegion: "us-east-1", IamAssumeRoleName: "BatonRole"},
@@ -78,7 +99,7 @@ func TestGetConfigCredentialsRefreshOnExpiry(t *testing.T) {
 	ctx := context.Background()
 	// Already expired on arrival, so the second Retrieve must trigger a fresh AssumeRole.
 	fake := &fakeSTSClient{expiresIn: -time.Minute}
-	f := newTestFactory(fake)
+	f := newTestFactory(t, fake)
 
 	cfg, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
@@ -94,7 +115,7 @@ func TestGetConfigCredentialsRefreshOnExpiry(t *testing.T) {
 func TestGetConfigCredentialsCachedWhileValid(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeSTSClient{expiresIn: time.Hour}
-	f := newTestFactory(fake)
+	f := newTestFactory(t, fake)
 
 	cfg, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
@@ -104,6 +125,26 @@ func TestGetConfigCredentialsCachedWhileValid(t *testing.T) {
 		require.NoError(t, err)
 	}
 	require.Equal(t, 1, fake.callCount(), "valid credentials should be served from cache")
+}
+
+// TestGetConfigRefreshesBeforeExpiry pins the refresh window. Credentials whose remaining
+// life falls inside crossAccountCredentialRefreshWindow must be re-assumed rather than
+// served, because a request signed with them can reach AWS after they expire and come back
+// 403 ExpiredToken — which is absent from the SDK's retryable error codes.
+func TestGetConfigRefreshesBeforeExpiry(t *testing.T) {
+	ctx := context.Background()
+	// Still valid, but well inside the refresh window.
+	fake := &fakeSTSClient{expiresIn: crossAccountCredentialRefreshWindow / 2}
+	f := newTestFactory(t, fake)
+
+	cfg, err := f.getConfig(ctx, "123456789012")
+	require.NoError(t, err)
+
+	before := fake.callCount()
+	_, err = cfg.Credentials.Retrieve(ctx)
+	require.NoError(t, err)
+	require.Greater(t, fake.callCount(), before,
+		"credentials expiring inside the refresh window must be re-assumed, not signed with")
 }
 
 // TestGetConfigProbesAssumability covers what accountIAMResourceType.parseAssumeRole
@@ -117,7 +158,7 @@ func TestGetConfigProbesAssumability(t *testing.T) {
 		errAfter:  1,
 		err:       stsAccessDenied(),
 	}
-	f := newTestFactory(fake)
+	f := newTestFactory(t, fake)
 
 	_, err := f.getConfig(ctx, "123456789012")
 	require.Error(t, err, "getConfig must report a role it cannot assume")
@@ -128,7 +169,7 @@ func TestGetConfigProbesAssumability(t *testing.T) {
 func TestGetConfigUsesStableSessionName(t *testing.T) {
 	ctx := context.Background()
 	rec := &sessionNameRecorder{expiresIn: time.Hour}
-	f := newTestFactory(rec)
+	f := newTestFactory(t, rec)
 
 	_, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
@@ -147,7 +188,7 @@ func TestGetConfigResolvesAmbientAWSSettings(t *testing.T) {
 	t.Setenv("AWS_SDK_UA_APP_ID", "baton-aws-probe")
 
 	ctx := context.Background()
-	f := newTestFactory(&fakeSTSClient{expiresIn: time.Hour})
+	f := newTestFactory(t, &fakeSTSClient{expiresIn: time.Hour})
 
 	cfg, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
@@ -169,7 +210,7 @@ func TestGetConfigResolvesAmbientAWSSettings(t *testing.T) {
 func TestGetConfigPreservesRefreshingCredentialsThroughLoadDefaultConfig(t *testing.T) {
 	ctx := context.Background()
 	fake := &fakeSTSClient{expiresIn: -time.Minute}
-	f := newTestFactory(fake)
+	f := newTestFactory(t, fake)
 
 	cfg, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
@@ -188,22 +229,42 @@ func TestGetConfigPreservesRefreshingCredentialsThroughLoadDefaultConfig(t *test
 func TestGetConfigRoleARN(t *testing.T) {
 	ctx := context.Background()
 	rec := &sessionNameRecorder{expiresIn: time.Hour}
-	f := newTestFactory(rec)
+	f := newTestFactory(t, rec)
 
 	_, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
 	require.Equal(t, "arn:aws:iam::123456789012:role/BatonRole", rec.roleARN)
 }
 
+// TestGetConfigRequestsOneHourSessions pins the session length actually sent to STS.
+// stscreds does not inherit the STS API's 1-hour default: AssumeRoleProvider.Retrieve
+// back-fills an unset Duration with stscreds.DefaultDuration (15 minutes) and always sends
+// DurationSeconds. Dropping aro.Duration would therefore quarter the session length and
+// quadruple AssumeRole volume across every child account, silently and with no test
+// failure — hence this assertion on the wire value rather than on the constant.
+func TestGetConfigRequestsOneHourSessions(t *testing.T) {
+	ctx := context.Background()
+	rec := &sessionNameRecorder{expiresIn: time.Hour}
+	f := newTestFactory(t, rec)
+
+	_, err := f.getConfig(ctx, "123456789012")
+	require.NoError(t, err)
+	require.Equal(t, int32(3600), awsSdk.ToInt32(rec.durationSeconds),
+		"cross-account sessions must request 3600s: the maximum role chaining permits, "+
+			"and what the pre-refresh code received from the STS API default")
+}
+
 type sessionNameRecorder struct {
-	expiresIn   time.Duration
-	sessionName string
-	roleARN     string
+	expiresIn       time.Duration
+	sessionName     string
+	roleARN         string
+	durationSeconds *int32
 }
 
 func (r *sessionNameRecorder) AssumeRole(ctx context.Context, in *sts.AssumeRoleInput, _ ...func(*sts.Options)) (*sts.AssumeRoleOutput, error) {
 	r.sessionName = awsSdk.ToString(in.RoleSessionName)
 	r.roleARN = awsSdk.ToString(in.RoleArn)
+	r.durationSeconds = in.DurationSeconds
 	return &sts.AssumeRoleOutput{Credentials: fakeCredentials(r.expiresIn)}, nil
 }
 

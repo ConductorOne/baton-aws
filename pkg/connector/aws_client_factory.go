@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
@@ -18,6 +19,14 @@ import (
 // crossAccountRoleSessionName identifies baton's cross-account sessions in the
 // target account's CloudTrail.
 const crossAccountRoleSessionName = "BatonCrossAccountSession"
+
+// crossAccountSessionDuration is explicit because stscreds defaults to 15 minutes rather
+// than inheriting the STS API's 1 hour; 1h is also the maximum role chaining permits.
+const crossAccountSessionDuration = time.Hour
+
+// crossAccountCredentialRefreshWindow re-assumes this far before real expiry, so no request
+// is signed with credentials that expire in flight (ExpiredToken is not retried).
+const crossAccountCredentialRefreshWindow = 5 * time.Minute
 
 type AWSClientFactory struct {
 	mutex sync.Mutex
@@ -53,14 +62,13 @@ func NewAWSClientFactory(config Config, aws *AWS, baseClient *http.Client) *AWSC
 // assumed-role credentials.
 //
 // The credentials MUST be refreshing rather than a one-shot AssumeRole wrapped in a
-// static provider: assumed-role sessions are capped at 1 hour (role chaining caps there,
-// and an AssumeRole call with no DurationSeconds defaults there anyway), while clients
-// built here are cached for the lifetime of the process and created eagerly at
-// account-listing time. Any sync where more than an hour elapses between creation and use
-// died mid-sync with `ExpiredToken`, and the cached client then failed every subsequent
-// sync until the process restarted. aws.NewCredentialsCache re-assumes on expiry, which
-// makes caching the client safe. This mirrors the connector's own credentials
-// (see (*AWS).getCallingConfig).
+// static provider: assumed-role sessions here last at most 1 hour (see
+// crossAccountSessionDuration), while clients built here are cached for the lifetime of
+// the process and created eagerly at account-listing time. Any sync where more than an
+// hour elapsed between creation and use died mid-sync with `ExpiredToken`, and the cached
+// client then failed every subsequent sync until the process restarted.
+// aws.NewCredentialsCache re-assumes on expiry, which makes caching the client safe. This
+// mirrors the connector's own credentials (see (*AWS).getCallingConfig).
 //
 // LoadDefaultConfig is retained deliberately: it is what lets child-account clients pick
 // up ambient AWS settings (retry mode/attempts, FIPS and dualstack via ConfigSources,
@@ -78,7 +86,11 @@ func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (aws
 	creds := awsSdk.NewCredentialsCache(
 		stscreds.NewAssumeRoleProvider(stsClient, roleArn, func(aro *stscreds.AssumeRoleOptions) {
 			aro.RoleSessionName = crossAccountRoleSessionName
+			aro.Duration = crossAccountSessionDuration
 		}),
+		func(o *awsSdk.CredentialsCacheOptions) {
+			o.ExpiryWindow = crossAccountCredentialRefreshWindow
+		},
 	)
 
 	// stscreds providers are lazy — constructing one issues no API call. Retrieve once so
