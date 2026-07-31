@@ -13,6 +13,7 @@ import (
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/conductorone/baton-aws/test"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
+	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
@@ -27,6 +28,7 @@ type fakeSSOAdmin struct {
 	describePermissionSetFn                  func(*awsSsoAdmin.DescribePermissionSetInput) (*awsSsoAdmin.DescribePermissionSetOutput, error)
 	listManagedPoliciesInPermissionSetFn     func(*awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error)
 	getInlinePolicyForPermissionSetFn        func(*awsSsoAdmin.GetInlinePolicyForPermissionSetInput) (*awsSsoAdmin.GetInlinePolicyForPermissionSetOutput, error)
+	listCustomerManagedPolicyReferencesFn    func(*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error)
 	listAccountAssignmentsFn                 func(*awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error)
 	createAccountAssignmentFn                func(*awsSsoAdmin.CreateAccountAssignmentInput) (*awsSsoAdmin.CreateAccountAssignmentOutput, error)
 	deleteAccountAssignmentFn                func(*awsSsoAdmin.DeleteAccountAssignmentInput) (*awsSsoAdmin.DeleteAccountAssignmentOutput, error)
@@ -79,6 +81,17 @@ func (f *fakeSSOAdmin) GetInlinePolicyForPermissionSet(
 		return f.getInlinePolicyForPermissionSetFn(in)
 	}
 	return &awsSsoAdmin.GetInlinePolicyForPermissionSetOutput{}, nil
+}
+
+func (f *fakeSSOAdmin) ListCustomerManagedPolicyReferencesInPermissionSet(
+	_ context.Context,
+	in *awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput,
+	_ ...func(*awsSsoAdmin.Options),
+) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
+	if f.listCustomerManagedPolicyReferencesFn != nil {
+		return f.listCustomerManagedPolicyReferencesFn(in)
+	}
+	return &awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput{}, nil
 }
 
 func (f *fakeSSOAdmin) ListAccountAssignments(_ context.Context, in *awsSsoAdmin.ListAccountAssignmentsInput, _ ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
@@ -443,6 +456,151 @@ func TestInlinePolicyList_PermissionSetParent(t *testing.T) {
 	resources, _, err = empty.List(ctx, psParent, resourceSdk.SyncOpAttrs{})
 	require.NoError(t, err)
 	assert.Empty(t, resources)
+}
+
+// Grants on a binding runs two phases: assignment grants first, then one final page of
+// policy-composition grants — the policy's "attached" entitlement granted to the binding,
+// annotated GrantExpandable through the binding's "assigned" entitlement so assigned
+// users/groups inherit the policy. Customer-managed references resolve to the binding
+// account's local policy ARN (path-aware); AWS-managed policies keep their global ARN.
+func TestPermissionSetAssignmentGrants_PolicyCompositionPhase(t *testing.T) {
+	ctx := context.Background()
+	const managedArn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+
+	sso := &fakeSSOAdmin{
+		listAccountAssignmentsFn: func(in *awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
+			return &awsSsoAdmin.ListAccountAssignmentsOutput{AccountAssignments: []awsSsoAdminTypes.AccountAssignment{{
+				AccountId:        in.AccountId,
+				PermissionSetArn: in.PermissionSetArn,
+				PrincipalType:    awsSsoAdminTypes.PrincipalTypeUser,
+				PrincipalId:      awsSdk.String(behaviorUserNativeID),
+			}}}, nil
+		},
+		listManagedPoliciesInPermissionSetFn: func(
+			in *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+			assert.Equal(t, testPermissionSetArn, awsSdk.ToString(in.PermissionSetArn))
+			return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{
+				AttachedManagedPolicies: []awsSsoAdminTypes.AttachedManagedPolicy{
+					{Arn: awsSdk.String(managedArn), Name: awsSdk.String("AmazonS3ReadOnlyAccess")},
+				},
+			}, nil
+		},
+		listCustomerManagedPolicyReferencesFn: func(
+			in *awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
+			assert.Equal(t, testPermissionSetArn, awsSdk.ToString(in.PermissionSetArn))
+			return &awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput{
+				CustomerManagedPolicyReferences: []awsSsoAdminTypes.CustomerManagedPolicyReference{
+					{Name: awsSdk.String("RootPolicy")}, // nil path defaults to "/"
+					{Name: awsSdk.String("DivPolicy"), Path: awsSdk.String("/division_abc/")},
+				},
+			}, nil
+		},
+	}
+	psa := permissionSetAssignmentBuilder(newBehaviorAccount(sso))
+	binding, _ := behaviorBinding(t)
+
+	// Phase 1: assignment grants, with a continuation token to the policies phase.
+	grants, res, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	assert.Equal(t, resourceTypeSSOUser.Id, grants[0].Principal.Id.ResourceType)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.NextPageToken)
+
+	// Phase 2: policy-composition grants, terminal page.
+	polGrants, res2, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: res.NextPageToken}})
+	require.NoError(t, err)
+	require.True(t, res2 == nil || res2.NextPageToken == "")
+	require.Len(t, polGrants, 3)
+
+	wantARNs := []string{
+		managedArn,
+		"arn:aws:iam::" + testAccountID + ":policy/RootPolicy",
+		"arn:aws:iam::" + testAccountID + ":policy/division_abc/DivPolicy",
+	}
+	wantExpandableEnt := resourceTypePermissionSetAssignment.Id + ":" + permissionSetAssignmentObjectID(testPermissionSetArn, testAccountID) + ":assigned"
+	for i, g := range polGrants {
+		assert.Equal(t, resourceTypeIAMPolicy.Id, g.Entitlement.Resource.Id.ResourceType)
+		assert.Equal(t, wantARNs[i], g.Entitlement.Resource.Id.Resource)
+		assert.Equal(t, resourceTypeIAMPolicy.Id+":"+wantARNs[i]+":"+iamPolicyAttachedEntitlement, g.Entitlement.Id)
+		// Principal is the binding itself; expansion flows through its "assigned" entitlement.
+		assert.Equal(t, resourceTypePermissionSetAssignment.Id, g.Principal.Id.ResourceType)
+		assert.Equal(t, binding.Id.Resource, g.Principal.Id.Resource)
+
+		annos := annotations.Annotations(g.Annotations)
+		expandable := &v2.GrantExpandable{}
+		ok, err := annos.Pick(expandable)
+		require.NoError(t, err)
+		require.True(t, ok, "policy-composition grant must carry GrantExpandable")
+		require.Equal(t, []string{wantExpandableEnt}, expandable.EntitlementIds)
+	}
+}
+
+// AccessDenied / ResourceNotFound on the policy-composition list APIs must degrade
+// gracefully (warn + skip), matching permission_set.Grants — so upgrades that add
+// sso:ListCustomerManagedPolicyReferencesInPermissionSet before IAM policies are
+// updated don't hard-fail the binding grants sync.
+func TestPermissionSetAssignmentGrants_PolicyComposition_AccessDeniedSkips(t *testing.T) {
+	ctx := context.Background()
+	sso := &fakeSSOAdmin{
+		listAccountAssignmentsFn: func(in *awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
+			return &awsSsoAdmin.ListAccountAssignmentsOutput{AccountAssignments: []awsSsoAdminTypes.AccountAssignment{{
+				AccountId:        in.AccountId,
+				PermissionSetArn: in.PermissionSetArn,
+				PrincipalType:    awsSsoAdminTypes.PrincipalTypeUser,
+				PrincipalId:      awsSdk.String(behaviorUserNativeID),
+			}}}, nil
+		},
+		listManagedPoliciesInPermissionSetFn: func(
+			_ *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+			return nil, &awsSsoAdminTypes.AccessDeniedException{Message: awsSdk.String("not authorized")}
+		},
+		listCustomerManagedPolicyReferencesFn: func(
+			_ *awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
+			return nil, &awsSsoAdminTypes.AccessDeniedException{Message: awsSdk.String("not authorized")}
+		},
+	}
+	psa := permissionSetAssignmentBuilder(newBehaviorAccount(sso))
+	binding, _ := behaviorBinding(t)
+
+	grants, res, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, grants, 1)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.NextPageToken)
+
+	polGrants, res2, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: res.NextPageToken}})
+	require.NoError(t, err)
+	assert.Empty(t, polGrants)
+	require.True(t, res2 == nil || res2.NextPageToken == "")
+}
+
+func TestPermissionSetAssignmentGrants_PolicyComposition_NotFoundSkips(t *testing.T) {
+	ctx := context.Background()
+	sso := &fakeSSOAdmin{
+		listAccountAssignmentsFn: func(in *awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
+			return &awsSsoAdmin.ListAccountAssignmentsOutput{}, nil
+		},
+		listManagedPoliciesInPermissionSetFn: func(
+			_ *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+			return nil, &awsSsoAdminTypes.ResourceNotFoundException{Message: awsSdk.String("gone")}
+		},
+		listCustomerManagedPolicyReferencesFn: func(
+			_ *awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
+			return nil, &awsSsoAdminTypes.ResourceNotFoundException{Message: awsSdk.String("gone")}
+		},
+	}
+	psa := permissionSetAssignmentBuilder(newBehaviorAccount(sso))
+	binding, _ := behaviorBinding(t)
+
+	_, res, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.NextPageToken)
+
+	polGrants, _, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: res.NextPageToken}})
+	require.NoError(t, err)
+	assert.Empty(t, polGrants)
 }
 
 // Grant resolves (account, permission set) from the trait and calls CreateAccountAssignment

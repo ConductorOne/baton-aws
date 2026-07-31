@@ -810,6 +810,12 @@
                 "permission": "sso:ListAccountAssignments"
               },
               {
+                "permission": "sso:ListManagedPoliciesInPermissionSet"
+              },
+              {
+                "permission": "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
+              },
+              {
                 "permission": "sso:CreateAccountAssignment"
               },
               {
@@ -845,6 +851,12 @@
           },
           {
             "permission": "sso:ListAccountAssignments"
+          },
+          {
+            "permission": "sso:ListManagedPoliciesInPermissionSet"
+          },
+          {
+            "permission": "sso:ListCustomerManagedPolicyReferencesInPermissionSet"
           },
           {
             "permission": "sso:CreateAccountAssignment"

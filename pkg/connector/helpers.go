@@ -430,7 +430,15 @@ func wrapAWSError(err error) error {
 
 func isAccessDeniedError(err error) bool {
 	var apiErr smithy.APIError
-	return errors.As(err, &apiErr) && apiErr.ErrorCode() == "AccessDenied"
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.ErrorCode() {
+	case "AccessDenied", "AccessDeniedException":
+		return true
+	default:
+		return false
+	}
 }
 
 type ssoUserCreateProfile struct {
