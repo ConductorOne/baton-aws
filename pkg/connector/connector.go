@@ -611,18 +611,23 @@ func GetAwsConfigOptions(httpClient *http.Client, config Config) []func(*awsConf
 	return opts
 }
 
-func GetAwsConfigOptionsForAssumeRole(output *sts.AssumeRoleOutput, httpClient *http.Client, config Config) []func(*awsConfig.LoadOptions) error {
+// GetAwsConfigOptionsForCredentials builds load options for a config backed by an
+// explicit credentials provider.
+//
+// These are passed to awsConfig.LoadDefaultConfig rather than used to hand-build an
+// awsSdk.Config so that cross-account clients keep resolving ambient AWS settings —
+// AWS_RETRY_MODE, AWS_MAX_ATTEMPTS, AWS_SDK_UA_APP_ID, request-compression settings,
+// AccountIDEndpointMode, and (via ConfigSources) FIPS / dualstack / endpoint resolution.
+// Only credentials, region, HTTP client, and defaults mode are pinned here.
+//
+// The provider is expected to be an *awsSdk.CredentialsCache; LoadDefaultConfig passes
+// one through untouched instead of re-wrapping it, preserving its refresh behavior.
+func GetAwsConfigOptionsForCredentials(creds awsSdk.CredentialsProvider, httpClient *http.Client, config Config) []func(*awsConfig.LoadOptions) error {
 	opts := []func(*awsConfig.LoadOptions) error{
 		awsConfig.WithHTTPClient(httpClient),
 		awsConfig.WithRegion(config.GlobalRegion),
 		awsConfig.WithDefaultsMode(awsSdk.DefaultsModeInRegion),
-		awsConfig.WithCredentialsProvider(
-			credentials.NewStaticCredentialsProvider(
-				*output.Credentials.AccessKeyId,
-				*output.Credentials.SecretAccessKey,
-				*output.Credentials.SessionToken,
-			),
-		),
+		awsConfig.WithCredentialsProvider(creds),
 	}
 
 	return opts
