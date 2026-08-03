@@ -203,17 +203,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			}),
 		}
 
-		// Sparse ACLs hierarchy (Phase 2): re-parent the account under its Root/OU so c1's
-		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
-		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
-		//
-		// Gated on willSyncOrganization: organization and organizational_unit are OptInRequired,
-		// so a sync run may never emit them. Pointing an account's parent at a resource type this
-		// run isn't syncing produces a dangling "MISSING RESOURCE" parent that c1 silently drops
-		// (see permissionSetRoleID's comment on dangling references). The OU crawl is itself
-		// seeded exclusively from Root (see organization.go), so an OU can never actually be
-		// synced when organization is not - skip the ListParents call entirely in that case
-		// rather than resolving a parent that can never be attached.
+		// Gated on hierarchySync.Organization: organization and organizational_unit are OptInRequired,
 		if o.hierarchySync.Organization {
 			parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
 			if err != nil {
@@ -245,7 +235,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		rv = append(rv, userResource)
 	}
 	if orgReadDenied {
-		l.Warn("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
+		l.Debug("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
 			"Add organizations:ListParents to enable by-inheritance review across the org tree.")
 	}
 

@@ -293,6 +293,36 @@ func TestAccountList_SkipsReparentWhenHierarchyNotSynced(t *testing.T) {
 	assert.Equal(t, 0, orgs.listParentsCalls, "must not call ListParents when neither hierarchy type is synced")
 }
 
+// account.List must not call ListParents when organization is opted out even if
+// organizational_unit is opted in — OU sync is itself seeded from Root (see organization.go),
+// so OU can never actually be synced when organization is not, and resolving the parent would
+// be wasted work. This also means a ListParents access-denied error can never surface the
+// "missing organizations:ListParents permission" WARN in this specific combo; the account still
+// ends up flat either way, so this is a lost diagnostic, not a correctness bug (see the comment
+// on the ListParents gate in account.go).
+func TestAccountList_SkipsReparentWhenOnlyOrganizationalUnitSynced(t *testing.T) {
+	ctx := context.Background()
+	orgs := &fakeOrgs{
+		listAccountsFn: func(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+			return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{
+				Id:     awsSdk.String(testAccountID),
+				Name:   awsSdk.String("prod"),
+				Status: awsOrgsTypes.AccountStatusActive,
+			}}}, nil
+		},
+		listParentsFn: func(_ *awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error) {
+			return nil, &awsOrgsTypes.AccessDeniedException{Message: awsSdk.String("no perms")}
+		},
+	}
+	acct := newOrgAccountWithSyncFilter(orgs, false, true)
+
+	resources, _, err := acct.List(ctx, nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].ParentResourceId, "account must stay flat when organization isn't synced")
+	assert.Equal(t, 0, orgs.listParentsCalls, "must not call ListParents when organization is opted out, regardless of organizational_unit")
+}
+
 // account.List resolves the parent but only attaches it when the resolved parent's specific
 // type (organization vs organizational_unit) is one this run will actually sync — partial
 // opt-in must not produce a dangling parent either.
