@@ -121,6 +121,16 @@ type entitlementsPageState struct {
 	PermissionSetIndex int `json:"psi"`
 }
 
+// HierarchySyncFlags reports whether a sync run will actually emit the (OptInRequired)
+// organization/organizational_unit resource types. Grouped into a named struct rather than
+// two positional bools so a call site can't silently swap Organization and
+// OrganizationalUnit - the compiler catches a missing/misnamed field, and a transposition
+// requires actually swapping the field names, not just their order.
+type HierarchySyncFlags struct {
+	Organization       bool
+	OrganizationalUnit bool
+}
+
 type accountResourceType struct {
 	resourceType     *v2.ResourceType
 	orgClient        orgsAPI
@@ -129,6 +139,12 @@ type accountResourceType struct {
 	identityInstance *awsSsoAdminTypes.InstanceMetadata
 	identityClient   client.IdentityStoreClient
 	region           string
+
+	// hierarchySync reports whether this sync run will actually sync the corresponding
+	// (OptInRequired) hierarchy resource type. Account re-parenting (see List) is gated on
+	// this so accounts never point at a Root/OU resource that this run never syncs, which
+	// would otherwise leave a dangling "MISSING RESOURCE" parent.
+	hierarchySync HierarchySyncFlags
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -187,18 +203,22 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			}),
 		}
 
-		// Sparse ACLs hierarchy (Phase 2): re-parent the account under its Root/OU so c1's
-		// by-inheritance review can walk Account → OU → Root with the role pinned. Fail-soft:
-		// without organizations:ListParents the account stays flat (parentless) and we WARN once.
-		parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
-		if err != nil {
-			return nil, nil, err
-		}
-		if accessDenied {
-			orgReadDenied = true
-		}
-		if parentID != nil {
-			resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
+		// Gated on hierarchySync.Organization: organization and organizational_unit are OptInRequired,
+		if o.hierarchySync.Organization {
+			parentID, accessDenied, err := accountParentResourceID(ctx, o.orgClient, accountId)
+			if err != nil {
+				return nil, nil, err
+			}
+			if accessDenied {
+				orgReadDenied = true
+			}
+			if parentID != nil {
+				willSyncParentType := parentID.ResourceType == resourceTypeOrganization.Id ||
+					(parentID.ResourceType == resourceTypeOrganizationalUnit.Id && o.hierarchySync.OrganizationalUnit)
+				if willSyncParentType {
+					resourceOpts = append(resourceOpts, resourceSdk.WithParentResourceID(parentID))
+				}
+			}
 		}
 		resourceOpts = append(resourceOpts, resourceSdk.WithResourceProfile(profile))
 
@@ -215,7 +235,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		rv = append(rv, userResource)
 	}
 	if orgReadDenied {
-		l.Warn("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
+		l.Debug("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
 			"Add organizations:ListParents to enable by-inheritance review across the org tree.")
 	}
 
@@ -952,6 +972,7 @@ func accountBuilder(
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
 	region string,
 	identityClient client.IdentityStoreClient,
+	hierarchySync HierarchySyncFlags,
 ) *accountResourceType {
 	return &accountResourceType{
 		resourceType:     resourceTypeAccount,
@@ -961,6 +982,7 @@ func accountBuilder(
 		identityClient:   identityClient,
 		identityInstance: identityInstance,
 		region:           region,
+		hierarchySync:    hierarchySync,
 	}
 }
 

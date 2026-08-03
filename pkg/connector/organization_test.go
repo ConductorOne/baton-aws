@@ -46,7 +46,7 @@ func TestOrganizationList_EmitsRoots(t *testing.T) {
 // organizationResource must attach a ChildResourceType annotation to the emitted resource
 // instance — this is what the SDK's syncer actually reads to schedule the organizational_unit
 // child crawl (a ResourceType-level annotation alone does not drive dispatch). Regression test
-// for CXP-756, where this was missing and the OU tier silently never synced.
+// for the case where this was missing and the OU tier silently never synced.
 func TestOrganizationResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
 	r, err := organizationResource(awsOrgsTypes.Root{Id: awsSdk.String(testRootID)})
 	require.NoError(t, err)
@@ -62,7 +62,7 @@ func TestOrganizationResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
 }
 
 // organizationalUnitResource must attach a ChildResourceType annotation pointing at itself so
-// the SDK recurses into nested OUs. Regression test for CXP-756.
+// the SDK recurses into nested OUs. Regression test for the same issue as above.
 func TestOrganizationalUnitResource_EmitsChildResourceTypeAnnotation(t *testing.T) {
 	parent := &v2.ResourceId{ResourceType: resourceTypeOrganization.Id, Resource: testRootID}
 	r, err := organizationalUnitResource(awsOrgsTypes.OrganizationalUnit{Id: awsSdk.String(testOUID)}, parent)
@@ -264,12 +264,110 @@ func TestAccountList_FlatWhenOrgReadDenied(t *testing.T) {
 	assert.Nil(t, resources[0].ParentResourceId, "account stays flat when re-parenting is denied")
 }
 
+// account.List must not call ListParents at all, and must leave the account flat, when neither
+// hierarchy type is opted into this sync run — otherwise the account gets a parent pointing at
+// a resource type that will never be synced ("MISSING RESOURCE").
+func TestAccountList_SkipsReparentWhenHierarchyNotSynced(t *testing.T) {
+	ctx := context.Background()
+	orgs := &fakeOrgs{
+		listAccountsFn: func(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+			return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{
+				Id:     awsSdk.String(testAccountID),
+				Name:   awsSdk.String("prod"),
+				Status: awsOrgsTypes.AccountStatusActive,
+			}}}, nil
+		},
+		listParentsFn: func(_ *awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error) {
+			return &awsOrgs.ListParentsOutput{Parents: []awsOrgsTypes.Parent{{
+				Id:   awsSdk.String(testOUID),
+				Type: awsOrgsTypes.ParentTypeOrganizationalUnit,
+			}}}, nil
+		},
+	}
+	acct := newOrgAccountWithSyncFilter(orgs, false, false)
+
+	resources, _, err := acct.List(ctx, nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].ParentResourceId, "account must stay flat when hierarchy isn't synced")
+	assert.Equal(t, 0, orgs.listParentsCalls, "must not call ListParents when neither hierarchy type is synced")
+}
+
+// account.List must not call ListParents when organization is opted out even if
+// organizational_unit is opted in — OU sync is itself seeded from Root (see organization.go),
+// so OU can never actually be synced when organization is not, and resolving the parent would
+// be wasted work. This also means a ListParents access-denied error can never surface the
+// "missing organizations:ListParents permission" WARN in this specific combo; the account still
+// ends up flat either way, so this is a lost diagnostic, not a correctness bug (see the comment
+// on the ListParents gate in account.go).
+func TestAccountList_SkipsReparentWhenOnlyOrganizationalUnitSynced(t *testing.T) {
+	ctx := context.Background()
+	orgs := &fakeOrgs{
+		listAccountsFn: func(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+			return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{
+				Id:     awsSdk.String(testAccountID),
+				Name:   awsSdk.String("prod"),
+				Status: awsOrgsTypes.AccountStatusActive,
+			}}}, nil
+		},
+		listParentsFn: func(_ *awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error) {
+			return nil, &awsOrgsTypes.AccessDeniedException{Message: awsSdk.String("no perms")}
+		},
+	}
+	acct := newOrgAccountWithSyncFilter(orgs, false, true)
+
+	resources, _, err := acct.List(ctx, nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].ParentResourceId, "account must stay flat when organization isn't synced")
+	assert.Equal(t, 0, orgs.listParentsCalls, "must not call ListParents when organization is opted out, regardless of organizational_unit")
+}
+
+// account.List resolves the parent but only attaches it when the resolved parent's specific
+// type (organization vs organizational_unit) is one this run will actually sync — partial
+// opt-in must not produce a dangling parent either.
+func TestAccountList_SkipsReparentWhenResolvedParentTypeNotSynced(t *testing.T) {
+	ctx := context.Background()
+	orgs := &fakeOrgs{
+		listAccountsFn: func(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+			return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{
+				Id:     awsSdk.String(testAccountID),
+				Name:   awsSdk.String("prod"),
+				Status: awsOrgsTypes.AccountStatusActive,
+			}}}, nil
+		},
+		listParentsFn: func(_ *awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error) {
+			return &awsOrgs.ListParentsOutput{Parents: []awsOrgsTypes.Parent{{
+				Id:   awsSdk.String(testOUID),
+				Type: awsOrgsTypes.ParentTypeOrganizationalUnit,
+			}}}, nil
+		},
+	}
+	// organization is opted in but organizational_unit is not; the account's actual parent
+	// resolves to an OU, so it must still be left flat.
+	acct := newOrgAccountWithSyncFilter(orgs, true, false)
+
+	resources, _, err := acct.List(ctx, nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].ParentResourceId, "account must stay flat when its resolved parent type isn't synced")
+	assert.Equal(t, 1, orgs.listParentsCalls, "must still resolve the parent when at least one hierarchy type is synced")
+}
+
 // newOrgAccount builds an accountResourceType backed by the given fakeOrgs (SSO client unused
-// by the List/re-parent path under test).
+// by the List/re-parent path under test), with the org/OU hierarchy types opted into this sync.
 func newOrgAccount(orgs *fakeOrgs) *accountResourceType {
+	return newOrgAccountWithSyncFilter(orgs, true, true)
+}
+
+// newOrgAccountWithSyncFilter is like newOrgAccount but lets the test control whether the
+// organization/organizational_unit hierarchy types are opted into this sync run, to exercise
+// the re-parenting gate.
+func newOrgAccountWithSyncFilter(orgs *fakeOrgs, willSyncOrganization, willSyncOrganizationalUnit bool) *accountResourceType {
 	identityInstance := &awsSsoAdminTypes.InstanceMetadata{
 		InstanceArn:     awsSdk.String(behaviorInstanceArn),
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
-	return accountBuilder(orgs, "", &fakeSSOAdmin{}, identityInstance, behaviorRegion, nil)
+	return accountBuilder(orgs, "", &fakeSSOAdmin{}, identityInstance, behaviorRegion, nil,
+		HierarchySyncFlags{Organization: willSyncOrganization, OrganizationalUnit: willSyncOrganizationalUnit})
 }

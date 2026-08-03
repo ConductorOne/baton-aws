@@ -96,6 +96,12 @@ type AWS struct {
 	cloudTrailClient          *cloudtrail.Client
 	assumeRoleWithWebIdentity func(context.Context, *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error)
 
+	// willSyncOrganization/willSyncOrganizationalUnit report whether this sync run's
+	// resource-type filter (if any) includes the OptInRequired org/OU hierarchy types.
+	// See accountResourceType.List.
+	willSyncOrganization       bool
+	willSyncOrganizationalUnit bool
+
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
 	syncOnlyAttachedPolicies bool
@@ -242,15 +248,24 @@ func validateConfig(awsc *cfg.Aws) error {
 	return nil
 }
 
-func New(ctx context.Context, awsc *cfg.Aws, opts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
+func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (connectorbuilder.ConnectorBuilderV2, []connectorbuilder.Opt, error) {
 	l := ctxzap.Extract(ctx)
+
+	// Default to "will sync" when the caller gave no explicit resource-type filter (or no
+	// ConnectorOpts at all), matching ConnectorOpts.WillSyncResourceType's own default.
+	willSyncOrganization := true
+	willSyncOrganizationalUnit := true
+	if connectorOpts != nil {
+		willSyncOrganization = connectorOpts.WillSyncResourceType(resourceTypeOrganization.Id)
+		willSyncOrganizationalUnit = connectorOpts.WillSyncResourceType(resourceTypeOrganizationalUnit.Id)
+	}
 
 	// syncIAMPolicyGrants gates the cross-type iam_policy grants that iamUser, role,
 	// iamGroup, and permissionSet emit as a sync optimization. When the caller has
 	// explicitly filtered resource types and iam_policy isn't among them, emitting
 	// those grants is invalid/wasteful. A nil opts (e.g. capabilities generation or
 	// callers that don't pass one) is treated the same as "no filter" -> sync everything.
-	syncIAMPolicyGrants := opts == nil || opts.WillSyncResourceType("iam_policy")
+	syncIAMPolicyGrants := connectorOpts == nil || connectorOpts.WillSyncResourceType("iam_policy")
 
 	err := field.Validate(cfg.Config, awsc)
 	if err != nil {
@@ -320,6 +335,9 @@ func New(ctx context.Context, awsc *cfg.Aws, opts *cli.ConnectorOpts) (connector
 		syncIAMPolicyGrants:      syncIAMPolicyGrants,
 
 		accountProvisioningTarget: config.AccountProvisioningTarget,
+
+		willSyncOrganization:       willSyncOrganization,
+		willSyncOrganizationalUnit: willSyncOrganizationalUnit,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -482,7 +500,8 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 
 	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
-		acct := accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient)
+		acct := accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient,
+			HierarchySyncFlags{Organization: c.willSyncOrganization, OrganizationalUnit: c.willSyncOrganizationalUnit})
 		rs = append(rs,
 			acct,
 			// Sparse ACLs (Cloud Infrastructure Access): permission set as role, and the
@@ -528,9 +547,9 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		inlinePolicyBuilder(nil, nil, nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
-		accountBuilder(nil, "", nil, nil, "", nil),
+		accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}),
 		permissionSetBuilder(nil, nil, true),
-		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil)),
+		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true})),
 		organizationBuilder(nil),
 		organizationalUnitBuilder(nil),
 		accountIAMBuilder(nil, nil, nil),
