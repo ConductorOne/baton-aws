@@ -25,6 +25,8 @@ If you're setting up AWS with C1 for the first time, you're in the right place.
 | Secrets - Access keys | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 | Organization Root / Organizational Unit (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 | Permission Set / Permission Set Assignment (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
+| IAM managed policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
+| Inline policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 
 The AWS connector supports [automatic account provisioning and deprovisioning](/product/admin/account-provisioning) of IAM accounts.
 
@@ -80,6 +82,17 @@ Instead of one row per (account, permission set, user) combination, reviewers se
 These four resource types are **opt-in** on the C1 platform: even with both checkboxes enabled above, you must separately opt in to each resource type before C1 begins syncing it. Until you opt in, the connector keeps syncing the existing flat account/permission-set entitlement model unchanged.
 
 Syncing the Organization Root / Organizational Unit hierarchy also requires the `organizations:ListRoots` and `organizations:ListOrganizationalUnitsForParent` permissions (see the IAM policy in the Identity Center setup tab below). If these permissions are missing, the connector logs a warning and skips the OU hierarchy rather than failing the sync — accounts continue to sync without OU grouping.
+
+## IAM policies as resources
+
+The connector syncs AWS IAM policies as resources in their own right, alongside the identities they're attached to:
+
+- **IAM managed policies** — both customer-managed and AWS-managed policies. AWS-managed policies (`arn:aws:iam::aws:policy/...`) are global objects shared by every account, so they're synced once rather than per account.
+- **Inline policies** — policies embedded directly in an IAM user, role, or group, and the inline policy attached to an Identity Center permission set.
+
+Each policy resource carries its policy document (the JSON that defines which actions the policy allows or denies) as a resource attribute, so reviewers can see what a policy actually grants instead of only its name.
+
+Syncing policy documents requires the policy read permissions listed in the IAM policies below (`iam:GetPolicy`, `iam:GetPolicyVersion`, and the `iam:Get*Policy` / `iam:List*Policies` actions). If these permissions are missing, the connector logs a warning and syncs the policy resources without their document contents rather than failing the sync — so a policy that appears with no document is usually a missing-permission symptom rather than an empty policy.
 
 ## Gather AWS credentials
 
@@ -240,6 +253,25 @@ Next, you will create an inline policy to define the specific data this role can
             "iam:ListAccountAliases"
           ],
           "Resource": "*"
+        },
+        {
+          "Sid": "SyncIAMPolicyDocuments",
+          "Effect": "Allow",
+          "Action": [
+            "iam:ListPolicies",
+            "iam:GetPolicy",
+            "iam:GetPolicyVersion",
+            "iam:ListUserPolicies",
+            "iam:ListRolePolicies",
+            "iam:ListGroupPolicies",
+            "iam:GetUserPolicy",
+            "iam:GetRolePolicy",
+            "iam:GetGroupPolicy",
+            "iam:ListAttachedUserPolicies",
+            "iam:ListAttachedRolePolicies",
+            "iam:ListAttachedGroupPolicies"
+          ],
+          "Resource": "*"
         }
       ]
     }
@@ -269,6 +301,15 @@ Next, you will create an inline policy to define the specific data this role can
     **Optional: Descriptive Account Aliases**
 
     * iam:ListAccountAliases: Include this if you prefer to use human-readable account aliases (for example, "Production-Environment") in the C1 UI instead of 12-digit numeric AWS account IDs.
+
+    **Optional: IAM Policies as Resources** Include these permissions if you want C1 to sync IAM managed policies and inline policies as resources, along with their policy documents. See [IAM policies as resources](#iam-policies-as-resources) above.
+
+    * iam:ListPolicies, iam:GetPolicy, and iam:GetPolicyVersion: Allow C1 to discover managed policies and read the JSON document of each policy's default version.
+    * iam:ListUserPolicies, iam:ListRolePolicies, and iam:ListGroupPolicies: Allow C1 to discover the inline policies embedded in each IAM user, role, and group.
+    * iam:GetUserPolicy, iam:GetRolePolicy, and iam:GetGroupPolicy: Allow C1 to read the JSON document of each inline policy.
+    * iam:ListAttachedUserPolicies, iam:ListAttachedRolePolicies, and iam:ListAttachedGroupPolicies: Allow C1 to see which managed policies are attached to which users, roles, and groups.
+
+       If these permissions are omitted, the connector still syncs successfully — policy resources are either skipped or synced without their document contents.
     </Step>
     <Step>
         Click **Review Policy**.
@@ -472,6 +513,24 @@ The permissions policy below is broken into several sections to align with these
 	        "iam:ListRoles",
 	        "iam:ListPolicies",
 	        "iam:ListAccessKeys"
+	      ],
+	      "Resource": "*"
+	    },
+	    {
+	      "Sid": "SyncIAMPolicyDocuments",
+	      "Effect": "Allow",
+	      "Action": [
+	        "iam:GetPolicy",
+	        "iam:GetPolicyVersion",
+	        "iam:ListUserPolicies",
+	        "iam:ListRolePolicies",
+	        "iam:ListGroupPolicies",
+	        "iam:GetUserPolicy",
+	        "iam:GetRolePolicy",
+	        "iam:GetGroupPolicy",
+	        "iam:ListAttachedUserPolicies",
+	        "iam:ListAttachedRolePolicies",
+	        "iam:ListAttachedGroupPolicies"
 	      ],
 	      "Resource": "*"
 	    },
@@ -831,6 +890,27 @@ resource "aws_iam_role" "ConductorOneIntegration" {
           "Action" : [
             "iam:ListRoles",
             "iam:ListPolicies"
+          ],
+          "Resource" : "*"
+        },
+        # Required to sync IAM managed policies and inline policies as resources,
+        # including their policy documents. Omit to sync policy resources without
+        # their document contents.
+        {
+          "Sid" : "SyncIAMPolicyDocuments",
+          "Effect" : "Allow",
+          "Action" : [
+            "iam:GetPolicy",
+            "iam:GetPolicyVersion",
+            "iam:ListUserPolicies",
+            "iam:ListRolePolicies",
+            "iam:ListGroupPolicies",
+            "iam:GetUserPolicy",
+            "iam:GetRolePolicy",
+            "iam:GetGroupPolicy",
+            "iam:ListAttachedUserPolicies",
+            "iam:ListAttachedRolePolicies",
+            "iam:ListAttachedGroupPolicies"
           ],
           "Resource" : "*"
         },
