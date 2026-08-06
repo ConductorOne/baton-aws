@@ -502,7 +502,6 @@ The permissions policy below is broken into several sections to align with these
 	        "iam:DeleteRole",
 	        "iam:DeleteRolePolicy",
 	        "iam:DetachRolePolicy",
-	        "iam:GetRole",
 	        "iam:ListAttachedRolePolicies",
 	        "iam:ListRolePolicies",
 	        "iam:PutRolePolicy",
@@ -563,7 +562,9 @@ The permissions policy below is broken into several sections to align with these
 	- `iam:CreateUser`: This permission is required to provision IAM user accounts.
 	- `iam:List..., iam:GetGroup, iam:GetRole`: These are standard IAM permissions for listing and retrieving users, groups, and roles. They are necessary to identify resources within your AWS account. `iam:GetGroup` provides the members of a group. `iam:GetRole` retrieves detailed information about each role, including its trust relationships.
 	- `identitystore:List...`: These permissions are specific to AWS IAM Identity Center. They allow C1 to list and read information about your users and groups as they are defined within the Identity Center.
-	- `organizations:ListAccounts, organizations:DescribeAccount, organizations:DescribeOrganization, organizations:ListParents`: These permissions allow C1 to list all accounts within your AWS Organization, retrieve account and organization details, and understand the organizational unit hierarchy.
+	- `organizations:ListAccounts, organizations:DescribeOrganization`: These permissions allow C1 to list all accounts within your AWS Organization and retrieve organization details.
+	- `organizations:ListParents`: **Recommended**, only needed to re-parent accounts onto their Organizational Unit for the Sparse ACLs by-inheritance hierarchy. If omitted, accounts sync flat without OU grouping instead of failing.
+	- `organizations:DescribeAccount`: **Recommended**, enables proactive validation of account status before creating assignments. If omitted, the connector proceeds anyway and surfaces a less clear error for suspended accounts.
 	- `sso:List..., sso:Describe..., sso:Get...`: These permissions allow C1 to list your permission sets, see how they are assigned to accounts and users, and read the inline and managed IAM policies attached to each permission set.
 	- `organizations:ListRoots, organizations:ListOrganizationalUnitsForParent`: **Optional**, only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) above). If omitted, the connector logs a warning and skips the OU hierarchy instead of failing.
 	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for C1 to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
@@ -885,7 +886,6 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "iam:DeleteRole",
             "iam:DeleteRolePolicy",
             "iam:DetachRolePolicy",
-            "iam:GetRole",
             "iam:ListAttachedRolePolicies",
             "iam:ListRolePolicies",
             "iam:PutRolePolicy",
