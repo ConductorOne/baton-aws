@@ -427,7 +427,8 @@ The permissions policy below is broken into several sections to align with these
 	    {
 	      "Action": [
 	        "iam:GetGroup",
-	        "iam:GetAccessKeyLastUsed",  
+	        "iam:GetAccessKeyLastUsed",
+	        "iam:GetRole",
 	        "iam:ListAccountAliases",
 	        "iam:ListGroups",
 	        "iam:ListRoles",
@@ -436,7 +437,10 @@ The permissions policy below is broken into several sections to align with these
 	        "identitystore:ListGroupMemberships",
 	        "identitystore:ListGroups",
 	        "identitystore:ListUsers",
+	        "organizations:DescribeAccount",
+	        "organizations:DescribeOrganization",
 	        "organizations:ListAccounts",
+	        "organizations:ListParents",
 	        "sso:DescribePermissionSet",
 	        "sso:GetInlinePolicyForPermissionSet",
 	        "sso:ListAccountAssignments",
@@ -557,9 +561,9 @@ The permissions policy below is broken into several sections to align with these
 	**Section 1: Read-only access (“C1ReadAccess”)**
 	This group of permissions is the minimum required for C1 to discover and sync your Identity Center users, groups, and permission sets. These are strictly read-only permissions.
 	- `iam:CreateUser`: This permission is required to provision IAM user accounts.
-	- `iam:List..., iam:GetGroup`: These are standard IAM permissions for listing users, groups, and roles. They are necessary to identify resources within your AWS account. iam:GetGroup provides the members of a group.
+	- `iam:List..., iam:GetGroup, iam:GetRole`: These are standard IAM permissions for listing and retrieving users, groups, and roles. They are necessary to identify resources within your AWS account. `iam:GetGroup` provides the members of a group. `iam:GetRole` retrieves detailed information about each role, including its trust relationships.
 	- `identitystore:List...`: These permissions are specific to AWS IAM Identity Center. They allow C1 to list and read information about your users and groups as they are defined within the Identity Center.
-	- `organizations:ListAccounts`: This permission is required to list all the accounts within your AWS Organization, enabling C1 to understand your account structure.
+	- `organizations:ListAccounts, organizations:DescribeAccount, organizations:DescribeOrganization, organizations:ListParents`: These permissions allow C1 to list all accounts within your AWS Organization, retrieve account and organization details, and understand the organizational unit hierarchy.
 	- `sso:List..., sso:Describe..., sso:Get...`: These permissions allow C1 to list your permission sets, see how they are assigned to accounts and users, and read the inline and managed IAM policies attached to each permission set.
 	- `organizations:ListRoots, organizations:ListOrganizationalUnitsForParent`: **Optional**, only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) above). If omitted, the connector logs a warning and skips the OU hierarchy instead of failing.
 	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for C1 to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
@@ -573,7 +577,7 @@ The permissions policy below is broken into several sections to align with these
 	- `iam:TagUser`: This permission is required to add tags to a newly created IAM user.
 	**Section 3: Access to IAM Identity Center-provisioned roles (“AccessToSSOProvisionedRoles”)**
 	This group of permissions allows C1 to inspect and manage the AWS-managed roles created by IAM Identity Center in your accounts. This is crucial for understanding how permission sets are being applied.
-	- `iam:AttachRolePolicy, iam:DeleteRole, iam:GetRole, etc.`: These are permissions to manage IAM roles. The key detail is the Resource constraint: `arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*`. This ensures that C1 can only interact with roles created and managed by the AWS IAM Identity Center service itself, preventing it from modifying other roles in your account.
+	- `iam:AttachRolePolicy, iam:DeleteRole, etc.`: These are permissions to manage IAM roles. The key detail is the Resource constraint: `arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*`. This ensures that C1 can only modify roles created and managed by the AWS IAM Identity Center service itself, preventing it from modifying other roles in your account. Note that read-only access (`iam:GetRole`) is granted separately in Section 1 for all roles.
 	**Section 4: Other permissions**
 	These are supporting permissions that enable specific features or functionality. Some of the permissions listed here can be omitted if your particular use case doesn’t require the data they pull in to C1.
 	- `IAMListPermissions`: This section allows C1 to sync data on access keys. C1 does not store or access the access keys. If you do not want to sync access key data, you can omit this section.
@@ -829,6 +833,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
         {
           "Action" : [
             "iam:GetGroup",
+            "iam:GetRole",
             "iam:ListAccountAliases",
             "iam:ListGroups",
             "iam:ListRoles",
@@ -837,7 +842,10 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "identitystore:GetGroupMembershipId",
             "identitystore:ListGroups",
             "identitystore:ListUsers",
+            "organizations:DescribeAccount",
+            "organizations:DescribeOrganization",
             "organizations:ListAccounts",
+            "organizations:ListParents",
             "sso:DescribePermissionSet",
             "sso:GetInlinePolicyForPermissionSet",
             "sso:ListAccountAssignments",
