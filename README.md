@@ -94,6 +94,7 @@ Available Commands:
 Flags:
       --client-id string                                 The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
       --client-secret string                             The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
+      --create-account-resource-type string              Which AWS user type C1 should create when provisioning accounts: "iam_user" (default) or "sso_user" ($BATON_CREATE_ACCOUNT_RESOURCE_TYPE) (default "iam_user")
       --external-id string                               The external id for the aws account ($BATON_EXTERNAL_ID)
       --external-resource-c1z string                     The path to the c1z file to sync external baton resources with ($BATON_EXTERNAL_RESOURCE_C1Z)
       --external-resource-entitlement-id-filter string   The entitlement that external users, groups must have access to sync external baton resources ($BATON_EXTERNAL_RESOURCE_ENTITLEMENT_ID_FILTER)
@@ -114,8 +115,10 @@ Flags:
   -p, --provisioning                                     This must be set in order for provisioning actions to be enabled ($BATON_PROVISIONING)
       --role-arn string                                  The role arn for the aws account ($BATON_ROLE_ARN)
       --skip-full-sync                                   This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
+      --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
       --sync-secrets                                     Whether to sync secrets or not ($BATON_SYNC_SECRETS)
+      --sync-sso-user-last-login                         Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission) ($BATON_SYNC_SSO_USER_LAST_LOGIN)
       --ticketing                                        This must be set to enable ticketing support ($BATON_TICKETING)
       --use-assume                                       Enable support for assume role ($BATON_USE_ASSUME)
   -v, --version                                          version for baton-aws
