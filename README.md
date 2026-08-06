@@ -184,7 +184,6 @@ _These policies have comments prefixed with // that need to be removed before us
         "identitystore:ListGroupMemberships",
         "identitystore:GetGroupMembershipId",
         "organizations:ListAccounts",
-        "organizations:DescribeAccount",
         "organizations:DescribeOrganization",
         "organizations:ListParents",
         "organizations:ListRoots",
