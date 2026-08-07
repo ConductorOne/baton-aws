@@ -560,9 +560,11 @@ The permissions policy below is broken into several sections to align with these
 	**Section 1: Read-only access (“C1ReadAccess”)**
 	This group of permissions is the minimum required for C1 to discover and sync your Identity Center users, groups, and permission sets. These are strictly read-only permissions.
 	- `iam:CreateUser`: This permission is required to provision IAM user accounts.
-	- `iam:List..., iam:GetGroup, iam:GetRole`: These are standard IAM permissions for listing and retrieving users, groups, and roles. They are necessary to identify resources within your AWS account. `iam:GetGroup` provides the members of a group. `iam:GetRole` retrieves detailed information about each role, including its trust relationships.
+	- `iam:List..., iam:GetGroup`: These are standard IAM permissions for listing and retrieving users, groups, and roles. They are necessary to identify resources within your AWS account. `iam:GetGroup` provides the members of a group.
+	- `iam:GetRole`: **Recommended**, used to read a role's trust policy when syncing grants for that role. If omitted, the connector logs a warning and skips trust-policy grants for that role instead of failing.
 	- `identitystore:List...`: These permissions are specific to AWS IAM Identity Center. They allow C1 to list and read information about your users and groups as they are defined within the Identity Center.
-	- `organizations:ListAccounts, organizations:DescribeOrganization`: These permissions allow C1 to list all accounts within your AWS Organization and retrieve organization details.
+	- `organizations:ListAccounts`: This permission allows C1 to list all accounts within your AWS Organization.
+	- `organizations:DescribeOrganization`: Not currently used by the connector; included for parity with the rest of this policy and to reserve it in case it's needed in the future.
 	- `organizations:ListParents`: **Recommended**, only needed to re-parent accounts onto their Organizational Unit for the Sparse ACLs by-inheritance hierarchy. If omitted, accounts sync flat without OU grouping instead of failing.
 	- `organizations:DescribeAccount`: **Recommended**, enables proactive validation of account status before creating assignments. If omitted, the connector proceeds anyway and surfaces a less clear error for suspended accounts.
 	- `sso:List..., sso:Describe..., sso:Get...`: These permissions allow C1 to list your permission sets, see how they are assigned to accounts and users, and read the inline and managed IAM policies attached to each permission set.
@@ -846,7 +848,9 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "organizations:DescribeAccount",
             "organizations:DescribeOrganization",
             "organizations:ListAccounts",
+            "organizations:ListOrganizationalUnitsForParent",
             "organizations:ListParents",
+            "organizations:ListRoots",
             "sso:DescribePermissionSet",
             "sso:GetInlinePolicyForPermissionSet",
             "sso:ListAccountAssignments",
