@@ -836,6 +836,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
         {
           "Action" : [
             "iam:GetGroup",
+            "iam:GetAccessKeyLastUsed",
             "iam:GetRole",
             "iam:ListAccountAliases",
             "iam:ListGroups",
@@ -858,7 +859,16 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "sso:ListInstances",
             "sso:ListManagedPoliciesInPermissionSet",
             "sso:ListPermissionSets",
-            "sso:ListPermissionSetsProvisionedToAccount"
+            "sso:ListPermissionSetsProvisionedToAccount",
+            "iam:GetUser",
+            "iam:ListAccessKeys",
+            "iam:ListSigningCertificates",
+            "iam:ListSSHPublicKeys",
+            "iam:ListServiceSpecificCredentials",
+            "iam:ListMFADevices",
+            "iam:ListUserPolicies",
+            "iam:ListAttachedUserPolicies",
+            "iam:ListGroupsForUser"
           ],
           "Effect" : "Allow",
           "Resource" : "*",
@@ -868,6 +878,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
           "Action" : [
             "iam:AddUserToGroup",
             "iam:RemoveUserFromGroup",
+            "iam:CreateUser",
             "sso:CreateAccountAssignment",
             "sso:DeleteAccountAssignment",
             "identitystore:CreateGroupMembership",
@@ -875,7 +886,17 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "identitystore:CreateUser",
             "identitystore:DeleteUser",
             "sso:DescribeAccountAssignmentCreationStatus",
-            "sso:DescribeAccountAssignmentDeletionStatus"
+            "sso:DescribeAccountAssignmentDeletionStatus",
+            "iam:DeleteLoginProfile",
+            "iam:DeleteAccessKey",
+            "iam:DeleteSigningCertificate",
+            "iam:DeleteSSHPublicKey",
+            "iam:DeleteServiceSpecificCredential",
+            "iam:DeactivateMFADevice",
+            "iam:DeleteUserPolicy",
+            "iam:DetachUserPolicy",
+            "iam:DeleteUser",
+            "iam:TagUser"
           ],
           "Effect" : "Allow",
           "Resource" : "*",
