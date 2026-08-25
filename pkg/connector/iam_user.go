@@ -87,15 +87,17 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		lastLogin := getLastLogin(ctx, iamClient, user)
 		options := make([]resourceSdk.UserTraitOption, 0)
 
-		consoleAccess, err := getConsoleAccess(ctx, iamClient, user)
-		if err != nil {
-			return nil, nil, err
-		}
-		if consoleAccess != nil {
-			profile["console_access_enabled"] = consoleAccess.Enabled
-			profile["password_reset_required"] = consoleAccess.ResetRequired
-			if consoleAccess.CreatedAt != nil {
-				profile["login_profile_created_at"] = consoleAccess.CreatedAt.Format(time.RFC3339)
+		if o.aws != nil && o.aws.syncIAMUserConsoleAccess {
+			consoleAccess, err := getConsoleAccess(ctx, iamClient, user)
+			if err != nil {
+				return nil, nil, err
+			}
+			if consoleAccess != nil {
+				profile["console_access_enabled"] = consoleAccess.Enabled
+				profile["password_reset_required"] = consoleAccess.ResetRequired
+				if consoleAccess.CreatedAt != nil {
+					profile["login_profile_created_at"] = consoleAccess.CreatedAt.Format(time.RFC3339)
+				}
 			}
 		}
 
@@ -235,10 +237,8 @@ type consoleAccess struct {
 }
 
 // getConsoleAccess returns the console access status for a user.
-// If the user is not found, does not have a login profile, or we don't have permission to get the login profile, return nil and no error.
+// If there is a permission denied error, return nil and no error.
 func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.User) (*consoleAccess, error) {
-	logger := ctxzap.Extract(ctx)
-
 	resp, err := client.GetLoginProfile(ctx, &iam.GetLoginProfileInput{
 		UserName: user.UserName,
 	})
@@ -252,13 +252,13 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 			}, nil
 		}
 		if isAccessDeniedError(err) {
+			ctxzap.Extract(ctx).Warn("baton-aws: access denied getting login profile, skipping console access for this user",
+				zap.String("user_name", awsSdk.ToString(user.UserName)),
+				zap.Error(err),
+			)
 			return nil, nil
 		}
-		logger.Debug("baton-aws: error getting login profile",
-			zap.Error(err),
-			zap.String("user", awsSdk.ToString(user.UserName)),
-		)
-		return nil, err
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetLoginProfile failed: %w", err))
 	}
 
 	if resp.LoginProfile == nil {

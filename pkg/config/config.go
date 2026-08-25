@@ -126,6 +126,12 @@ var (
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
 	)
+	SyncIAMUserConsoleAccess = field.BoolField(
+		"sync-iam-user-console-access",
+		field.WithDisplayName("Sync IAM User Console Access"),
+		field.WithDescription("Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default."),
+		field.WithDefaultValue(false),
+	)
 	SyncOnlyAttachedPolicies = field.BoolField(
 		"sync-only-attached-policies",
 		field.WithDisplayName("Sync Only Attached Policies"),
@@ -163,6 +169,7 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		SyncIAMUserConsoleAccess,
 		SyncOnlyAttachedPolicies,
 		GlobalAwsAccountProvisioningTargetField,
 	},

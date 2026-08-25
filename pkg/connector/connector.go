@@ -54,6 +54,7 @@ type Config struct {
 	SyncSecrets                     bool
 	IamAssumeRoleName               string
 	SyncSSOUserLastLogin            bool
+	SyncIAMUserConsoleAccess        bool
 	SyncOnlyAttachedPolicies        bool
 
 	AccountProvisioningTarget string
@@ -104,6 +105,7 @@ type AWS struct {
 
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
+	syncIAMUserConsoleAccess bool
 	syncOnlyAttachedPolicies bool
 	syncIAMPolicyGrants      bool
 
@@ -292,6 +294,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		SyncSecrets:                     awsc.SyncSecrets,
 		IamAssumeRoleName:               awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:            awsc.SyncSsoUserLastLogin,
+		SyncIAMUserConsoleAccess:        awsc.SyncIamUserConsoleAccess,
 		SyncOnlyAttachedPolicies:        awsc.SyncOnlyAttachedPolicies,
 		AccountProvisioningTarget:       awsc.CreateAccountResourceType,
 	}
@@ -331,6 +334,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		_callingConfigError:      map[string]error{},
 		syncSecrets:              config.SyncSecrets,
 		syncSSOUserLastLogin:     config.SyncSSOUserLastLogin,
+		syncIAMUserConsoleAccess: config.SyncIAMUserConsoleAccess,
 		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
 		syncIAMPolicyGrants:      syncIAMPolicyGrants,
 

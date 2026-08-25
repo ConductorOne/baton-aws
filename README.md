@@ -115,6 +115,7 @@ Flags:
   -p, --provisioning                                     This must be set in order for provisioning actions to be enabled ($BATON_PROVISIONING)
       --role-arn string                                  The role arn for the aws account ($BATON_ROLE_ARN)
       --skip-full-sync                                   This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
+      --sync-iam-user-console-access                     Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default. ($BATON_SYNC_IAM_USER_CONSOLE_ACCESS)
       --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
       --sync-secrets                                     Whether to sync secrets or not ($BATON_SYNC_SECRETS)

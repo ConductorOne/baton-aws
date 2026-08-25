@@ -293,6 +293,10 @@ Next, you will create an inline policy to define the specific data this role can
 
        Note that C1 only retrieves metadata for auditing; it does not store or access the secret access keys themselves.
 
+    **Optional: IAM User Console Access** Include this permission if you enable **Sync IAM User Console Access** (`BATON_SYNC_IAM_USER_CONSOLE_ACCESS`). This flag is off by default because it makes one `iam:GetLoginProfile` call per IAM user.
+
+    * iam:GetLoginProfile: Allows C1 to see whether each IAM user has a console login profile, and whether a password reset is required.
+
     **Optional: AWS Organizations Support** Include these permissions if you enable the "Enable support for AWS Organizations" checkbox in the C1 UI.
 
     * organizations:ListAccounts: Allows the connector to discover all accounts within your AWS Organization.
