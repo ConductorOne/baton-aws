@@ -87,11 +87,16 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		lastLogin := getLastLogin(ctx, iamClient, user)
 		options := make([]resourceSdk.UserTraitOption, 0)
 
-		consoleAccessEnabled, passwordResetRequired, loginProfileCreatedAt := getConsoleAccess(ctx, iamClient, user)
-		profile["console_access_enabled"] = consoleAccessEnabled
-		profile["password_reset_required"] = passwordResetRequired
-		if loginProfileCreatedAt != nil {
-			profile["login_profile_created_at"] = loginProfileCreatedAt.Format(time.RFC3339)
+		consoleAccess, err := getConsoleAccess(ctx, iamClient, user)
+		if err != nil {
+			return nil, nil, err
+		}
+		if consoleAccess != nil {
+			profile["console_access_enabled"] = consoleAccess.Enabled
+			profile["password_reset_required"] = consoleAccess.ResetRequired
+			if consoleAccess.CreatedAt != nil {
+				profile["login_profile_created_at"] = consoleAccess.CreatedAt.Format(time.RFC3339)
+			}
 		}
 
 		for _, email := range getUserEmails(user) {
@@ -223,7 +228,15 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 	return profile
 }
 
-func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.User) (bool, bool, *time.Time) {
+type consoleAccess struct {
+	Enabled       bool
+	ResetRequired bool
+	CreatedAt     *time.Time
+}
+
+// getConsoleAccess returns the console access status for a user.
+// If the user is not found, does not have a login profile, or we don't have permission to get the login profile, return nil and no error.
+func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.User) (*consoleAccess, error) {
 	logger := ctxzap.Extract(ctx)
 
 	resp, err := client.GetLoginProfile(ctx, &iam.GetLoginProfileInput{
@@ -232,20 +245,35 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 	if err != nil {
 		var noSuchEntity *iamTypes.NoSuchEntityException
 		if errors.As(err, &noSuchEntity) {
-			return false, false, nil
+			return &consoleAccess{
+				Enabled:       false,
+				ResetRequired: false,
+				CreatedAt:     nil,
+			}, nil
+		}
+		if isAccessDeniedError(err) {
+			return nil, nil
 		}
 		logger.Debug("baton-aws: error getting login profile",
 			zap.Error(err),
 			zap.String("user", awsSdk.ToString(user.UserName)),
 		)
-		return false, false, nil
+		return nil, err
 	}
 
 	if resp.LoginProfile == nil {
-		return false, false, nil
+		return &consoleAccess{
+			Enabled:       false,
+			ResetRequired: false,
+			CreatedAt:     nil,
+		}, nil
 	}
 
-	return true, resp.LoginProfile.PasswordResetRequired, resp.LoginProfile.CreateDate
+	return &consoleAccess{
+		Enabled:       true,
+		ResetRequired: resp.LoginProfile.PasswordResetRequired,
+		CreatedAt:     resp.LoginProfile.CreateDate,
+	}, nil
 }
 
 func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *time.Time {
