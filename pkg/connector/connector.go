@@ -29,6 +29,8 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/uhttp"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -351,11 +353,11 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 	}
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
-		return nil, nil, fmt.Errorf("baton-aws: SSO Support requires Org support to also be enabled. Please enable both")
+		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: SSO Support requires Org support to also be enabled. Please enable both")
 	}
 
 	if rv.ssoProvisioningActive() && !rv.ssoEnabled {
-		return nil, nil, fmt.Errorf("baton-aws: BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user requires BATON_GLOBAL_AWS_SSO_ENABLED=true")
+		return nil, nil, status.Error(codes.InvalidArgument, "baton-aws: BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user requires BATON_GLOBAL_AWS_SSO_ENABLED=true")
 	}
 
 	err = rv.SetupClients(ctx)
@@ -588,6 +590,7 @@ func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Cl
 	for {
 		resp, err := paginator.NextPage(ctx)
 		if err != nil {
+			err = wrapAWSError(err)
 			c._identityInstancesCacheErr = err
 			return nil, err
 		}
