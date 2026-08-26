@@ -414,6 +414,13 @@ var awsThrottleErrorCodes = map[string]struct{}{
 	"EC2ThrottledException":                  {},
 }
 
+var awsAuthErrorCodes = map[string]struct{}{
+	"ExpiredToken":              {},
+	"InvalidClientTokenId":      {},
+	"InvalidSignatureException": {},
+	"SignatureDoesNotMatch":     {},
+}
+
 // wrapAWSError converts AWS throttling errors into gRPC codes.Unavailable so
 // the baton-sdk sync engine can identify them as retryable. Non-throttle errors
 // are returned unchanged.
@@ -427,11 +434,23 @@ func wrapAWSError(err error) error {
 		return nil
 	}
 
+	// If it's already a gRPC error, return it unchanged.
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+
 	var apiErr smithy.APIError
 	if errors.As(err, &apiErr) {
 		if _, isThrottle := awsThrottleErrorCodes[apiErr.ErrorCode()]; isThrottle {
 			return status.Error(codes.Unavailable, err.Error())
 		}
+		if _, isAuthError := awsAuthErrorCodes[apiErr.ErrorCode()]; isAuthError {
+			return status.Error(codes.Unauthenticated, err.Error())
+		}
+	}
+
+	if isAccessDeniedError(err) {
+		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
 	return err
@@ -484,6 +503,11 @@ func isCredentialsRetrievalError(err error) bool {
 func isAccessDeniedError(err error) bool {
 	if isCredentialsRetrievalError(err) {
 		return false
+	}
+	if code, ok := status.FromError(err); ok {
+		if code.Code() == codes.PermissionDenied {
+			return true
+		}
 	}
 
 	var apiErr smithy.APIError

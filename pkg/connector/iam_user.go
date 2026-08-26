@@ -86,6 +86,21 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		profile := iamUserProfile(ctx, user)
 		lastLogin := getLastLogin(ctx, iamClient, user)
 		options := make([]resourceSdk.UserTraitOption, 0)
+
+		if o.aws != nil && o.aws.syncIAMUserConsoleAccess {
+			consoleAccess, err := getConsoleAccess(ctx, iamClient, user)
+			if err != nil {
+				return nil, nil, err
+			}
+			if consoleAccess != nil {
+				profile["console_access_enabled"] = consoleAccess.Enabled
+				profile["password_reset_required"] = consoleAccess.ResetRequired
+				if consoleAccess.CreatedAt != nil {
+					profile["login_profile_created_at"] = consoleAccess.CreatedAt.Format(time.RFC3339)
+				}
+			}
+		}
+
 		for _, email := range getUserEmails(user) {
 			options = append(options, resourceSdk.WithEmail(email, true))
 		}
@@ -213,6 +228,52 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
 	return profile
+}
+
+type consoleAccess struct {
+	Enabled       bool
+	ResetRequired bool
+	CreatedAt     *time.Time
+}
+
+// getConsoleAccess returns the console access status for a user.
+// If there is a permission denied error, return nil and no error.
+func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.User) (*consoleAccess, error) {
+	resp, err := client.GetLoginProfile(ctx, &iam.GetLoginProfileInput{
+		UserName: user.UserName,
+	})
+	if err != nil {
+		var noSuchEntity *iamTypes.NoSuchEntityException
+		if errors.As(err, &noSuchEntity) {
+			return &consoleAccess{
+				Enabled:       false,
+				ResetRequired: false,
+				CreatedAt:     nil,
+			}, nil
+		}
+		if isAccessDeniedError(err) {
+			ctxzap.Extract(ctx).Warn("baton-aws: access denied getting login profile, skipping console access for this user",
+				zap.String("user_name", awsSdk.ToString(user.UserName)),
+				zap.Error(err),
+			)
+			return nil, nil
+		}
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetLoginProfile failed: %w", err))
+	}
+
+	if resp.LoginProfile == nil {
+		return &consoleAccess{
+			Enabled:       false,
+			ResetRequired: false,
+			CreatedAt:     nil,
+		}, nil
+	}
+
+	return &consoleAccess{
+		Enabled:       true,
+		ResetRequired: resp.LoginProfile.PasswordResetRequired,
+		CreatedAt:     resp.LoginProfile.CreateDate,
+	}, nil
 }
 
 func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *time.Time {
