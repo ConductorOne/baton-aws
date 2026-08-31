@@ -1,0 +1,177 @@
+package connector
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"testing"
+	"time"
+
+	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	smithymiddleware "github.com/aws/smithy-go/middleware"
+	"github.com/stretchr/testify/require"
+)
+
+// getLoginActivity takes the concrete *iam.Client, so responses are stubbed with
+// an AWS SDK v2 Finalize middleware keyed on the operation name, the same seam
+// iamClientReturning uses in iam_user_delete_test.go.
+//
+// Each entry in keyLastUsed is one access key the user owns; a nil entry is a key
+// that exists but IAM has never reported usage for. That distinction is the whole
+// point: "owns no keys" and "owns a key that was never used" are different states
+// and used to produce different bugs.
+func iamClientWithKeys(listErr error, keyLastUsed ...*time.Time) *iam.Client {
+	keys := make([]iamTypes.AccessKeyMetadata, 0, len(keyLastUsed))
+	lastUsedByKey := make(map[string]*time.Time, len(keyLastUsed))
+	for i, lastUsed := range keyLastUsed {
+		id := fmt.Sprintf("AKIAEXAMPLE%d", i)
+		keys = append(keys, iamTypes.AccessKeyMetadata{AccessKeyId: awsSdk.String(id)})
+		lastUsedByKey[id] = lastUsed
+	}
+
+	return iam.New(iam.Options{
+		Region: "us-east-1",
+		APIOptions: []func(*smithymiddleware.Stack) error{
+			func(stack *smithymiddleware.Stack) error {
+				return stack.Initialize.Add(
+					smithymiddleware.InitializeMiddlewareFunc("stubIAM",
+						func(ctx context.Context, in smithymiddleware.InitializeInput, _ smithymiddleware.InitializeHandler) (smithymiddleware.InitializeOutput, smithymiddleware.Metadata, error) {
+							switch input := in.Parameters.(type) {
+							case *iam.ListAccessKeysInput:
+								if listErr != nil {
+									return smithymiddleware.InitializeOutput{}, smithymiddleware.Metadata{}, listErr
+								}
+								return smithymiddleware.InitializeOutput{
+									Result: &iam.ListAccessKeysOutput{AccessKeyMetadata: keys},
+								}, smithymiddleware.Metadata{}, nil
+							case *iam.GetAccessKeyLastUsedInput:
+								return smithymiddleware.InitializeOutput{
+									Result: &iam.GetAccessKeyLastUsedOutput{
+										AccessKeyLastUsed: &iamTypes.AccessKeyLastUsed{
+											LastUsedDate: lastUsedByKey[awsSdk.ToString(input.AccessKeyId)],
+										},
+									},
+								}, smithymiddleware.Metadata{}, nil
+							default:
+								return smithymiddleware.InitializeOutput{}, smithymiddleware.Metadata{}, fmt.Errorf("unexpected input type %T", in.Parameters)
+							}
+						}),
+					smithymiddleware.Before,
+				)
+			},
+		},
+	})
+}
+
+func tp(s string) *time.Time {
+	parsed, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		panic(err)
+	}
+	return &parsed
+}
+
+// The console sign-in and the newest access key use are reported as two
+// independent signals: neither may absorb, mask or overwrite the other.
+func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
+	consoleLogin := tp("2025-11-17T17:48:00Z")
+	keyUse := tp("2026-08-26T00:15:00Z")
+	olderKeyUse := tp("2026-01-02T09:00:00Z")
+
+	for _, tc := range []struct {
+		name            string
+		consoleSignIn   *time.Time
+		keys            []*time.Time
+		wantKeyLastUsed *time.Time
+	}{
+		{
+			// The old code reported the oldest activity, so a key used after the
+			// console sign-in used to overwrite Last Login with the sign-in.
+			name:            "a key used after the console sign-in leaves the sign-in intact",
+			consoleSignIn:   consoleLogin,
+			keys:            []*time.Time{keyUse},
+			wantKeyLastUsed: keyUse,
+		},
+		{
+			name:          "a console sign-in with no access keys is still reported",
+			consoleSignIn: consoleLogin,
+			keys:          nil,
+		},
+		{
+			// The original defect: a key that exists but was never used left the
+			// running comparison at its zero value, and comparing the sign-in
+			// against that zero discarded it entirely.
+			name:          "a key that was never used does not discard the console sign-in",
+			consoleSignIn: consoleLogin,
+			keys:          []*time.Time{nil},
+		},
+		{
+			name:          "keys that were all never used report no key activity",
+			consoleSignIn: nil,
+			keys:          []*time.Time{nil, nil},
+		},
+		{
+			// Newest first, so a loop keeping the last value it saw rather than the
+			// greatest one fails here.
+			name:            "the newest of several keys wins when listed first",
+			keys:            []*time.Time{keyUse, olderKeyUse},
+			wantKeyLastUsed: keyUse,
+		},
+		{
+			name:            "the newest of several keys wins when listed last",
+			keys:            []*time.Time{olderKeyUse, keyUse},
+			wantKeyLastUsed: keyUse,
+		},
+		{
+			name:            "an unused key alongside a used one does not hide the used one",
+			keys:            []*time.Time{nil, olderKeyUse},
+			wantKeyLastUsed: olderKeyUse,
+		},
+		{
+			name:            "a console sign-in after the key use leaves the key use intact",
+			consoleSignIn:   keyUse,
+			keys:            []*time.Time{consoleLogin},
+			wantKeyLastUsed: consoleLogin,
+		},
+		{
+			name:          "a user who has never authenticated reports neither signal",
+			consoleSignIn: nil,
+			keys:          nil,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := iamTypes.User{
+				UserName:         awsSdk.String("ci-iam-1"),
+				UserId:           awsSdk.String("AIDAEXAMPLE"),
+				PasswordLastUsed: tc.consoleSignIn,
+			}
+
+			activity := getLoginActivity(context.Background(), iamClientWithKeys(nil, tc.keys...), user)
+
+			require.Equal(t, tc.consoleSignIn, activity.passwordLastUsed,
+				"the console sign-in must survive whatever the keys report")
+			require.Equal(t, tc.wantKeyLastUsed, activity.accessKeyLastUsed,
+				"the newest key use must survive whatever the console reports")
+		})
+	}
+}
+
+// Losing the access keys must not also lose the console sign-in we already hold:
+// reporting no activity for a user who has signed in would read as a dormant
+// account.
+func TestGetLoginActivity_KeepsConsoleLoginWhenKeysCannotBeListed(t *testing.T) {
+	consoleLogin := tp("2026-07-28T18:38:16Z")
+	user := iamTypes.User{
+		UserName:         awsSdk.String("ci-iam-1"),
+		UserId:           awsSdk.String("AIDAEXAMPLE"),
+		PasswordLastUsed: consoleLogin,
+	}
+
+	activity := getLoginActivity(context.Background(),
+		iamClientWithKeys(errors.New("AccessDenied"), tp("2026-08-26T00:15:00Z")), user)
+
+	require.Equal(t, consoleLogin, activity.passwordLastUsed)
+	require.Nil(t, activity.accessKeyLastUsed)
+}

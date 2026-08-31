@@ -84,7 +84,13 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
-		lastLogin := getLastLogin(ctx, iamClient, user)
+		activity := getLoginActivity(ctx, iamClient, user)
+		if activity.passwordLastUsed != nil {
+			profile["password_last_used"] = activity.passwordLastUsed.Format(time.RFC3339)
+		}
+		if activity.accessKeyLastUsed != nil {
+			profile["access_key_last_used"] = activity.accessKeyLastUsed.Format(time.RFC3339)
+		}
 		options := make([]resourceSdk.UserTraitOption, 0)
 
 		if o.aws != nil && o.aws.syncIAMUserConsoleAccess {
@@ -104,8 +110,12 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		for _, email := range getUserEmails(user) {
 			options = append(options, resourceSdk.WithEmail(email, true))
 		}
-		if lastLogin != nil {
-			options = append(options, resourceSdk.WithLastLogin(*lastLogin))
+		// Last Login is the console sign-in alone. Folding access key use into it
+		// would keep a user driven by an automated key from ever looking dormant,
+		// which is the distinction this field exists to make. Key activity is
+		// reported on the access key itself, as its last-used time.
+		if activity.passwordLastUsed != nil {
+			options = append(options, resourceSdk.WithLastLogin(*activity.passwordLastUsed))
 		}
 
 		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName),
@@ -276,48 +286,41 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 	}, nil
 }
 
-func getLastLogin(ctx context.Context, client *iam.Client, user iamTypes.User) *time.Time {
-	logger := ctxzap.Extract(ctx).With(
-		zap.String("user_id", *user.UserId),
-	)
+// loginActivity holds the two authentication signals AWS reports for an IAM
+// user. They are tracked separately because an access key call is not
+// equivalent to a human signing in to the console, and reviewers need to tell
+// them apart.
+type loginActivity struct {
+	passwordLastUsed  *time.Time
+	accessKeyLastUsed *time.Time
+}
+
+// getLoginActivity reports the user's console sign-in time alongside the most
+// recent use of any of their access keys. A key that has never been used
+// contributes nothing.
+func getLoginActivity(ctx context.Context, client *iam.Client, user iamTypes.User) loginActivity {
+	activity := loginActivity{passwordLastUsed: user.PasswordLastUsed}
 
 	res, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 	if err != nil {
-		logger.Debug("Error listing access keys", zap.Error(err))
-		return user.PasswordLastUsed
+		ctxzap.Extract(ctx).Debug("Error listing access keys",
+			zap.String("user_id", awsSdk.ToString(user.UserId)),
+			zap.Error(err),
+		)
+		return activity
 	}
 
-	accessKeyLastUsedDates := make([]time.Time, 0, len(res.AccessKeyMetadata))
 	for _, key := range res.AccessKeyMetadata {
-		accessKeyLastUsed := getAccessKeyLastUsedDate(ctx, client, awsSdk.ToString(key.AccessKeyId))
-		if accessKeyLastUsed == nil {
-			logger.Debug("Error getting access key last used", zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)))
+		usage := getAccessKeyLastUsed(ctx, client, awsSdk.ToString(key.AccessKeyId))
+		if usage.date == nil {
 			continue
 		}
-		accessKeyLastUsedDates = append(accessKeyLastUsedDates, *accessKeyLastUsed)
-	}
-
-	// check if access key was the last one to be used
-	var out time.Time
-	if len(accessKeyLastUsedDates) > 0 {
-		out = accessKeyLastUsedDates[0]
-	}
-	for _, lastUsed := range accessKeyLastUsedDates {
-		if lastUsed.Before(out) {
-			out = lastUsed
+		if activity.accessKeyLastUsed == nil || usage.date.After(*activity.accessKeyLastUsed) {
+			activity.accessKeyLastUsed = usage.date
 		}
 	}
 
-	// check if password was the last one to be used
-	if user.PasswordLastUsed != nil && user.PasswordLastUsed.Before(out) {
-		out = *user.PasswordLastUsed
-	}
-
-	if out.IsZero() {
-		return nil
-	}
-
-	return &out
+	return activity
 }
 
 func getUserEmails(user iamTypes.User) []string {

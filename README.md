@@ -46,6 +46,12 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
+IAM user profiles include the most recent access key activity through `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed`, whether or not secrets are synced. Set `--sync-secrets` to also pull each IAM access key as a secret carrying its status (Active or Inactive), when it was last used, and which service and region it was last used from.
+
+An IAM user's Last Login reports the latest password-based AWS sign-in exposed by `PasswordLastUsed`, including AWS Management Console sign-ins; access key use remains separate in `access_key_last_used` and, when `--sync-secrets` is set, on each key resource. Set `--sync-iam-user-console-access` to also record whether each IAM user has a console login profile (`iam:GetLoginProfile`, one call per user).
+
+Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and `--sync-sso-user-last-login`, and grant `cloudtrail:LookupEvents` to report those sign-ins.
+
 `baton-aws` also supports account provisioning and deprovisioning for AWS IAM Identity Center (SSO) users via the Identity Store API. See the "Syncing and Provisioning all supported objects" IAM policy below for the required permissions.
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
@@ -89,17 +95,21 @@ Available Commands:
   capabilities       Get connector capabilities
   completion         Generate the autocompletion script for the specified shell
   config             Get the connector config schema
+  health-check       Check the health of a running connector
   help               Help about any command
 
 Flags:
+      --auth-method string                               ($BATON_AUTH_METHOD)
       --client-id string                                 The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
       --client-secret string                             The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
-      --create-account-resource-type string              Which AWS user type C1 should create when provisioning accounts: "iam_user" (default) or "sso_user" ($BATON_CREATE_ACCOUNT_RESOURCE_TYPE) (default "iam_user")
+      --create-account-resource-type string              Which AWS user type C1 should create when provisioning accounts. 'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. Only one path can be active at a time per connector instance. ($BATON_CREATE_ACCOUNT_RESOURCE_TYPE) (default "iam_user")
       --external-id string                               The external id for the aws account ($BATON_EXTERNAL_ID)
       --external-resource-c1z string                     The path to the c1z file to sync external baton resources with ($BATON_EXTERNAL_RESOURCE_C1Z)
       --external-resource-entitlement-id-filter string   The entitlement that external users, groups must have access to sync external baton resources ($BATON_EXTERNAL_RESOURCE_ENTITLEMENT_ID_FILTER)
+      --external-resource-traits strings                 Resource type traits (e.g. "user", "group", "app") to sync and match from the external resource c1z. When unset the matcher falls back to user and group; passing this flag replaces the full set rather than adding to it. ($BATON_EXTERNAL_RESOURCE_TRAITS)
   -f, --file string                                      The path to the c1z file to sync with ($BATON_FILE) (default "sync.c1z")
       --global-access-key-id string                      The global-access-key-id for the aws account ($BATON_GLOBAL_ACCESS_KEY_ID)
+      --global-aws-cross-account-iam-enabled             When both Organizations and Identity Center are enabled, also sync IAM users, roles, and groups from every child account. Requires sts:AssumeRole on OrganizationAccountAccessRole in each child account. Has no effect when Identity Center is disabled (cross-account IAM sync always runs in that mode). ($BATON_GLOBAL_AWS_CROSS_ACCOUNT_IAM_ENABLED)
       --global-aws-orgs-enabled                          Enable support for AWS Organizations ($BATON_GLOBAL_AWS_ORGS_ENABLED)
       --global-aws-sso-enabled                           Enable support for AWS IAM Identity Center ($BATON_GLOBAL_AWS_SSO_ENABLED)
       --global-aws-sso-region string                     The region for the sso identities ($BATON_GLOBAL_AWS_SSO_REGION) (default "us-east-1")
@@ -107,22 +117,34 @@ Flags:
       --global-region string                             The region for the aws account ($BATON_GLOBAL_REGION)
       --global-role-arn string                           The role arn for the aws account ($BATON_GLOBAL_ROLE_ARN)
       --global-secret-access-key string                  The global-secret-access-key for the aws account ($BATON_GLOBAL_SECRET_ACCESS_KEY)
+      --health-check                                     Enable the HTTP health check endpoint ($BATON_HEALTH_CHECK)
+      --health-check-port int                            Port for the HTTP health check endpoint ($BATON_HEALTH_CHECK_PORT) (default 8081)
   -h, --help                                             help for baton-aws
+      --http-timeout-seconds int                         HTTP client timeout in seconds (max 1800) ($BATON_HTTP_TIMEOUT_SECONDS) (default 300)
       --iam-assume-role-name string                      Role name for the IAM role to assume when using the AWS connector ($BATON_IAM_ASSUME_ROLE_NAME) (default "OrganizationAccountAccessRole")
+      --keep-previous-sync-c1z                           Keep the previously synced c1z on disk to enable ETag replay across service-mode syncs (requires a connector that supports ETag replay; costs one c1z of local disk) ($BATON_KEEP_PREVIOUS_SYNC_C1Z)
       --log-format string                                The output format for logs: json, console ($BATON_LOG_FORMAT) (default "json")
       --log-level string                                 The log level: debug, info, warn, error ($BATON_LOG_LEVEL) (default "info")
+      --log-level-debug-expires-at string                The timestamp indicating when debug-level logging should expire ($BATON_LOG_LEVEL_DEBUG_EXPIRES_AT)
+      --log-path strings                                 The file path to write logs to ($BATON_LOG_PATH)
       --otel-collector-endpoint string                   The endpoint of the OpenTelemetry collector to send observability data to (used for both tracing and logging if specific endpoints are not provided) ($BATON_OTEL_COLLECTOR_ENDPOINT)
+      --parallel-sync                                    Deprecated: use --workers instead. ($BATON_PARALLEL_SYNC)
   -p, --provisioning                                     This must be set in order for provisioning actions to be enabled ($BATON_PROVISIONING)
       --role-arn string                                  The role arn for the aws account ($BATON_ROLE_ARN)
+      --skip-entitlements-and-grants                     This must be set to skip syncing of entitlements and grants ($BATON_SKIP_ENTITLEMENTS_AND_GRANTS)
       --skip-full-sync                                   This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
+      --storage-engine string                            The storage engine to use when opening the sync c1z file: sqlite or pebble. Defaults to pebble when unset. ($BATON_STORAGE_ENGINE)
       --sync-iam-user-console-access                     Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default. ($BATON_SYNC_IAM_USER_CONSOLE_ACCESS)
       --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
+      --sync-resource-types strings                      The resource type IDs to sync ($BATON_SYNC_RESOURCE_TYPES)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
       --sync-secrets                                     Whether to sync secrets or not ($BATON_SYNC_SECRETS)
       --sync-sso-user-last-login                         Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission) ($BATON_SYNC_SSO_USER_LAST_LOGIN)
+      --task-concurrency int                             The number of Baton tasks to run concurrently in service mode. Tasks may include sync, grant, revoke, and more. Minimum value is 1, maximum value is 100. ($BATON_TASK_CONCURRENCY) (default 3)
       --ticketing                                        This must be set to enable ticketing support ($BATON_TICKETING)
       --use-assume                                       Enable support for assume role ($BATON_USE_ASSUME)
   -v, --version                                          version for baton-aws
+      --workers int                                      The number of sync workers to use. -1 for auto-detect, 0 for sequential, >0 for parallel ($BATON_WORKERS)
 
 Use "baton-aws [command] --help" for more information about a command.
 ```
@@ -151,6 +173,8 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:ListAttachedRolePolicies",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
+        // Optional: only used with --sync-iam-user-console-access.
+        "iam:GetLoginProfile",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
@@ -205,6 +229,15 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Sync identity center users, groups, and permission sets, as well as the organization accounts
       "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
+    },
+    {
+      "Action": [
+        "cloudtrail:LookupEvents"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Optional: only needed with --sync-sso-user-last-login.
+      "Sid": "SSOUserLastLogin"
     },
     {
       "Action": [
@@ -248,6 +281,8 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:ListAttachedRolePolicies",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
+        // Optional: only used with --sync-iam-user-console-access.
+        "iam:GetLoginProfile",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
@@ -302,6 +337,15 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Sync identity center users, groups, and permission sets, as well as the organization accounts
       "Sid": "SSOUserGroupAccountAndPermissionSetSyncing"
+    },
+    {
+      "Action": [
+        "cloudtrail:LookupEvents"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Optional: only needed with --sync-sso-user-last-login.
+      "Sid": "SSOUserLastLogin"
     },
     {
       "Action": [
@@ -478,6 +522,8 @@ Each sub-account will need to have the following policy attached to the role tha
         "iam:ListAttachedRolePolicies",
         "iam:ListAccessKeys",
         "iam:GetAccessKeyLastUsed",
+        // Optional: only used with --sync-iam-user-console-access.
+        "iam:GetLoginProfile",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
