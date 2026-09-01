@@ -110,7 +110,7 @@ When AWS returns no `PasswordLastUsed` value, C1 leaves **Last Login** unset. Th
 Per-key detail lives on the access key itself, on the [Inventory page](/product/admin/inventory):
 
 - **Last used**, together with `last_used_service` and `last_used_region` — what the key was calling and from where. For a key with no tracked use, AWS returns a null date and `"N/A"` placeholders; the connector omits those values.
-- **Status** — Active or Inactive. Inactive keys are reported as disabled and synced rather than skipped because they still exist and can be reactivated; reviewers decide whether to delete them.
+- **Status** — Active or Inactive. Inactive keys were already synced; they now carry a disabled status so reviewers can tell them apart from active keys. Inactive keys can be reactivated; reviewers decide whether to delete them.
 
 Two optional settings gate parts of this, and both are off by default:
 

@@ -23,12 +23,27 @@ import (
 // point: "owns no keys" and "owns a key that was never used" are different states
 // and used to produce different bugs.
 func iamClientWithKeys(listErr error, keyLastUsed ...*time.Time) *iam.Client {
-	keys := make([]iamTypes.AccessKeyMetadata, 0, len(keyLastUsed))
-	lastUsedByKey := make(map[string]*time.Time, len(keyLastUsed))
+	lookups := make([]keyLookupResult, len(keyLastUsed))
 	for i, lastUsed := range keyLastUsed {
+		lookups[i] = keyLookupResult{lastUsed: lastUsed}
+	}
+	return iamClientWithKeyLookups(listErr, lookups)
+}
+
+type keyLookupResult struct {
+	lastUsed *time.Time
+	err      error
+}
+
+func iamClientWithKeyLookups(listErr error, lookups []keyLookupResult) *iam.Client {
+	keys := make([]iamTypes.AccessKeyMetadata, 0, len(lookups))
+	lastUsedByKey := make(map[string]*time.Time, len(lookups))
+	errByKey := make(map[string]error, len(lookups))
+	for i, lookup := range lookups {
 		id := fmt.Sprintf("AKIAEXAMPLE%d", i)
 		keys = append(keys, iamTypes.AccessKeyMetadata{AccessKeyId: awsSdk.String(id)})
-		lastUsedByKey[id] = lastUsed
+		lastUsedByKey[id] = lookup.lastUsed
+		errByKey[id] = lookup.err
 	}
 
 	return iam.New(iam.Options{
@@ -47,10 +62,14 @@ func iamClientWithKeys(listErr error, keyLastUsed ...*time.Time) *iam.Client {
 									Result: &iam.ListAccessKeysOutput{AccessKeyMetadata: keys},
 								}, smithymiddleware.Metadata{}, nil
 							case *iam.GetAccessKeyLastUsedInput:
+								id := awsSdk.ToString(input.AccessKeyId)
+								if err := errByKey[id]; err != nil {
+									return smithymiddleware.InitializeOutput{}, smithymiddleware.Metadata{}, err
+								}
 								return smithymiddleware.InitializeOutput{
 									Result: &iam.GetAccessKeyLastUsedOutput{
 										AccessKeyLastUsed: &iamTypes.AccessKeyLastUsed{
-											LastUsedDate: lastUsedByKey[awsSdk.ToString(input.AccessKeyId)],
+											LastUsedDate: lastUsedByKey[id],
 										},
 									},
 								}, smithymiddleware.Metadata{}, nil
@@ -174,4 +193,33 @@ func TestGetLoginActivity_KeepsConsoleLoginWhenKeysCannotBeListed(t *testing.T) 
 
 	require.Equal(t, consoleLogin, activity.passwordLastUsed)
 	require.Nil(t, activity.accessKeyLastUsed)
+}
+
+func TestGetLoginActivity_OmitsKeyActivityWhenLastUsedLookupFails(t *testing.T) {
+	consoleLogin := tp("2026-07-28T18:38:16Z")
+	used := tp("2026-08-26T00:15:00Z")
+	user := iamTypes.User{
+		UserName:         awsSdk.String("ci-iam-1"),
+		UserId:           awsSdk.String("AIDAEXAMPLE"),
+		PasswordLastUsed: consoleLogin,
+	}
+
+	t.Run("a failed lookup is not treated as never used and does not hide a used key", func(t *testing.T) {
+		activity := getLoginActivity(context.Background(), iamClientWithKeyLookups(nil, []keyLookupResult{
+			{err: errors.New("AccessDenied")},
+			{lastUsed: used},
+		}), user)
+
+		require.Equal(t, consoleLogin, activity.passwordLastUsed)
+		require.Equal(t, used, activity.accessKeyLastUsed)
+	})
+
+	t.Run("every lookup failing leaves key activity unset", func(t *testing.T) {
+		activity := getLoginActivity(context.Background(), iamClientWithKeyLookups(nil, []keyLookupResult{
+			{err: errors.New("AccessDenied")},
+		}), user)
+
+		require.Equal(t, consoleLogin, activity.passwordLastUsed)
+		require.Nil(t, activity.accessKeyLastUsed)
+	})
 }

@@ -98,19 +98,26 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 			// Which service the key last called separates a person doing work from
 			// automation, so reviewers can judge whether the key is still needed.
 			profile := map[string]any{}
-			usage := getAccessKeyLastUsed(ctx, iamClient, *key.AccessKeyId)
-			if usage.date != nil {
-				options = append(options, resourceSdk.WithSecretLastUsedAt(*usage.date))
-			}
-			if usage.service != "" {
-				profile["last_used_service"] = usage.service
-			}
-			if usage.region != "" {
-				profile["last_used_region"] = usage.region
+			usage, err := getAccessKeyLastUsed(ctx, iamClient, *key.AccessKeyId)
+			if err != nil {
+				logger.Debug("Error getting access key last used",
+					zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)),
+					zap.Error(err),
+				)
+			} else {
+				if usage.date != nil {
+					options = append(options, resourceSdk.WithSecretLastUsedAt(*usage.date))
+				}
+				if usage.service != "" {
+					profile["last_used_service"] = usage.service
+				}
+				if usage.region != "" {
+					profile["last_used_region"] = usage.region
+				}
 			}
 
-			// An inactive key still exists and can be reactivated, so it is synced
-			// rather than skipped: reviewers decide whether to delete it.
+			// Inactive keys already synced; they now carry a disabled status so
+			// reviewers can tell them apart from active keys.
 			keyStatus := v2.Status_RESOURCE_STATUS_DISABLED
 			if key.Status == iamTypes.StatusTypeActive {
 				keyStatus = v2.Status_RESOURCE_STATUS_ENABLED
@@ -176,20 +183,19 @@ type accessKeyUsage struct {
 	region  string
 }
 
-func getAccessKeyLastUsed(ctx context.Context, iamClient *iam.Client, accessKeyId string) accessKeyUsage {
+func getAccessKeyLastUsed(ctx context.Context, iamClient *iam.Client, accessKeyId string) (accessKeyUsage, error) {
 	logger := ctxzap.Extract(ctx)
 	resp, err := iamClient.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
 		AccessKeyId: awsSdk.String(accessKeyId),
 	})
 	if err != nil {
-		logger.Warn("Error getting access key last used", zap.Error(err))
-		return accessKeyUsage{}
+		return accessKeyUsage{}, err
 	}
 	if resp.AccessKeyLastUsed == nil ||
 		resp.AccessKeyLastUsed.LastUsedDate == nil ||
 		resp.AccessKeyLastUsed.LastUsedDate.IsZero() {
 		logger.Debug("Access key last used date is nil or zero", zap.String("access_key_id", accessKeyId))
-		return accessKeyUsage{}
+		return accessKeyUsage{}, nil
 	}
 
 	usage := accessKeyUsage{date: resp.AccessKeyLastUsed.LastUsedDate}
@@ -199,5 +205,5 @@ func getAccessKeyLastUsed(ctx context.Context, iamClient *iam.Client, accessKeyI
 	if region := awsSdk.ToString(resp.AccessKeyLastUsed.Region); region != notApplicable {
 		usage.region = region
 	}
-	return usage
+	return usage, nil
 }

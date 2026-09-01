@@ -311,7 +311,16 @@ func getLoginActivity(ctx context.Context, client *iam.Client, user iamTypes.Use
 	}
 
 	for _, key := range res.AccessKeyMetadata {
-		usage := getAccessKeyLastUsed(ctx, client, awsSdk.ToString(key.AccessKeyId))
+		accessKeyID := awsSdk.ToString(key.AccessKeyId)
+		usage, err := getAccessKeyLastUsed(ctx, client, accessKeyID)
+		if err != nil {
+			ctxzap.Extract(ctx).Debug("Error getting access key last used",
+				zap.String("user_id", awsSdk.ToString(user.UserId)),
+				zap.String("access_key_id", accessKeyID),
+				zap.Error(err),
+			)
+			continue
+		}
 		if usage.date == nil {
 			continue
 		}

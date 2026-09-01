@@ -46,7 +46,7 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
-IAM user profiles include the most recent access key activity through `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed`, whether or not secrets are synced. Set `--sync-secrets` to also pull each IAM access key as a secret carrying its status (Active or Inactive), when it was last used, and which service and region it was last used from.
+IAM user profiles include the most recent access key activity through `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed`, whether or not secrets are synced. Set `--sync-secrets` to also pull each IAM access key as a secret carrying its status (Active or Inactive), when it was last used, and which service and region it was last used from. Inactive keys were already synced; they now report as disabled rather than carrying no status.
 
 An IAM user's Last Login reports the latest password-based AWS sign-in exposed by `PasswordLastUsed`, including AWS Management Console sign-ins; access key use remains separate in `access_key_last_used` and, when `--sync-secrets` is set, on each key resource. Set `--sync-iam-user-console-access` to also record whether each IAM user has a console login profile (`iam:GetLoginProfile`, one call per user).
 

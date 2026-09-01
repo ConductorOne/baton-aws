@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 // iamClientWithUserKeys stubs the three IAM calls the secret builder makes for
 // a single user, using the same middleware seam as the other IAM tests.
 // lastUsed is returned verbatim for every GetAccessKeyLastUsed call.
-func iamClientWithUserKeys(userName string, keys []iamTypes.AccessKeyMetadata, lastUsed *iamTypes.AccessKeyLastUsed) *iam.Client {
+func iamClientWithUserKeys(userName string, keys []iamTypes.AccessKeyMetadata, lastUsed *iamTypes.AccessKeyLastUsed, lastUsedErr error) *iam.Client {
 	return iam.New(iam.Options{
 		Region: "us-east-1",
 		APIOptions: []func(*smithymiddleware.Stack) error{
@@ -42,6 +43,9 @@ func iamClientWithUserKeys(userName string, keys []iamTypes.AccessKeyMetadata, l
 									Result: &iam.ListAccessKeysOutput{AccessKeyMetadata: keys},
 								}, smithymiddleware.Metadata{}, nil
 							case "GetAccessKeyLastUsed":
+								if lastUsedErr != nil {
+									return smithymiddleware.FinalizeOutput{}, smithymiddleware.Metadata{}, lastUsedErr
+								}
 								return smithymiddleware.FinalizeOutput{
 									Result: &iam.GetAccessKeyLastUsedOutput{AccessKeyLastUsed: lastUsed},
 								}, smithymiddleware.Metadata{}, nil
@@ -68,9 +72,8 @@ func requireSecretTrait(t *testing.T, resource *v2.Resource) *v2.SecretTrait {
 	return trait
 }
 
-// Reviewers deciding whether to revoke a key need to see that it is already
-// inactive, so an inactive key is synced with a DISABLED status rather than
-// dropped from the results.
+// Inactive keys already synced; they now carry a disabled status so reviewers
+// can tell them apart from active keys.
 func TestSecretList_ReportsAccessKeyStatus(t *testing.T) {
 	created := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
 
@@ -96,7 +99,7 @@ func TestSecretList_ReportsAccessKeyStatus(t *testing.T) {
 				UserName:    awsSdk.String("ci-iam-1"),
 				CreateDate:  awsSdk.Time(created),
 				Status:      tc.status,
-			}}, nil)
+			}}, nil, nil)
 
 			resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 			require.NoError(t, err)
@@ -144,6 +147,15 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 			},
 			wantFields: map[string]any{},
 		},
+		{
+			name: "N/A placeholders are omitted even when a last-used date is present",
+			lastUsed: &iamTypes.AccessKeyLastUsed{
+				LastUsedDate: awsSdk.Time(used),
+				ServiceName:  awsSdk.String("N/A"),
+				Region:       awsSdk.String("N/A"),
+			},
+			wantFields: map[string]any{},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := iamClientWithUserKeys("ci-iam-1", []iamTypes.AccessKeyMetadata{{
@@ -151,20 +163,40 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 				UserName:    awsSdk.String("ci-iam-1"),
 				CreateDate:  awsSdk.Time(time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)),
 				Status:      iamTypes.StatusTypeActive,
-			}}, tc.lastUsed)
+			}}, tc.lastUsed, nil)
 
 			resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 			require.NoError(t, err)
 			require.Len(t, resources, 1)
 
-			assert.Equal(t, tc.wantFields, resources[0].GetProfile().AsMap())
 			trait := requireSecretTrait(t, resources[0])
 			if tc.lastUsed == nil || tc.lastUsed.LastUsedDate == nil {
 				assert.Nil(t, resources[0].GetProfile())
 				assert.Nil(t, trait.GetLastUsedAt())
 			} else {
 				assert.Equal(t, used, trait.GetLastUsedAt().AsTime())
+				if len(tc.wantFields) == 0 {
+					assert.Nil(t, resources[0].GetProfile())
+				} else {
+					assert.Equal(t, tc.wantFields, resources[0].GetProfile().AsMap())
+				}
 			}
 		})
 	}
+}
+
+func TestSecretList_LookupErrorStillSyncsKey(t *testing.T) {
+	client := iamClientWithUserKeys("ci-iam-1", []iamTypes.AccessKeyMetadata{{
+		AccessKeyId: awsSdk.String("AKIAEXAMPLE"),
+		UserName:    awsSdk.String("ci-iam-1"),
+		CreateDate:  awsSdk.Time(time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)),
+		Status:      iamTypes.StatusTypeActive,
+	}}, nil, errors.New("AccessDenied"))
+
+	resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Nil(t, resources[0].GetProfile())
+	assert.Nil(t, requireSecretTrait(t, resources[0]).GetLastUsedAt())
+	assert.Equal(t, v2.Status_RESOURCE_STATUS_ENABLED, resources[0].GetStatus().GetStatus())
 }
