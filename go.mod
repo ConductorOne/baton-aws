@@ -14,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.27.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.42.1
 	github.com/aws/smithy-go v1.25.1
-	github.com/conductorone/baton-sdk v0.26.0
+	github.com/conductorone/baton-sdk v0.28.0
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
@@ -55,9 +55,9 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/cockroachdb/swiss v0.0.0-20251224182025-b0f6560f979b // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
-	github.com/conductorone/dpop v0.2.6 // indirect
-	github.com/conductorone/dpop/integrations/dpop_grpc v0.2.4 // indirect
-	github.com/conductorone/dpop/integrations/dpop_oauth2 v0.2.5 // indirect
+	github.com/conductorone/dpop v0.3.0 // indirect
+	github.com/conductorone/dpop/integrations/dpop_grpc v0.3.0 // indirect
+	github.com/conductorone/dpop/integrations/dpop_oauth2 v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/deckarep/golang-set/v2 v2.9.0 // indirect
 	github.com/doug-martin/goqu/v9 v9.19.0 // indirect
