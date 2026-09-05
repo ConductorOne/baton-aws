@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
-	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
@@ -60,7 +59,7 @@ func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (aws
 
 	opts := GetAwsConfigOptionsForAssumeRole(output, f.baseClient, f.config)
 
-	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, opts...)
+	baseConfig, err := f.aws.loadAWSConfig(ctx, opts...)
 	if err != nil {
 		return awsSdk.Config{}, err
 	}

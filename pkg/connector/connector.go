@@ -30,6 +30,41 @@ import (
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 )
 
+// AWSConfigLoader resolves the AWS SDK configuration used by the connector.
+type AWSConfigLoader func(context.Context, ...func(*awsConfig.LoadOptions) error) (awsSdk.Config, error)
+
+// STSClient is the STS operation set the connector needs for credential
+// exchanges and caller-identity validation.
+type STSClient interface {
+	stscreds.AssumeRoleAPIClient
+	GetCallerIdentity(context.Context, *sts.GetCallerIdentityInput, ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
+}
+
+// STSClientFactory constructs an STS client for role assumptions.
+type STSClientFactory func(awsSdk.Config) STSClient
+
+type options struct {
+	loadAWSConfig AWSConfigLoader
+	newSTSClient  STSClientFactory
+}
+
+// Option configures the AWS connector.
+type Option func(*options)
+
+// WithAWSConfigLoader replaces the default AWS SDK configuration loader.
+func WithAWSConfigLoader(loader AWSConfigLoader) Option {
+	return func(o *options) {
+		o.loadAWSConfig = loader
+	}
+}
+
+// WithSTSClientFactory replaces the STS client constructor used for role assumptions.
+func WithSTSClientFactory(factory STSClientFactory) Option {
+	return func(o *options) {
+		o.newSTSClient = factory
+	}
+}
+
 type Config struct {
 	UseAssumeRole           bool
 	GlobalBindingExternalID string
@@ -69,6 +104,8 @@ type AWS struct {
 	_onceCallingConfig      map[string]*sync.Once
 	_callingConfig          map[string]awsSdk.Config
 	_callingConfigError     map[string]error
+	loadAWSConfig           AWSConfigLoader
+	newSTSClient            STSClientFactory
 
 	_identityInstancesCacheMtx sync.Mutex
 	_identityInstancesCacheErr error
@@ -117,12 +154,12 @@ func (o *AWS) getSSOSCIMClient(ctx context.Context) (*awsIdentityCenterSCIMClien
 	}, nil
 }
 
-func (o *AWS) getSTSClient(ctx context.Context) (*sts.Client, error) {
+func (o *AWS) getSTSClient(ctx context.Context) (STSClient, error) {
 	callingConfig, err := o.getCallingConfig(ctx, o.globalRegion)
 	if err != nil {
 		return nil, err
 	}
-	return sts.NewFromConfig(callingConfig), nil
+	return o.newSTSClient(callingConfig), nil
 }
 
 func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Config, error) {
@@ -137,7 +174,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 			l := ctxzap.Extract(ctx)
 			// ok, if we are an instance, we do the assumeRole twice, first time from our Instance role, INTO the binding account
 			// and from there, into the customer account.
-			stsSvc := sts.NewFromConfig(o.baseConfig)
+			stsSvc := o.newSTSClient(o.baseConfig)
 			bindingCreds := awsSdk.NewCredentialsCache(stscreds.NewAssumeRoleProvider(stsSvc, o.globalRoleARN, func(aro *stscreds.AssumeRoleOptions) {
 				if o.globalBindingExternalID != "" {
 					aro.ExternalID = awsSdk.String(o.globalBindingExternalID)
@@ -159,7 +196,7 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 			stsConfig := o.baseConfig.Copy()
 			stsConfig.Credentials = bindingCreds
 
-			callingSTSService := sts.NewFromConfig(stsConfig)
+			callingSTSService := o.newSTSClient(stsConfig)
 
 			callingConfig := awsSdk.Config{
 				HTTPClient:   o.baseClient,
@@ -181,15 +218,29 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 	return o._callingConfig[region], o._callingConfigError[region]
 }
 
-func New(ctx context.Context, config Config) (*AWS, error) {
+func New(ctx context.Context, config Config, optFns ...Option) (*AWS, error) {
+	opts := options{
+		loadAWSConfig: awsConfig.LoadDefaultConfig,
+		newSTSClient: func(cfg awsSdk.Config) STSClient {
+			return sts.NewFromConfig(cfg)
+		},
+	}
+	for _, fn := range optFns {
+		if fn != nil {
+			fn(&opts)
+		}
+	}
+	if opts.loadAWSConfig == nil || opts.newSTSClient == nil {
+		return nil, fmt.Errorf("aws connector: AWS config loader and STS client factory are required")
+	}
+
 	httpClient, err := uhttp.NewClient(ctx, uhttp.WithLogger(true, ctxzap.Extract(ctx)))
 	if err != nil {
 		return nil, err
 	}
 
-	opts := GetAwsConfigOptions(httpClient, config)
-
-	baseConfig, err := awsConfig.LoadDefaultConfig(ctx, opts...)
+	awsOpts := GetAwsConfigOptions(httpClient, config)
+	baseConfig, err := opts.loadAWSConfig(ctx, awsOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("aws connector: config load failure: %w", err)
 	}
@@ -215,6 +266,8 @@ func New(ctx context.Context, config Config) (*AWS, error) {
 		_callingConfig:          map[string]awsSdk.Config{},
 		_callingConfigError:     map[string]error{},
 		syncSecrets:             config.SyncSecrets,
+		loadAWSConfig:           opts.loadAWSConfig,
+		newSTSClient:            opts.newSTSClient,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
