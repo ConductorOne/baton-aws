@@ -110,12 +110,10 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		for _, email := range getUserEmails(user) {
 			options = append(options, resourceSdk.WithEmail(email, true))
 		}
-		// Last Login is the console sign-in alone. Folding access key use into it
-		// would keep a user driven by an automated key from ever looking dormant,
-		// which is the distinction this field exists to make. Key activity is
-		// reported on the access key itself, as its last-used time.
-		if activity.passwordLastUsed != nil {
-			options = append(options, resourceSdk.WithLastLogin(*activity.passwordLastUsed))
+		// Last Login is the newest of password sign-in and access-key use. The
+		// two signals stay on the profile so reviewers can tell them apart.
+		if lastLogin := activity.mostRecent(); lastLogin != nil {
+			options = append(options, resourceSdk.WithLastLogin(*lastLogin))
 		}
 
 		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName),
@@ -287,12 +285,24 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 }
 
 // loginActivity holds the two authentication signals AWS reports for an IAM
-// user. They are tracked separately because an access key call is not
-// equivalent to a human signing in to the console, and reviewers need to tell
-// them apart.
+// user. Last Login is the newest of the two; the timestamps stay separate on
+// the profile so reviewers can tell a password sign-in from access-key use.
 type loginActivity struct {
 	passwordLastUsed  *time.Time
 	accessKeyLastUsed *time.Time
+}
+
+func (a loginActivity) mostRecent() *time.Time {
+	switch {
+	case a.passwordLastUsed == nil:
+		return a.accessKeyLastUsed
+	case a.accessKeyLastUsed == nil:
+		return a.passwordLastUsed
+	case a.accessKeyLastUsed.After(*a.passwordLastUsed):
+		return a.accessKeyLastUsed
+	default:
+		return a.passwordLastUsed
+	}
 }
 
 // getLoginActivity reports the user's console sign-in time alongside the most

@@ -104,19 +104,20 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 		consoleSignIn   *time.Time
 		keys            []*time.Time
 		wantKeyLastUsed *time.Time
+		wantLastLogin   *time.Time
 	}{
 		{
-			// The old code reported the oldest activity, so a key used after the
-			// console sign-in used to overwrite Last Login with the sign-in.
-			name:            "a key used after the console sign-in leaves the sign-in intact",
+			name:            "a later key use is Last Login while the earlier sign-in stays on the profile",
 			consoleSignIn:   consoleLogin,
 			keys:            []*time.Time{keyUse},
 			wantKeyLastUsed: keyUse,
+			wantLastLogin:   keyUse,
 		},
 		{
-			name:          "a console sign-in with no access keys is still reported",
+			name:          "a console sign-in with no access keys is Last Login",
 			consoleSignIn: consoleLogin,
 			keys:          nil,
+			wantLastLogin: consoleLogin,
 		},
 		{
 			// The original defect: a key that exists but was never used left the
@@ -125,6 +126,7 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			name:          "a key that was never used does not discard the console sign-in",
 			consoleSignIn: consoleLogin,
 			keys:          []*time.Time{nil},
+			wantLastLogin: consoleLogin,
 		},
 		{
 			name:          "keys that were all never used report no key activity",
@@ -137,22 +139,26 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			name:            "the newest of several keys wins when listed first",
 			keys:            []*time.Time{keyUse, olderKeyUse},
 			wantKeyLastUsed: keyUse,
+			wantLastLogin:   keyUse,
 		},
 		{
 			name:            "the newest of several keys wins when listed last",
 			keys:            []*time.Time{olderKeyUse, keyUse},
 			wantKeyLastUsed: keyUse,
+			wantLastLogin:   keyUse,
 		},
 		{
 			name:            "an unused key alongside a used one does not hide the used one",
 			keys:            []*time.Time{nil, olderKeyUse},
 			wantKeyLastUsed: olderKeyUse,
+			wantLastLogin:   olderKeyUse,
 		},
 		{
-			name:            "a console sign-in after the key use leaves the key use intact",
+			name:            "a later console sign-in is Last Login while the earlier key use stays on the profile",
 			consoleSignIn:   keyUse,
 			keys:            []*time.Time{consoleLogin},
 			wantKeyLastUsed: consoleLogin,
+			wantLastLogin:   keyUse,
 		},
 		{
 			name:          "a user who has never authenticated reports neither signal",
@@ -173,6 +179,8 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 				"the console sign-in must survive whatever the keys report")
 			require.Equal(t, tc.wantKeyLastUsed, activity.accessKeyLastUsed,
 				"the newest key use must survive whatever the console reports")
+			require.Equal(t, tc.wantLastLogin, activity.mostRecent(),
+				"Last Login is the newest of the two signals")
 		})
 	}
 }
@@ -193,6 +201,7 @@ func TestGetLoginActivity_KeepsConsoleLoginWhenKeysCannotBeListed(t *testing.T) 
 
 	require.Equal(t, consoleLogin, activity.passwordLastUsed)
 	require.Nil(t, activity.accessKeyLastUsed)
+	require.Equal(t, consoleLogin, activity.mostRecent())
 }
 
 func TestGetLoginActivity_OmitsKeyActivityWhenLastUsedLookupFails(t *testing.T) {
@@ -212,6 +221,7 @@ func TestGetLoginActivity_OmitsKeyActivityWhenLastUsedLookupFails(t *testing.T) 
 
 		require.Equal(t, consoleLogin, activity.passwordLastUsed)
 		require.Equal(t, used, activity.accessKeyLastUsed)
+		require.Equal(t, used, activity.mostRecent())
 	})
 
 	t.Run("every lookup failing leaves key activity unset", func(t *testing.T) {
@@ -221,5 +231,6 @@ func TestGetLoginActivity_OmitsKeyActivityWhenLastUsedLookupFails(t *testing.T) 
 
 		require.Equal(t, consoleLogin, activity.passwordLastUsed)
 		require.Nil(t, activity.accessKeyLastUsed)
+		require.Equal(t, consoleLogin, activity.mostRecent())
 	})
 }
