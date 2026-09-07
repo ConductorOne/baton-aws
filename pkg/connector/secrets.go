@@ -7,6 +7,7 @@ import (
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
@@ -79,24 +80,58 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 			annos := &v2.V1Identifier{
 				Id: awsSdk.ToString(user.Arn),
 			}
+			// iam_user resources are keyed by ARN, so the owner has to be referenced
+			// by ARN too: a UserId here resolves to nothing and leaves the key with
+			// no owner to review it against.
+			ownerID := &v2.ResourceId{
+				ResourceType:  resourceTypeIAMUser.Id,
+				Resource:      awsSdk.ToString(user.Arn),
+				BatonResource: false,
+			}
 			options := []resourceSdk.SecretTraitOption{
-				resourceSdk.WithSecretCreatedByID(&v2.ResourceId{
-					ResourceType:  resourceTypeIAMUser.Id,
-					Resource:      *user.UserId,
-					BatonResource: false,
-				}),
-				resourceSdk.WithSecretIdentityID(&v2.ResourceId{
-					ResourceType:  resourceTypeIAMUser.Id,
-					Resource:      *user.UserId,
-					BatonResource: false,
-				}),
+				resourceSdk.WithSecretCreatedByID(ownerID),
+				resourceSdk.WithSecretIdentityID(ownerID),
 				resourceSdk.WithSecretType(v2.SecretTrait_CREDENTIAL_TYPE_STATIC_SECRET),
 				resourceSdk.WithSecretDetail("aws.access_key"),
 			}
 
-			keyLastUsedDate := getAccessKeyLastUsedDate(ctx, iamClient, *key.AccessKeyId)
-			if keyLastUsedDate != nil {
-				options = append(options, resourceSdk.WithSecretLastUsedAt(*keyLastUsedDate))
+			// Which service the key last called separates a person doing work from
+			// automation, so reviewers can judge whether the key is still needed.
+			profile := map[string]any{}
+			usage, err := getAccessKeyLastUsed(ctx, iamClient, *key.AccessKeyId)
+			if err != nil {
+				logger.Debug("Error getting access key last used",
+					zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)),
+					zap.Error(err),
+				)
+			} else {
+				if usage.date != nil {
+					options = append(options, resourceSdk.WithSecretLastUsedAt(*usage.date))
+				}
+				if usage.service != "" {
+					profile["last_used_service"] = usage.service
+				}
+				if usage.region != "" {
+					profile["last_used_region"] = usage.region
+				}
+			}
+
+			// Inactive keys already synced; they now carry a disabled status so
+			// reviewers can tell them apart from active keys.
+			keyStatus := v2.Status_RESOURCE_STATUS_DISABLED
+			if key.Status == iamTypes.StatusTypeActive {
+				keyStatus = v2.Status_RESOURCE_STATUS_ENABLED
+			}
+
+			resourceOptions := []resourceSdk.ResourceOption{
+				resourceSdk.WithResourceCreatedAt(*key.CreateDate),
+				resourceSdk.WithResourceStatus(keyStatus, string(key.Status)),
+				resourceSdk.WithAnnotation(annos),
+			}
+			// A key IAM has never reported usage for carries no profile at all,
+			// rather than an empty one.
+			if len(profile) > 0 {
+				resourceOptions = append(resourceOptions, resourceSdk.WithResourceProfile(profile))
 			}
 
 			secretResource, err := resourceSdk.NewSecretResource(
@@ -104,8 +139,7 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 				resourceTypeSecret,
 				*key.AccessKeyId,
 				options,
-				resourceSdk.WithResourceCreatedAt(*key.CreateDate),
-				resourceSdk.WithAnnotation(annos),
+				resourceOptions...,
 			)
 			if err != nil {
 				return nil, nil, err
@@ -136,20 +170,40 @@ func (o *secretResourceType) Grants(ctx context.Context, resource *v2.Resource, 
 	return nil, nil, nil
 }
 
-func getAccessKeyLastUsedDate(ctx context.Context, iamClient *iam.Client, accessKeyId string) *time.Time {
+// notApplicable is what IAM reports for the service and region of a key that
+// has never been used.
+const notApplicable = "N/A"
+
+// accessKeyUsage is what IAM knows about the last call made with a key. A key
+// that has never been used carries a nil date and no service, and is left that
+// way rather than filled in with a placeholder.
+type accessKeyUsage struct {
+	date    *time.Time
+	service string
+	region  string
+}
+
+func getAccessKeyLastUsed(ctx context.Context, iamClient *iam.Client, accessKeyId string) (accessKeyUsage, error) {
 	logger := ctxzap.Extract(ctx)
-	accessKeyLastUsed, err := iamClient.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
+	resp, err := iamClient.GetAccessKeyLastUsed(ctx, &iam.GetAccessKeyLastUsedInput{
 		AccessKeyId: awsSdk.String(accessKeyId),
 	})
 	if err != nil {
-		logger.Warn("Error getting access key last used", zap.Error(err))
-		return nil
+		return accessKeyUsage{}, err
 	}
-	if accessKeyLastUsed.AccessKeyLastUsed == nil ||
-		accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate == nil ||
-		accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate.IsZero() {
+	if resp.AccessKeyLastUsed == nil ||
+		resp.AccessKeyLastUsed.LastUsedDate == nil ||
+		resp.AccessKeyLastUsed.LastUsedDate.IsZero() {
 		logger.Debug("Access key last used date is nil or zero", zap.String("access_key_id", accessKeyId))
-		return nil
+		return accessKeyUsage{}, nil
 	}
-	return accessKeyLastUsed.AccessKeyLastUsed.LastUsedDate
+
+	usage := accessKeyUsage{date: resp.AccessKeyLastUsed.LastUsedDate}
+	if service := awsSdk.ToString(resp.AccessKeyLastUsed.ServiceName); service != notApplicable {
+		usage.service = service
+	}
+	if region := awsSdk.ToString(resp.AccessKeyLastUsed.Region); region != notApplicable {
+		usage.region = region
+	}
+	return usage, nil
 }

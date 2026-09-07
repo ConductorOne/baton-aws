@@ -94,6 +94,31 @@ Each policy resource carries its policy document (the JSON that defines which ac
 
 Syncing policy documents requires the policy read permissions listed in the IAM policies below (`iam:GetPolicy`, `iam:GetPolicyVersion`, and the `iam:Get*Policy` / `iam:List*Policies` actions). If these permissions are missing, the connector logs a warning and syncs the policy resources without their document contents rather than failing the sync — so a policy that appears with no document is usually a missing-permission symptom rather than an empty policy.
 
+## IAM user last login and access key activity
+
+For an IAM user, **Last Login** is the most recent of password-based AWS sign-in (`PasswordLastUsed`) and access-key use. Password sign-in includes the AWS Management Console and can also include other AWS websites, such as AWS Marketplace. The two signals stay separate on the profile so reviewers can tell a console sign-in apart from programmatic key activity.
+
+- `password_last_used` — the password-based AWS sign-in timestamp.
+- `access_key_last_used` — the most recent use across all of the user's access keys.
+
+Populating `access_key_last_used` requires `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed`; it does not require **Sync secrets**.
+
+When AWS returns neither `PasswordLastUsed` nor any access-key last-used date, C1 leaves **Last Login** unset. A missing password date does not mean the user has no console password; use `console_access_enabled` for that distinction.
+
+Per-key detail lives on the access key itself, on the [Inventory page](/product/admin/inventory):
+
+- **Last used**, together with `last_used_service` and `last_used_region` — what the key was calling and from where. For a key with no tracked use, AWS returns a null date and `"N/A"` placeholders; the connector omits those values.
+- **Status** — Active or Inactive. Inactive keys were already synced; they now carry a disabled status so reviewers can tell them apart from active keys. Inactive keys can be reactivated; reviewers decide whether to delete them.
+
+Two optional settings gate parts of this, and both are off by default:
+
+- **Sync secrets** — without it no access keys are synced, so none of the per-key detail above appears.
+- **Sync IAM User Console Access** (`BATON_SYNC_IAM_USER_CONSOLE_ACCESS`) — without it `console_access_enabled`, `password_reset_required`, and `login_profile_created_at` are not populated. It is off by default because it costs one `iam:GetLoginProfile` call per IAM user and requires `iam:GetLoginProfile` on the connector role. This setting detects an IAM console password; it does not detect access through Identity Center or an assumed role.
+
+IAM user **Last Login** itself does not depend on either setting.
+
+Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and **Sync SSO User Last Login** (`BATON_SYNC_SSO_USER_LAST_LOGIN`), and grant `cloudtrail:LookupEvents` to report Identity Center sign-ins. This setting is also off by default and does not affect IAM user Last Login or access key activity.
+
 ## Gather AWS credentials
 
 Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
@@ -233,7 +258,8 @@ Next, you will create an inline policy to define the specific data this role can
             "iam:GetGroup",
             "iam:GetRole",
             "iam:ListAccessKeys",
-            "iam:GetAccessKeyLastUsed"
+            "iam:GetAccessKeyLastUsed",
+            "iam:GetLoginProfile"
           ],
           "Resource": "*"
         },
@@ -287,13 +313,13 @@ Next, you will create an inline policy to define the specific data this role can
     * iam:GetGroup: Required to see which users belong to which groups. ListGroups only provides the group names, while GetGroup identifies the specific members.
     * iam:GetRole: Allows C1 to retrieve detailed information about specific roles, including their trust relationships.
 
-    **Optional: Security & Audit Insights** Include these permissions if you want C1 to sync access key metadata.
+    **Access key activity** These permissions populate `access_key_last_used` on each IAM user. Enable **Sync secrets** to also sync each key as its own secret resource with status and per-key activity.
 
-    * iam:ListAccessKeys and iam:GetAccessKeyLastUsed: These allow C1 to gather data on the status of your IAM access keys, such as when they were last used. This is useful for identifying unused or stale credentials.
+    * iam:ListAccessKeys and iam:GetAccessKeyLastUsed: These allow C1 to gather access key metadata, including when each key was last used. This is useful for identifying unused or stale credentials.
 
        Note that C1 only retrieves metadata for auditing; it does not store or access the secret access keys themselves.
 
-    **Optional: IAM User Console Access** Include this permission if you enable **Sync IAM User Console Access** (`BATON_SYNC_IAM_USER_CONSOLE_ACCESS`). This flag is off by default because it makes one `iam:GetLoginProfile` call per IAM user.
+    **Optional: IAM User Console Access** The JSON above includes this permission. It is used only when **Sync IAM User Console Access** (`BATON_SYNC_IAM_USER_CONSOLE_ACCESS`) is enabled. The flag is off by default because it makes one `iam:GetLoginProfile` call per IAM user.
 
     * iam:GetLoginProfile: Allows C1 to see whether each IAM user has a console login profile, and whether a password reset is required.
 
@@ -432,6 +458,7 @@ The permissions policy below is broken into several sections to align with these
 	      "Action": [
 	        "iam:GetGroup",
 	        "iam:GetAccessKeyLastUsed",
+	        "iam:GetLoginProfile",
 	        "iam:GetRole",
 	        "iam:ListAccountAliases",
 	        "iam:ListGroups",
@@ -468,6 +495,14 @@ The permissions policy below is broken into several sections to align with these
 	      "Effect": "Allow",
 	      "Resource": "*",
 	      "Sid": "ConductorOneReadAccess"
+	    },
+	    {
+	      "Action": [
+	        "cloudtrail:LookupEvents"
+	      ],
+	      "Effect": "Allow",
+	      "Resource": "*",
+	      "Sid": "SSOUserLastLogin"
 	    },
 	    {
 	      "Action": [
@@ -519,8 +554,7 @@ The permissions policy below is broken into several sections to align with these
 	      "Effect": "Allow",
 	      "Action": [
 	        "iam:ListRoles",
-	        "iam:ListPolicies",
-	        "iam:ListAccessKeys"
+	        "iam:ListPolicies"
 	      ],
 	      "Resource": "*"
 	    },
@@ -572,6 +606,7 @@ The permissions policy below is broken into several sections to align with these
 	- `organizations:ListParents`: **Recommended**, only needed to re-parent accounts onto their Organizational Unit for the Sparse ACLs by-inheritance hierarchy. If omitted, accounts sync flat without OU grouping instead of failing.
 	- `organizations:DescribeAccount`: **Recommended**, enables proactive validation of account status before creating assignments. If omitted, the connector proceeds anyway and surfaces a less clear error for suspended accounts.
 	- `sso:List..., sso:Describe..., sso:Get...`: These permissions allow C1 to list your permission sets, see how they are assigned to accounts and users, and read the inline and managed IAM policies attached to each permission set.
+	- `cloudtrail:LookupEvents`: **Optional**, only needed when Organizations support, Identity Center support, and **Sync SSO User Last Login** are all enabled. The JSON above includes it so the connector can read Identity Center sign-in events in that configuration.
 	- `organizations:ListRoots, organizations:ListOrganizationalUnitsForParent`: **Optional**, only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) above). If omitted, the connector logs a warning and skips the OU hierarchy instead of failing.
 	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for C1 to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
 	**Section 2: Provisioning access (“C1ProvisionAccess”)**
@@ -587,11 +622,12 @@ The permissions policy below is broken into several sections to align with these
 	- `iam:AttachRolePolicy, iam:DeleteRole, etc.`: These are permissions to manage IAM roles. The key detail is the Resource constraint: `arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*`. This ensures that C1 can only modify roles created and managed by the AWS IAM Identity Center service itself, preventing it from modifying other roles in your account. Note that read-only access (`iam:GetRole`) is granted separately in Section 1 for all roles.
 	**Section 4: Other permissions**
 	These are supporting permissions that enable specific features or functionality. Some of the permissions listed here can be omitted if your particular use case doesn’t require the data they pull in to C1.
-	- `IAMListPermissions`: This section allows C1 to sync data on access keys. C1 does not store or access the access keys. If you do not want to sync access key data, you can omit this section.
+	- `IAMListPermissions`: This section adds supplementary IAM role and managed-policy listing in the management account. Access key activity is provided by `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed` in the `ConductorOneReadAccess` statement above.
 	- `sts:AssumeRole`: **This permission is required when AWS Organizations support is enabled and the connector is doing cross-account IAM sync.** That covers two cases: Organizations on with Identity Center off, and Organizations on with Identity Center on plus the "Also sync cross-account IAM" flag turned on. It lets C1 assume the `OrganizationAccountAccessRole` in your child accounts so it can discover and sync resources across your AWS Organization. It can be omitted if AWS Organizations support is disabled, or if Identity Center is on without the cross-account IAM flag.
 	- `iam:GetSAMLProvider`: This is a necessary permission to read the configuration of the SAML provider that AWS IAM Identity Center uses for single sign-on.
 	- The permissions listed in the `"Sid": "IAMListPermissions"` and `"Sid": "AccessToSSOProvisiondRoles"` sections are required only if you want to use C1 to create assignments in the AWS Organization’s management account. In certain cases, you may also need to add `iam:UpdateSAMLProvider` to these sections.
-	- The `iam:GetAccessKeyLastUsed` permission is only needed if you want C1 to sync access key secret data.
+	- `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed` let C1 report the most recent access key activity on each IAM user. Enable **Sync secrets** to also sync each key as its own secret resource with per-key activity.
+	- `iam:GetLoginProfile` is only needed when **Sync IAM User Console Access** is enabled. It lets C1 report whether an IAM user has a console password.
     </Step>
     <Step>
     Click **Review Policy**.
@@ -640,6 +676,12 @@ The permissions policy below is broken into several sections to align with these
     </Step>
     <Step>
     **Optional.** Enable **Sync secrets** to display them on the [Inventory page](/product/admin/inventory).
+    </Step>
+    <Step>
+    **Optional.** Enable **Sync IAM User Console Access** to report whether each IAM user has a console password. The connector role must include `iam:GetLoginProfile`.
+    </Step>
+    <Step>
+    **Optional.** If both Organizations support and Identity Center support are enabled, enable **Sync SSO User Last Login** to report Identity Center sign-ins. The connector role must include `cloudtrail:LookupEvents`.
     </Step>
     <Step>
     Click **Save**.
@@ -725,6 +767,17 @@ stringData:
   # Optional: Include if you want to enable support for AWS IAM Identity Center
   BATON_GLOBAL_AWS_SSO_ENABLED: true
   BATON_GLOBAL_AWS_SSO_REGION: <Region for SSO identities (default is "us-east-1")>
+
+  # Optional: Sync access keys as secret resources on the Inventory page
+  BATON_SYNC_SECRETS: true
+
+  # Optional: Report whether IAM users have a console password
+  # Requires iam:GetLoginProfile
+  BATON_SYNC_IAM_USER_CONSOLE_ACCESS: true
+
+  # Optional: Report Identity Center user Last Login from CloudTrail
+  # Requires Organizations and Identity Center support plus cloudtrail:LookupEvents
+  BATON_SYNC_SSO_USER_LAST_LOGIN: true
 
   # Optional: Choose which AWS user type C1 should create when provisioning accounts.
   # "iam_user" (default) creates IAM users. "sso_user" creates AWS Identity Center
@@ -841,6 +894,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
           "Action" : [
             "iam:GetGroup",
             "iam:GetAccessKeyLastUsed",
+            "iam:GetLoginProfile",
             "iam:GetRole",
             "iam:ListAccountAliases",
             "iam:ListGroups",
@@ -877,6 +931,14 @@ resource "aws_iam_role" "ConductorOneIntegration" {
           "Effect" : "Allow",
           "Resource" : "*",
           "Sid" : "ConductorOneReadAccess"
+        },
+        {
+          "Action" : [
+            "cloudtrail:LookupEvents"
+          ],
+          "Effect" : "Allow",
+          "Resource" : "*",
+          "Sid" : "SSOUserLastLogin"
         },
         {
           "Action" : [
@@ -974,6 +1036,8 @@ resource "aws_iam_role" "ConductorOneIntegration" {
   }
 }
 ```
+
+After applying the Terraform configuration, enable **Sync secrets** and **Sync IAM User Console Access** in the connector settings if you want their optional data. Enable **Sync SSO User Last Login** only when both Organizations support and Identity Center support are enabled.
 </Tab>
 </Tabs>
 
