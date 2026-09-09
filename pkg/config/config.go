@@ -74,7 +74,7 @@ var (
 			"cn-northwest-1",
 		},
 		field.WithDisplayName("Region for AWS IAM Identity Center (successor to AWS Single Sign-On)"),
-		field.WithDescription("The region for the sso identities. Must be in the same partition as the rest of the configuration; the China regions require a self-hosted connector."),
+		field.WithDescription("The region for the sso identities"),
 		field.WithDefaultValue(RegionDefault),
 	)
 	GlobalBindingExternalIdField = field.StringField(
@@ -86,7 +86,7 @@ var (
 	GlobalRegionField = field.StringField(
 		"global-region",
 		field.WithDisplayName("Global Region"),
-		field.WithDescription("The region for the aws account. Use cn-north-1 or cn-northwest-1 for the AWS China (aws-cn) partition."),
+		field.WithDescription("The region for the aws account"),
 		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalRoleArnField = field.StringField(
@@ -105,7 +105,7 @@ var (
 	RoleArnField = field.StringField(
 		"role-arn",
 		field.WithDisplayName("Role ARN"),
-		field.WithDescription("The role arn for the aws account. Accepts the aws and aws-cn partitions."),
+		field.WithDescription("The role arn for the aws account"),
 	)
 	UseAssumeField = field.BoolField(
 		"use-assume",

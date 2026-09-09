@@ -28,11 +28,7 @@ func IsValidRoleARN(input string) error {
 		return fmt.Errorf("baton-aws: invalid role ARN: %w", err)
 	}
 	if !isSupportedPartition(parsedArn.Partition) {
-		return fmt.Errorf(
-			"baton-aws: invalid role ARN: unsupported partition %q: must be one of %s",
-			parsedArn.Partition,
-			strings.Join(supportedPartitions, ", "),
-		)
+		return unsupportedPartitionError(parsedArn.Partition)
 	}
 	if parsedArn.Service != iamType {
 		return fmt.Errorf("baton-aws: invalid role ARN: invalid service: must be 'iam'")
@@ -72,9 +68,6 @@ func AccountIdFromARN(input string) (string, error) {
 	return parsedArn.AccountID, nil
 }
 
-// ssoUserToARN builds the synthetic identitystore ARN used as an sso_user resource id.
-// Identity Center is regional, so the region determines the partition — there is no
-// cross-partition identity store.
 func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	id := arn.ARN{
 		Partition: partitionForRegion(region),
@@ -86,8 +79,6 @@ func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	return id.String()
 }
 
-// ssoGroupToARN builds the synthetic identitystore ARN used as an sso_group resource id.
-// See ssoUserToARN on why the partition comes from the region.
 func ssoGroupToARN(region string, identityStoreId string, groupId string) string {
 	id := arn.ARN{
 		Partition: partitionForRegion(region),

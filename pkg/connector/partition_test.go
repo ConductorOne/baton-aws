@@ -13,12 +13,17 @@ func TestPartitionForRegion(t *testing.T) {
 		region string
 		want   string
 	}{
-		{"us-east-1", awsPartition},
-		{"eu-west-3", awsPartition},
-		{"sa-east-1", awsPartition},
-		{"", awsPartition},
-		{"cn-north-1", awsChinaPartition},
-		{"cn-northwest-1", awsChinaPartition},
+		{"us-east-1", "aws"},
+		{"eu-west-3", "aws"},
+		{"sa-east-1", "aws"},
+		{"", "aws"},
+		// Unlisted regions resolve to commercial rather than being measured against a
+		// list that goes stale as AWS adds regions.
+		{"ap-southeast-99", "aws"},
+		// GovCloud is reported as commercial here; IsValidRoleARN is what rejects it.
+		{"us-gov-west-1", "aws"},
+		{"cn-north-1", "aws-cn"},
+		{"cn-northwest-1", "aws-cn"},
 	} {
 		t.Run(tc.region, func(t *testing.T) {
 			require.Equal(t, tc.want, partitionForRegion(tc.region))
@@ -26,59 +31,9 @@ func TestPartitionForRegion(t *testing.T) {
 	}
 }
 
-func TestPartitionFromARN(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"commercial iam role", "arn:aws:iam::123456789012:role/David", awsPartition},
-		{"china iam role", "arn:aws-cn:iam::123456789012:role/David", awsChinaPartition},
-		{"govcloud is reported, not normalized", "arn:aws-us-gov:iam::123456789012:role/David", "aws-us-gov"},
-		{"empty", "", ""},
-		{"not an arn", "David", ""},
-		// arn.Parse validates only the "arn:" prefix and the section count, never field
-		// contents, so this parses cleanly and yields Partition == "". That must be reported
-		// as unknown -- and fall through to the region -- not silently taken as "aws".
-		{"missing partition", "arn::iam::123456789012:role/David", ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, partitionFromARN(tc.input))
-		})
-	}
-}
-
-// TestResolvePartitionPrefersRoleARN pins the precedence: the role ARN is where the
-// connector's credentials actually live, and IAM ARNs carry no region, so a region that
-// disagrees with the role ARN must not win.
-func TestResolvePartitionPrefersRoleARN(t *testing.T) {
-	require.Equal(t, awsChinaPartition,
-		resolvePartition("arn:aws-cn:iam::123456789012:role/David", "us-east-1"))
-	require.Equal(t, awsPartition,
-		resolvePartition("arn:aws:iam::123456789012:role/David", "cn-north-1"))
-}
-
-// TestResolvePartitionFallsBackToRegion covers deployments with no role ARN at all
-// (static China-partition access keys), where the region is the only signal.
-func TestResolvePartitionFallsBackToRegion(t *testing.T) {
-	require.Equal(t, awsChinaPartition, resolvePartition("", "cn-northwest-1"))
-	require.Equal(t, awsPartition, resolvePartition("", "us-west-2"))
-	require.Equal(t, awsPartition, resolvePartition("", ""))
-	require.Equal(t, awsChinaPartition, resolvePartition("not-an-arn", "cn-north-1"))
-}
-
-func TestResolvePartitionFromAPIARN(t *testing.T) {
-	require.Equal(t, awsChinaPartition,
-		resolvePartition("arn:aws-cn:sso:::permissionSet/ssoins-1234/ps-1234", "us-east-1"))
-	require.Equal(t, awsChinaPartition,
-		resolvePartition("", "cn-north-1"))
-	require.Equal(t, awsPartition,
-		resolvePartition("", "us-east-1"))
-}
-
 func TestIsSupportedPartition(t *testing.T) {
-	require.True(t, isSupportedPartition(awsPartition))
-	require.True(t, isSupportedPartition(awsChinaPartition))
+	require.True(t, isSupportedPartition("aws"))
+	require.True(t, isSupportedPartition("aws-cn"))
 	// Nothing here has been exercised against GovCloud or the ISO partitions; accepting
 	// them would trade a clear startup error for a confusing mid-sync failure.
 	require.False(t, isSupportedPartition("aws-us-gov"))
@@ -86,15 +41,32 @@ func TestIsSupportedPartition(t *testing.T) {
 	require.False(t, isSupportedPartition(""))
 }
 
+// TestUnsupportedPartitionErrorNamesSupportedSet: the message is shared by IsValidRoleARN
+// and ValidateConfig, so it has to name the set rather than hardcode it in two places.
+func TestUnsupportedPartitionErrorNamesSupportedSet(t *testing.T) {
+	require.EqualError(t, unsupportedPartitionError("aws-us-gov"),
+		`baton-aws: invalid role ARN: unsupported partition "aws-us-gov": must be one of aws, aws-cn`)
+}
+
 // TestConfigPartition covers the accessor the cross-account assume-role ARN is built from.
+// The role ARN wins over the region because it is where the connector's credentials
+// actually live, and IAM ARNs carry no region of their own.
 func TestConfigPartition(t *testing.T) {
-	require.Equal(t, awsChinaPartition,
+	require.Equal(t, "aws-cn",
 		Config{RoleARN: "arn:aws-cn:iam::123456789012:role/David", GlobalRegion: "cn-north-1"}.partition())
-	require.Equal(t, awsChinaPartition,
-		Config{GlobalRegion: "cn-north-1"}.partition())
-	require.Equal(t, awsPartition,
+	require.Equal(t, "aws",
 		Config{RoleARN: "arn:aws:iam::123456789012:role/David", GlobalRegion: "us-east-1"}.partition())
-	require.Equal(t, awsPartition, Config{}.partition())
+
+	// No role ARN (static credentials): the region is the only signal.
+	require.Equal(t, "aws-cn", Config{GlobalRegion: "cn-northwest-1"}.partition())
+	require.Equal(t, "aws", Config{GlobalRegion: "us-west-2"}.partition())
+	require.Equal(t, "aws", Config{}.partition())
+
+	// arn.Parse accepts an ARN whose partition segment is empty, so guard that it is
+	// treated as no signal rather than stamped as an empty partition.
+	require.Equal(t, "aws-cn",
+		Config{RoleARN: "arn::iam::123456789012:role/David", GlobalRegion: "cn-north-1"}.partition())
+	require.Equal(t, "aws-cn", Config{RoleARN: "not-an-arn", GlobalRegion: "cn-north-1"}.partition())
 }
 
 // TestSyntheticSSOARNsCarryRegionPartition guards the sso_user / sso_group resource ids.
@@ -120,19 +92,20 @@ func TestSyntheticSSOARNsCarryRegionPartition(t *testing.T) {
 
 // TestCustomerManagedPolicyARNPartition matters more than the other synthetic ARNs: this
 // one is handed back to the IAM API, so a wrong partition is a failed lookup rather than a
-// cosmetically odd resource id.
+// cosmetically odd resource id. The partition comes from the ssoadmin-returned permission
+// set ARN, parsed in Grants().
 func TestCustomerManagedPolicyARNPartition(t *testing.T) {
 	ref := awsSsoAdminTypes.CustomerManagedPolicyReference{Name: awsSdk.String("MyPolicy")}
 
 	require.Equal(t, "arn:aws-cn:iam::123456789012:policy/MyPolicy",
-		customerManagedPolicyARN(awsChinaPartition, "123456789012", ref))
+		customerManagedPolicyARN("aws-cn", "123456789012", ref))
 	require.Equal(t, "arn:aws:iam::123456789012:policy/MyPolicy",
-		customerManagedPolicyARN(awsPartition, "123456789012", ref))
+		customerManagedPolicyARN("aws", "123456789012", ref))
 
 	withPath := awsSsoAdminTypes.CustomerManagedPolicyReference{
 		Name: awsSdk.String("DivPolicy"),
 		Path: awsSdk.String("/division_abc/"),
 	}
 	require.Equal(t, "arn:aws-cn:iam::123456789012:policy/division_abc/DivPolicy",
-		customerManagedPolicyARN(awsChinaPartition, "123456789012", withPath))
+		customerManagedPolicyARN("aws-cn", "123456789012", withPath))
 }

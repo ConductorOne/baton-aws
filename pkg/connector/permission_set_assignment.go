@@ -179,7 +179,13 @@ func (o *permissionSetAssignmentResourceType) Grants(ctx context.Context, resour
 	}
 
 	if pageState.PoliciesPhase {
-		grants, err := o.policyCompositionGrants(ctx, opts.Session, resource, permissionSetArn, accountID)
+		// ssoadmin returned this ARN, so it is the authoritative partition for the
+		// account-local policy ARNs derived from it — those go straight back to the IAM API.
+		permissionSet, err := arn.Parse(permissionSetArn)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: permission set id %q is not a valid ARN: %w", permissionSetArn, err)
+		}
+		grants, err := o.policyCompositionGrants(ctx, opts.Session, resource, permissionSet, accountID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -243,9 +249,10 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 	ctx context.Context,
 	ss sessions.SessionStore,
 	resource *v2.Resource,
-	permissionSetArn string,
+	permissionSet arn.ARN,
 	accountID string,
 ) ([]*v2.Grant, error) {
+	permissionSetArn := permissionSet.String()
 	expandable := &v2.GrantExpandable{
 		EntitlementIds: []string{
 			entitlementSdk.NewEntitlementID(resource, permissionSetAssignmentEntitlement),
@@ -260,11 +267,6 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 	if err != nil {
 		return nil, err
 	}
-
-	// The permission set ARN came back from ssoadmin in the connector's own partition, so
-	// it is the authoritative source for the partition of the account-local policy ARNs
-	// derived below — these are handed straight back to the IAM API.
-	partition := resolvePartition(permissionSetArn, o.account.region)
 
 	rv := make([]*v2.Grant, 0, len(managed)+len(refs))
 	for _, policy := range managed {
@@ -283,7 +285,7 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 		if name == "" {
 			return nil, fmt.Errorf("baton-aws: customer managed policy reference in permission set %s missing name", permissionSetArn)
 		}
-		grant, err := policyAttachmentGrant(name, customerManagedPolicyARN(partition, accountID, ref), resource.Id, expandable)
+		grant, err := policyAttachmentGrant(name, customerManagedPolicyARN(permissionSet.Partition, accountID, ref), resource.Id, expandable)
 		if err != nil {
 			return nil, err
 		}

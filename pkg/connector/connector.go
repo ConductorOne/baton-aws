@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 	"sync"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
@@ -239,6 +239,14 @@ func ValidateExternalID(input string) error {
 // cannot express. It is exported so the config tests exercise this exact function rather
 // than a hand-maintained copy that can drift from it.
 func ValidateConfig(awsc *cfg.Aws) error {
+	// Parse the role ARN once; its partition drives the checks below and the ARNs the
+	// connector constructs. An unparseable value leaves this empty and is reported by
+	// IsValidRoleARN (use-assume) or simply carries no partition signal (static creds).
+	var rolePartition string
+	if parsed, err := arn.Parse(awsc.RoleArn); err == nil {
+		rolePartition = parsed.Partition
+	}
+
 	if awsc.UseAssume {
 		err := IsValidRoleARN(awsc.RoleArn)
 		if err != nil {
@@ -255,37 +263,36 @@ func ValidateConfig(awsc *cfg.Aws) error {
 			// on its own terms. Folding it into the partition comparison below would
 			// report a malformed ARN as a cross-partition deployment problem and send the
 			// operator off to re-architect as self-hosted.
-			globalPartition := partitionFromARN(awsc.GlobalRoleArn)
-			if globalPartition == "" {
-				return fmt.Errorf("baton-aws: global-role-arn %q is not a valid ARN", awsc.GlobalRoleArn)
+			globalRole, err := arn.Parse(awsc.GlobalRoleArn)
+			if err != nil {
+				return fmt.Errorf("baton-aws: global-role-arn %q is not a valid ARN: %w", awsc.GlobalRoleArn, err)
+			}
+			if globalRole.Partition == "" {
+				return fmt.Errorf("baton-aws: global-role-arn %q is not a valid ARN: missing partition", awsc.GlobalRoleArn)
 			}
 			// Role chaining cannot cross partitions, so a C1-hosted two-hop config
 			// (commercial binding account -> customer role) can never reach aws-cn.
 			// Reject it at startup rather than after an opaque STS failure.
-			if rolePartition := partitionFromARN(awsc.RoleArn); globalPartition != rolePartition {
+			if globalRole.Partition != rolePartition {
 				return fmt.Errorf(
 					"baton-aws: global-role-arn and role-arn are in different partitions (%q vs %q): "+
 						"sts:AssumeRole cannot cross partitions, so this deployment must be self-hosted "+
 						"with credentials in the target partition (static keys or IRSA) and no global-role-arn",
-					globalPartition,
+					globalRole.Partition,
 					rolePartition,
 				)
 			}
 		}
-	} else if partition := partitionFromARN(awsc.RoleArn); partition != "" && !isSupportedPartition(partition) {
+	} else if rolePartition != "" && !isSupportedPartition(rolePartition) {
 		// role-arn is meaningful without use-assume — Metadata reports the account id
 		// derived from it, and AWSClientFactory uses it to tell own-account entities from
 		// cross-account ones — and Config.partition() derives the connector's partition
 		// from it either way. Applying the same allowlist here keeps an unsupported
 		// partition from reaching every ARN the connector constructs, and names the real
 		// objection instead of letting the region comparison below blame the region.
-		return fmt.Errorf(
-			"baton-aws: invalid role ARN: unsupported partition %q: must be one of %s",
-			partition,
-			strings.Join(supportedPartitions, ", "),
-		)
+		return unsupportedPartitionError(rolePartition)
 	}
-	return validatePartitionConsistency(awsc)
+	return validatePartitionConsistency(awsc, rolePartition)
 }
 
 // validatePartitionConsistency rejects a configuration whose regions and role ARN do not
@@ -307,9 +314,9 @@ func ValidateConfig(awsc *cfg.Aws) error {
 // default is a value the operator never chose. When neither a role ARN nor a global-region
 // is set there is no signal to compare against -- the SDK resolves the region from the
 // ambient environment, which this function cannot see -- so the check stands down.
-func validatePartitionConsistency(awsc *cfg.Aws) error {
+func validatePartitionConsistency(awsc *cfg.Aws, rolePartition string) error {
 	var partition, source string
-	switch rolePartition := partitionFromARN(awsc.RoleArn); {
+	switch {
 	case rolePartition != "":
 		partition, source = rolePartition, "role-arn"
 	case awsc.GlobalRegion != "":
