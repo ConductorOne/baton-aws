@@ -62,14 +62,16 @@ By default, `baton-aws` uses the AWS credentials from your AWS config. You can e
 (and `--global-aws-sso-region`, when Identity Center support is enabled) to a China region and pass
 an `arn:aws-cn:iam::...` value to `--role-arn`. The partition is derived from the role ARN, falling
 back to the region, and is threaded through every ARN the connector constructs — the cross-account
-assume-role ARN, the synthetic Identity Center principal ARNs, and the account-local policy ARNs
-resolved from permission sets.
+assume-role ARN, the synthetic Identity Center principal ARNs (from the Identity Center region,
+since there is no cross-partition identity store), and the account-local policy ARNs resolved from
+permission sets.
 
 China deployments must be **self-hosted**, because `sts:AssumeRole` cannot cross partitions: use
 either static China-partition keys (`--global-access-key-id` / `--global-secret-access-key`) or
 single-hop assume role (`--role-arn` with `--global-role-arn` unset) with IRSA in a China-region EKS
 cluster. A configuration that mixes partitions is rejected at startup rather than failing later with
-an opaque signature error.
+an opaque signature error. The partition is taken from `--role-arn` when one is set and from
+`--global-region` otherwise, so a static-key deployment should always set `--global-region`.
 
 ## Sparse ACLs: permission sets as scoped bindings
 
@@ -127,7 +129,7 @@ Flags:
       --global-aws-cross-account-iam-enabled             When both Organizations and Identity Center are enabled, also sync IAM users, roles, and groups from every child account. Requires sts:AssumeRole on OrganizationAccountAccessRole in each child account. Has no effect when Identity Center is disabled (cross-account IAM sync always runs in that mode). ($BATON_GLOBAL_AWS_CROSS_ACCOUNT_IAM_ENABLED)
       --global-aws-orgs-enabled                          Enable support for AWS Organizations ($BATON_GLOBAL_AWS_ORGS_ENABLED)
       --global-aws-sso-enabled                           Enable support for AWS IAM Identity Center ($BATON_GLOBAL_AWS_SSO_ENABLED)
-      --global-aws-sso-region string                     The region for the sso identities ($BATON_GLOBAL_AWS_SSO_REGION) (default "us-east-1")
+      --global-aws-sso-region string                     The region for the sso identities. Must be in the same partition as the rest of the configuration; the China regions require a self-hosted connector. ($BATON_GLOBAL_AWS_SSO_REGION) (default "us-east-1")
       --global-binding-external-id string                The global external id for the aws account ($BATON_GLOBAL_BINDING_EXTERNAL_ID)
       --global-region string                             The region for the aws account. Use cn-north-1 or cn-northwest-1 for the AWS China (aws-cn) partition. ($BATON_GLOBAL_REGION)
       --global-role-arn string                           The role arn for the aws account ($BATON_GLOBAL_ROLE_ARN)

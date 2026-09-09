@@ -77,7 +77,7 @@ func AccountIdFromARN(input string) (string, error) {
 // cross-partition identity store.
 func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	id := arn.ARN{
-		Partition: PartitionForRegion(region),
+		Partition: partitionForRegion(region),
 		Service:   "identitystore",
 		Region:    region,
 		AccountID: "",
@@ -90,7 +90,7 @@ func ssoUserToARN(region string, identityStoreId string, userId string) string {
 // See ssoUserToARN on why the partition comes from the region.
 func ssoGroupToARN(region string, identityStoreId string, groupId string) string {
 	id := arn.ARN{
-		Partition: PartitionForRegion(region),
+		Partition: partitionForRegion(region),
 		Service:   "identitystore",
 		Region:    region,
 		AccountID: "",

@@ -805,17 +805,36 @@ that already live in the China partition:
 Set the regions to China regions so endpoints resolve to `*.amazonaws.com.cn` and credentials are
 signed for the right partition:
 
-```yaml
+IRSA (single-hop assume role):
+
+```yaml expandable
   BATON_ROLE_ARN: arn:aws-cn:iam::<account id>:role/<role name>
   BATON_GLOBAL_REGION: cn-north-1
   # Only when Identity Center support is enabled
   BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
 ```
 
+Static China-partition access keys (no role ARN):
+
+```yaml expandable
+  BATON_GLOBAL_ACCESS_KEY_ID: <access key id>
+  BATON_GLOBAL_SECRET_ACCESS_KEY: <secret access key>
+  BATON_GLOBAL_REGION: cn-north-1
+  # Only when Identity Center support is enabled
+  BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
+```
+
 The connector rejects a configuration that mixes partitions at startup rather than failing later
-with an opaque signature error: `BATON_GLOBAL_REGION` and `BATON_GLOBAL_AWS_SSO_REGION` must be in
-the same partition as `BATON_ROLE_ARN`, and `BATON_GLOBAL_ROLE_ARN` (two-hop mode) must be in that
-partition too.
+with an opaque signature error. It takes the partition from `BATON_ROLE_ARN` when one is set and
+from `BATON_GLOBAL_REGION` otherwise, then requires `BATON_GLOBAL_REGION` — and, when
+`BATON_GLOBAL_AWS_SSO_ENABLED` is set, `BATON_GLOBAL_AWS_SSO_REGION` — to be in that same partition.
+`BATON_GLOBAL_ROLE_ARN` (two-hop mode) must be in it too.
+
+Always set `BATON_GLOBAL_REGION` on the static-key shape. It is the only partition signal the
+connector has there, and leaving it empty means the AWS SDK resolves a region from the ambient
+environment that the startup check cannot see. Note in particular that
+`BATON_GLOBAL_AWS_SSO_REGION` defaults to `us-east-1`, so enabling Identity Center without setting
+it is a partition mismatch the connector will now reject at startup.
 
 Two things to confirm against your own account before rolling out:
 

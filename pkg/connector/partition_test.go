@@ -21,7 +21,7 @@ func TestPartitionForRegion(t *testing.T) {
 		{"cn-northwest-1", awsChinaPartition},
 	} {
 		t.Run(tc.region, func(t *testing.T) {
-			require.Equal(t, tc.want, PartitionForRegion(tc.region))
+			require.Equal(t, tc.want, partitionForRegion(tc.region))
 		})
 	}
 }
@@ -37,12 +37,13 @@ func TestPartitionFromARN(t *testing.T) {
 		{"govcloud is reported, not normalized", "arn:aws-us-gov:iam::123456789012:role/David", "aws-us-gov"},
 		{"empty", "", ""},
 		{"not an arn", "David", ""},
-		// A partition-less ARN is unparseable rather than commercial-by-default, so it must
-		// fall through to the region rather than being silently taken as "aws".
+		// arn.Parse validates only the "arn:" prefix and the section count, never field
+		// contents, so this parses cleanly and yields Partition == "". That must be reported
+		// as unknown -- and fall through to the region -- not silently taken as "aws".
 		{"missing partition", "arn::iam::123456789012:role/David", ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, PartitionFromARN(tc.input))
+			require.Equal(t, tc.want, partitionFromARN(tc.input))
 		})
 	}
 }
@@ -66,13 +67,13 @@ func TestResolvePartitionFallsBackToRegion(t *testing.T) {
 	require.Equal(t, awsChinaPartition, resolvePartition("not-an-arn", "cn-north-1"))
 }
 
-func TestPartitionFromARNOrRegion(t *testing.T) {
+func TestResolvePartitionFromAPIARN(t *testing.T) {
 	require.Equal(t, awsChinaPartition,
-		partitionFromARNOrRegion("arn:aws-cn:sso:::permissionSet/ssoins-1234/ps-1234", "us-east-1"))
+		resolvePartition("arn:aws-cn:sso:::permissionSet/ssoins-1234/ps-1234", "us-east-1"))
 	require.Equal(t, awsChinaPartition,
-		partitionFromARNOrRegion("", "cn-north-1"))
+		resolvePartition("", "cn-north-1"))
 	require.Equal(t, awsPartition,
-		partitionFromARNOrRegion("", "us-east-1"))
+		resolvePartition("", "us-east-1"))
 }
 
 func TestIsSupportedPartition(t *testing.T) {

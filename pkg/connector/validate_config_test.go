@@ -13,7 +13,7 @@ const (
 	chinaRole       = "arn:aws-cn:iam::123456789012:role/David"
 )
 
-// TestValidateConfigAcceptsChinaPartition is the startup gate CXH-2444 was blocked on: a
+// TestValidateConfigAcceptsChinaPartition covers the startup gate that blocked aws-cn: a
 // self-hosted single-hop (IRSA or static China keys) config must load.
 func TestValidateConfigAcceptsChinaPartition(t *testing.T) {
 	require.NoError(t, ValidateConfig(&cfg.Aws{
@@ -124,14 +124,53 @@ func TestValidateConfigIgnoresEmptyGlobalRegion(t *testing.T) {
 	}))
 }
 
-// TestValidateConfigWithoutRoleARN keeps the static-credentials path (no assume role, no
-// role ARN to derive a partition from) unvalidated rather than defaulted to commercial.
+// TestValidateConfigWithoutRoleARN covers the static-credentials path (China access keys,
+// no assume role). There is no role ARN to derive a partition from, so global-region is
+// the reference -- the same precedence Config.partition() uses when it stamps ARNs.
 func TestValidateConfigWithoutRoleARN(t *testing.T) {
 	require.NoError(t, ValidateConfig(&cfg.Aws{GlobalRegion: "cn-north-1"}))
 	require.NoError(t, ValidateConfig(&cfg.Aws{
 		GlobalRegion:        "cn-north-1",
 		GlobalAwsSsoEnabled: true,
 		GlobalAwsSsoRegion:  "cn-north-1",
+	}))
+
+	// The shape the live e2e workflow runs: static keys, no role ARN, commercial regions,
+	// Identity Center and Organizations on. Extending the check to the no-role-ARN case
+	// must not reject it.
+	require.NoError(t, ValidateConfig(&cfg.Aws{
+		GlobalRegion:         "us-east-1",
+		GlobalAwsSsoEnabled:  true,
+		GlobalAwsSsoRegion:   cfg.RegionDefault,
+		GlobalAwsOrgsEnabled: true,
+	}))
+}
+
+// TestValidateConfigWithoutRoleARNRejectsIdentityCenterMismatch is the case the region
+// fallback exists for: a China static-key operator enables Identity Center and never
+// touches global-aws-sso-region, so it keeps its commercial us-east-1 default. Without the
+// fallback nothing compares the two, the sync succeeds, and every sso_user/sso_group is
+// keyed arn:aws:identitystore:us-east-1 -- so correcting the region later re-keys every
+// principal C1 has already synced.
+func TestValidateConfigWithoutRoleARNRejectsIdentityCenterMismatch(t *testing.T) {
+	err := ValidateConfig(&cfg.Aws{
+		GlobalRegion:        "cn-north-1",
+		GlobalAwsSsoEnabled: true,
+		GlobalAwsSsoRegion:  cfg.RegionDefault,
+	})
+	require.ErrorContains(t, err, `global-aws-sso-region "us-east-1" is not in the "aws-cn" partition of global-region`)
+
+	// Identity Center off: the unchosen default must still not trip the check.
+	require.NoError(t, ValidateConfig(&cfg.Aws{
+		GlobalRegion:       "cn-north-1",
+		GlobalAwsSsoRegion: cfg.RegionDefault,
+	}))
+
+	// No role ARN and no global-region: the SDK resolves the region from the ambient
+	// environment, which this check cannot see, so it must stand down rather than guess.
+	require.NoError(t, ValidateConfig(&cfg.Aws{
+		GlobalAwsSsoEnabled: true,
+		GlobalAwsSsoRegion:  cfg.RegionDefault,
 	}))
 }
 
@@ -143,4 +182,39 @@ func TestValidateConfigStillRejectsUnsupportedPartitions(t *testing.T) {
 		RoleArn:   "arn:aws-us-gov:iam::123456789012:role/David",
 	})
 	require.ErrorContains(t, err, "unsupported partition")
+}
+
+// TestValidateConfigRejectsUnsupportedPartitionWithoutUseAssume: role-arn is consumed even
+// without use-assume (account-id metadata, own-account vs cross-account client selection)
+// and Config.partition() derives from it either way, so the allowlist has to apply here
+// too. It must name the partition -- blaming global-region would be a falsehood, since
+// us-gov-west-1 really is in aws-us-gov.
+func TestValidateConfigRejectsUnsupportedPartitionWithoutUseAssume(t *testing.T) {
+	for _, globalRegion := range []string{"us-gov-west-1", ""} {
+		err := ValidateConfig(&cfg.Aws{
+			RoleArn:      "arn:aws-us-gov:iam::123456789012:role/David",
+			GlobalRegion: globalRegion,
+		})
+		require.ErrorContains(t, err, `unsupported partition "aws-us-gov"`)
+		require.NotContains(t, err.Error(), "global-region")
+	}
+
+	// A supported partition without use-assume stays acceptable.
+	require.NoError(t, ValidateConfig(&cfg.Aws{RoleArn: commercialRole, GlobalRegion: "us-east-1"}))
+	require.NoError(t, ValidateConfig(&cfg.Aws{RoleArn: chinaRole, GlobalRegion: "cn-north-1"}))
+}
+
+// TestValidateConfigRejectsUnparseableGlobalRoleARN: global-role-arn never reaches
+// IsValidRoleARN, so a malformed one used to be reported as a cross-partition deployment
+// problem ("different partitions (\"\" vs \"aws\")") and sent the operator off to
+// re-architect as self-hosted.
+func TestValidateConfigRejectsUnparseableGlobalRoleARN(t *testing.T) {
+	err := ValidateConfig(&cfg.Aws{
+		UseAssume:     true,
+		RoleArn:       commercialRole,
+		GlobalRoleArn: "not-an-arn",
+		ExternalId:    validExternalID,
+	})
+	require.ErrorContains(t, err, `global-role-arn "not-an-arn" is not a valid ARN`)
+	require.NotContains(t, err.Error(), "different partitions")
 }

@@ -264,7 +264,7 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 	// The permission set ARN came back from ssoadmin in the connector's own partition, so
 	// it is the authoritative source for the partition of the account-local policy ARNs
 	// derived below — these are handed straight back to the IAM API.
-	partition := partitionFromARNOrRegion(permissionSetArn, o.account.region)
+	partition := resolvePartition(permissionSetArn, o.account.region)
 
 	rv := make([]*v2.Grant, 0, len(managed)+len(refs))
 	for _, policy := range managed {

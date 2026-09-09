@@ -74,7 +74,7 @@ var (
 			"cn-northwest-1",
 		},
 		field.WithDisplayName("Region for AWS IAM Identity Center (successor to AWS Single Sign-On)"),
-		field.WithDescription("The region for the sso identities"),
+		field.WithDescription("The region for the sso identities. Must be in the same partition as the rest of the configuration; the China regions require a self-hosted connector."),
 		field.WithDefaultValue(RegionDefault),
 	)
 	GlobalBindingExternalIdField = field.StringField(

@@ -74,6 +74,10 @@ func isolateAWSEnv(t *testing.T) {
 	// Credentials are always supplied explicitly here, so a stray IMDS probe would only
 	// add latency and a dependency on the host.
 	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	// A CA bundle in the ambient environment makes the SDK try to attach custom RootCAs to
+	// the plain *http.Client these tests inject, failing with "has no WithTransportOptions"
+	// before any assertion runs.
+	t.Setenv("AWS_CA_BUNDLE", "")
 }
 
 func newTestFactory(t *testing.T, stsClient stscreds.AssumeRoleAPIClient) *AWSClientFactory {
@@ -241,9 +245,13 @@ func TestGetConfigRoleARN(t *testing.T) {
 	require.Equal(t, "arn:aws:iam::123456789012:role/BatonRole", rec.roleARN)
 }
 
-// TestGetConfigRoleARNPartition covers CXH-2444: every child-account IAM sync in the
+// TestGetConfigRoleARNPartition guards the cross-account credential ARN: every child-account IAM sync in the
 // aws-cn partition assumed a hardcoded arn:aws: ARN, which does not exist there.
 // sts:AssumeRole cannot cross partitions, so the ARN must carry the connector's own.
+//
+// The two precedence cases below pin resolvePartition in isolation. ValidateConfig rejects
+// a role ARN and a global-region in different partitions, so neither is a loadable
+// configuration -- they are here to prove which signal wins, not to bless mixing them.
 func TestGetConfigRoleARNPartition(t *testing.T) {
 	ctx := context.Background()
 

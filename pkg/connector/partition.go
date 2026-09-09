@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
@@ -20,32 +21,43 @@ const (
 )
 
 // chinaRegionPrefix is the region prefix that identifies the aws-cn partition.
+//
+// The match is deliberately case-sensitive, to stay consistent with the SDK: its own
+// partition metadata keys aws-cn off `^cn\-\w+\-\d+$` (see
+// aws-sdk-go-v2/internal/endpoints/awsrulesfn/partitions.go), so a mis-cased region falls
+// out of aws-cn for endpoint resolution too. Normalising here would make this function
+// disagree with the endpoints the SDK actually dials.
 const chinaRegionPrefix = "cn-"
 
-// supportedPartitions is the set of partitions IsValidRoleARN accepts. GovCloud
+// supportedPartitions is the set of partitions the connector accepts. GovCloud
 // (aws-us-gov) and the ISO partitions are deliberately absent: nothing in the connector
 // has been exercised against them, and silently accepting a partition we cannot reach
 // produces a confusing mid-sync failure instead of a clear startup error.
 var supportedPartitions = []string{awsPartition, awsChinaPartition}
 
-// PartitionForRegion returns the ARN partition a region belongs to.
+// partitionForRegion returns the ARN partition a region belongs to.
 //
 // Region prefix is the only signal available before any AWS call succeeds, which is why
 // it — and not an endpoint lookup — backs the connector's startup-time partition
 // decisions. Anything outside the China regions resolves to the commercial partition,
 // matching the connector's supported set.
-func PartitionForRegion(region string) string {
+func partitionForRegion(region string) string {
 	if strings.HasPrefix(region, chinaRegionPrefix) {
 		return awsChinaPartition
 	}
 	return awsPartition
 }
 
-// PartitionFromARN returns the partition of a well-formed ARN, or "" when the input is
-// not parseable as one. An ARN that came back from an AWS API is the most authoritative
+// partitionFromARN returns the partition of an ARN, or "" when the input carries no
+// partition signal. An ARN that came back from an AWS API is the most authoritative
 // partition signal there is — it was minted by the partition itself — so prefer this over
-// PartitionForRegion whenever a real ARN is in hand.
-func PartitionFromARN(input string) string {
+// partitionForRegion whenever a real ARN is in hand.
+//
+// "" covers three cases the callers all treat alike: an empty input, an input arn.Parse
+// rejects, and an input arn.Parse accepts whose partition segment is itself empty
+// (arn.Parse validates only the "arn:" prefix and the section count, never field
+// contents, so "arn::iam::123456789012:role/R" parses cleanly with Partition == "").
+func partitionFromARN(input string) string {
 	if input == "" {
 		return ""
 	}
@@ -57,37 +69,24 @@ func PartitionFromARN(input string) string {
 }
 
 // resolvePartition picks the partition to stamp onto ARNs the connector constructs,
-// preferring the caller's own role ARN over the configured region.
+// preferring an authoritative ARN over the configured region.
 //
-// The role ARN wins because it is the partition the connector's credentials actually live
-// in, and because IAM ARNs carry no region — a partition taken from the region would be a
+// arnHint is whichever ARN the call site holds: the caller's own role ARN, or an ARN an
+// AWS API returned (an Identity Center instance or permission set, say). It wins because
+// it is the partition the connector's credentials or that API response actually live in,
+// and because IAM ARNs carry no region — a partition taken from the region would be a
 // second, independently-configured source of truth that can disagree with it. The region
 // is the fallback for deployments with no role ARN at all (static credentials).
-func resolvePartition(roleARN string, region string) string {
-	if partition := PartitionFromARN(roleARN); partition != "" {
+func resolvePartition(arnHint string, region string) string {
+	if partition := partitionFromARN(arnHint); partition != "" {
 		return partition
 	}
-	return PartitionForRegion(region)
-}
-
-// partitionFromARNOrRegion is resolvePartition's shape for call sites that hold an ARN
-// returned by an AWS API (an Identity Center instance or permission set, say) plus the
-// region that ARN was fetched from.
-func partitionFromARNOrRegion(input string, region string) string {
-	if partition := PartitionFromARN(input); partition != "" {
-		return partition
-	}
-	return PartitionForRegion(region)
+	return partitionForRegion(region)
 }
 
 // isSupportedPartition reports whether the connector knows how to operate in a partition.
 func isSupportedPartition(partition string) bool {
-	for _, supported := range supportedPartitions {
-		if partition == supported {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(supportedPartitions, partition)
 }
 
 // partition returns the ARN partition for this connector configuration. It is derived

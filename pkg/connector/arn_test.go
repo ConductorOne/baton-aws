@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIsValidRoleARNPartitions is the startup gate for China support: validateConfig runs
+// TestIsValidRoleARNPartitions is the startup gate for China support: ValidateConfig runs
 // IsValidRoleARN whenever --use-assume is set, so an aws-cn role ARN rejected here fails
 // the connector before it makes a single AWS call.
 func TestIsValidRoleARNPartitions(t *testing.T) {

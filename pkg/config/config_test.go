@@ -115,7 +115,7 @@ func TestConfigs(t *testing.T) {
 				true,
 				"empty",
 			},
-			// aws-cn partition (CXH-2444). global-aws-sso-region is a SelectField, so the
+			// aws-cn partition. global-aws-sso-region is a SelectField, so the
 			// China regions have to be in its allowed set or field.Validate rejects them
 			// before the connector's own validation ever runs.
 			{

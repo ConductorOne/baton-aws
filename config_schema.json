@@ -128,7 +128,7 @@
     {
       "name": "global-aws-sso-region",
       "displayName": "Region for AWS IAM Identity Center (successor to AWS Single Sign-On)",
-      "description": "The region for the sso identities",
+      "description": "The region for the sso identities. Must be in the same partition as the rest of the configuration; the China regions require a self-hosted connector.",
       "stringField": {
         "defaultValue": "us-east-1",
         "rules": {
