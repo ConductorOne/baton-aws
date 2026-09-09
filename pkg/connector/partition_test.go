@@ -17,13 +17,19 @@ func TestPartitionForRegion(t *testing.T) {
 		{"eu-west-3", "aws"},
 		{"sa-east-1", "aws"},
 		{"", "aws"},
-		// Unlisted regions resolve to commercial rather than being measured against a
-		// list that goes stale as AWS adds regions.
+		// Regions outside a listed prefix resolve to commercial rather than being
+		// measured against a list that goes stale as AWS adds regions.
 		{"ap-southeast-99", "aws"},
-		// GovCloud is reported as commercial here; IsValidRoleARN is what rejects it.
+		// GovCloud reads as commercial here. Only the role-ARN gates reject aws-us-gov --
+		// a static-credentials config with a GovCloud region and no role ARN is not
+		// rejected by anything, which is pre-existing and unchanged by China support.
 		{"us-gov-west-1", "aws"},
+		// Matched on the "cn-" prefix, so a China region AWS adds later is still aws-cn.
 		{"cn-north-1", "aws-cn"},
 		{"cn-northwest-1", "aws-cn"},
+		{"cn-somewhere-2", "aws-cn"},
+		// Case-sensitive, matching the SDK's own aws-cn region regex.
+		{"CN-NORTH-1", "aws"},
 	} {
 		t.Run(tc.region, func(t *testing.T) {
 			require.Equal(t, tc.want, partitionForRegion(tc.region))

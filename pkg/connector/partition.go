@@ -9,27 +9,34 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 )
 
-// partitionRegions maps each ARN partition the connector supports to the regions that
-// identify it. Its keys are the supported partition set: GovCloud (aws-us-gov) and the ISO
-// partitions are deliberately absent, because nothing here has been exercised against them
-// and silently accepting a partition we cannot reach produces a confusing mid-sync failure
-// instead of a clear startup error.
+// partitionRegionPrefixes maps each ARN partition the connector supports to the region
+// prefixes that identify it. Its keys are the supported partition set: GovCloud
+// (aws-us-gov) and the ISO partitions are deliberately absent, because nothing here has
+// been exercised against them and silently accepting a partition we cannot reach produces
+// a confusing mid-sync failure instead of a clear startup error.
 //
-// The commercial entry lists no regions because it is the fallback. global-region is a
-// free-form field and AWS adds commercial regions regularly, so an unlisted region has to
-// resolve to commercial rather than be measured against a list that goes stale.
-var partitionRegions = map[string][]string{
+// Prefixes rather than exact regions, in both directions: commercial has none because it
+// is the fallback, and aws-cn is matched on "cn-" so a region AWS adds later still lands
+// in the right partition instead of being read as commercial.
+//
+// The match is case-sensitive to stay consistent with the SDK, which keys aws-cn off
+// `^cn\-\w+\-\d+$` (aws-sdk-go-v2/internal/endpoints/awsrulesfn/partitions.go). A
+// mis-cased region falls out of aws-cn for endpoint resolution too, so normalising here
+// would make this disagree with the endpoints actually dialled.
+var partitionRegionPrefixes = map[string][]string{
 	"aws":    {},
-	"aws-cn": {"cn-north-1", "cn-northwest-1"},
+	"aws-cn": {"cn-"},
 }
 
 // partitionForRegion returns the ARN partition a region belongs to. The region is the only
 // partition signal available before any AWS call succeeds, which is why it — and not an
 // endpoint lookup — backs the connector's startup-time partition decisions.
 func partitionForRegion(region string) string {
-	for partition, regions := range partitionRegions {
-		if slices.Contains(regions, region) {
-			return partition
+	for partition, prefixes := range partitionRegionPrefixes {
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(region, prefix) {
+				return partition
+			}
 		}
 	}
 	return "aws"
@@ -37,7 +44,7 @@ func partitionForRegion(region string) string {
 
 // isSupportedPartition reports whether the connector knows how to operate in a partition.
 func isSupportedPartition(partition string) bool {
-	_, ok := partitionRegions[partition]
+	_, ok := partitionRegionPrefixes[partition]
 	return ok
 }
 
@@ -47,7 +54,7 @@ func unsupportedPartitionError(partition string) error {
 	return fmt.Errorf(
 		"baton-aws: invalid role ARN: unsupported partition %q: must be one of %s",
 		partition,
-		strings.Join(slices.Sorted(maps.Keys(partitionRegions)), ", "),
+		strings.Join(slices.Sorted(maps.Keys(partitionRegionPrefixes)), ", "),
 	)
 }
 

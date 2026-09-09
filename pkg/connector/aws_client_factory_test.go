@@ -249,7 +249,7 @@ func TestGetConfigRoleARN(t *testing.T) {
 // aws-cn partition assumed a hardcoded arn:aws: ARN, which does not exist there.
 // sts:AssumeRole cannot cross partitions, so the ARN must carry the connector's own.
 //
-// The two precedence cases below pin resolvePartition in isolation. ValidateConfig rejects
+// The two precedence cases below pin Config.partition() in isolation. ValidateConfig rejects
 // a role ARN and a global-region in different partitions, so neither is a loadable
 // configuration -- they are here to prove which signal wins, not to bless mixing them.
 func TestGetConfigRoleARNPartition(t *testing.T) {

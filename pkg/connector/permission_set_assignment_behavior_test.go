@@ -580,6 +580,69 @@ func TestPermissionSetAssignmentGrants_PolicyCompositionPhase(t *testing.T) {
 	}
 }
 
+// The account-local policy ARNs are built from the partition of the ssoadmin-returned
+// permission set ARN, which Grants() parses. In aws-cn that has to carry through to the
+// derived customer-managed policy ARNs, since those go straight back to the IAM API.
+func TestPermissionSetAssignmentGrants_PolicyCompositionPhase_ChinaPartition(t *testing.T) {
+	ctx := context.Background()
+	const chinaPermissionSetArn = "arn:aws-cn:sso:::permissionSet/ssoins-7204abcd1234abcd/ps-0123456789abcdef"
+
+	sso := &fakeSSOAdmin{
+		listAccountAssignmentsFn: func(in *awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
+			return &awsSsoAdmin.ListAccountAssignmentsOutput{}, nil
+		},
+		listManagedPoliciesInPermissionSetFn: func(
+			in *awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error) {
+			return &awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput{}, nil
+		},
+		listCustomerManagedPolicyReferencesFn: func(
+			in *awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetInput) (*awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput, error) {
+			return &awsSsoAdmin.ListCustomerManagedPolicyReferencesInPermissionSetOutput{
+				CustomerManagedPolicyReferences: []awsSsoAdminTypes.CustomerManagedPolicyReference{
+					{Name: awsSdk.String("RootPolicy")},
+				},
+			}, nil
+		},
+	}
+	psa := permissionSetAssignmentBuilder(newBehaviorAccount(sso))
+	binding, err := permissionSetAssignmentResource(chinaPermissionSetArn, "PowerUserAccess", testAccountID,
+		&v2.ResourceId{ResourceType: resourceTypeAccount.Id, Resource: testAccountID})
+	require.NoError(t, err)
+
+	_, res, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+	require.NotEmpty(t, res.NextPageToken)
+
+	polGrants, _, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: res.NextPageToken}})
+	require.NoError(t, err)
+	require.Len(t, polGrants, 1)
+	assert.Equal(t, "arn:aws-cn:iam::"+testAccountID+":policy/RootPolicy",
+		polGrants[0].Entitlement.Resource.Id.Resource)
+}
+
+// A permission set id that is not a parseable ARN must fail loudly rather than fall back to
+// a region-derived partition: these ARNs are handed to the IAM API, so guessing produces a
+// failed lookup instead of a named error.
+func TestPermissionSetAssignmentGrants_PolicyCompositionPhase_UnparseableARN(t *testing.T) {
+	ctx := context.Background()
+	psa := permissionSetAssignmentBuilder(newBehaviorAccount(&fakeSSOAdmin{
+		listAccountAssignmentsFn: func(in *awsSsoAdmin.ListAccountAssignmentsInput) (*awsSsoAdmin.ListAccountAssignmentsOutput, error) {
+			return &awsSsoAdmin.ListAccountAssignmentsOutput{}, nil
+		},
+	}))
+	binding, err := permissionSetAssignmentResource("not-an-arn", "PowerUserAccess", testAccountID,
+		&v2.ResourceId{ResourceType: resourceTypeAccount.Id, Resource: testAccountID})
+	require.NoError(t, err)
+
+	_, res, err := psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.NotNil(t, res)
+
+	_, _, err = psa.Grants(ctx, binding, resourceSdk.SyncOpAttrs{PageToken: pagination.Token{Token: res.NextPageToken}})
+	require.ErrorContains(t, err, `permission set id "not-an-arn" is not a valid ARN`)
+}
+
 // AccessDenied / ResourceNotFound on the policy-composition list APIs must degrade
 // gracefully (warn + skip), matching permission_set.Grants — so upgrades that add
 // sso:ListCustomerManagedPolicyReferencesInPermissionSet before IAM policies are
