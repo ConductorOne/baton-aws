@@ -78,11 +78,16 @@ func isolateAWSEnv(t *testing.T) {
 
 func newTestFactory(t *testing.T, stsClient stscreds.AssumeRoleAPIClient) *AWSClientFactory {
 	t.Helper()
+	return newTestFactoryWithConfig(t, stsClient, Config{GlobalRegion: "us-east-1", IamAssumeRoleName: "BatonRole"})
+}
+
+func newTestFactoryWithConfig(t *testing.T, stsClient stscreds.AssumeRoleAPIClient, config Config) *AWSClientFactory {
+	t.Helper()
 	isolateAWSEnv(t)
 
 	return &AWSClientFactory{
 		mutex:        sync.Mutex{},
-		config:       Config{GlobalRegion: "us-east-1", IamAssumeRoleName: "BatonRole"},
+		config:       config,
 		baseClient:   http.DefaultClient,
 		iamClientMap: make(map[string]*awsIam.Client),
 		orgClientMap: make(map[string]*awsOrgs.Client),
@@ -234,6 +239,52 @@ func TestGetConfigRoleARN(t *testing.T) {
 	_, err := f.getConfig(ctx, "123456789012")
 	require.NoError(t, err)
 	require.Equal(t, "arn:aws:iam::123456789012:role/BatonRole", rec.roleARN)
+}
+
+// TestGetConfigRoleARNPartition covers CXH-2444: every child-account IAM sync in the
+// aws-cn partition assumed a hardcoded arn:aws: ARN, which does not exist there.
+// sts:AssumeRole cannot cross partitions, so the ARN must carry the connector's own.
+func TestGetConfigRoleARNPartition(t *testing.T) {
+	ctx := context.Background()
+
+	for _, tc := range []struct {
+		name   string
+		config Config
+		want   string
+	}{
+		{
+			name:   "china region",
+			config: Config{GlobalRegion: "cn-north-1", IamAssumeRoleName: "BatonRole"},
+			want:   "arn:aws-cn:iam::123456789012:role/BatonRole",
+		},
+		{
+			name: "china role arn wins over commercial region",
+			config: Config{
+				GlobalRegion:      "us-east-1",
+				RoleARN:           "arn:aws-cn:iam::999999999999:role/Caller",
+				IamAssumeRoleName: "BatonRole",
+			},
+			want: "arn:aws-cn:iam::123456789012:role/BatonRole",
+		},
+		{
+			name: "commercial role arn wins over china region",
+			config: Config{
+				GlobalRegion:      "cn-north-1",
+				RoleARN:           "arn:aws:iam::999999999999:role/Caller",
+				IamAssumeRoleName: "BatonRole",
+			},
+			want: "arn:aws:iam::123456789012:role/BatonRole",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &sessionNameRecorder{expiresIn: time.Hour}
+			f := newTestFactoryWithConfig(t, rec, tc.config)
+
+			_, err := f.getConfig(ctx, "123456789012")
+			require.NoError(t, err)
+			require.Equal(t, tc.want, rec.roleARN)
+		})
+	}
 }
 
 // TestGetConfigRequestsOneHourSessions pins the session length actually sent to STS.

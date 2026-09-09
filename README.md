@@ -56,6 +56,21 @@ Identity Center user Last Login uses a separate CloudTrail event feed. Enable Or
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
+## AWS China (aws-cn) partition
+
+`baton-aws` supports the `aws-cn` partition (`cn-north-1`, `cn-northwest-1`). Set `--global-region`
+(and `--global-aws-sso-region`, when Identity Center support is enabled) to a China region and pass
+an `arn:aws-cn:iam::...` value to `--role-arn`. The partition is derived from the role ARN, falling
+back to the region, and is threaded through every ARN the connector constructs — the cross-account
+assume-role ARN, the synthetic Identity Center principal ARNs, and the account-local policy ARNs
+resolved from permission sets.
+
+China deployments must be **self-hosted**, because `sts:AssumeRole` cannot cross partitions: use
+either static China-partition keys (`--global-access-key-id` / `--global-secret-access-key`) or
+single-hop assume role (`--role-arn` with `--global-role-arn` unset) with IRSA in a China-region EKS
+cluster. A configuration that mixes partitions is rejected at startup rather than failing later with
+an opaque signature error.
+
 ## Sparse ACLs: permission sets as scoped bindings
 
 With both `--global-aws-orgs-enabled` and `--global-aws-sso-enabled` set, `baton-aws` can additionally model Identity Center permission set assignments as **Sparse ACL** bindings, alongside the legacy flat per-account entitlement model. This adds four resource types:
@@ -114,7 +129,7 @@ Flags:
       --global-aws-sso-enabled                           Enable support for AWS IAM Identity Center ($BATON_GLOBAL_AWS_SSO_ENABLED)
       --global-aws-sso-region string                     The region for the sso identities ($BATON_GLOBAL_AWS_SSO_REGION) (default "us-east-1")
       --global-binding-external-id string                The global external id for the aws account ($BATON_GLOBAL_BINDING_EXTERNAL_ID)
-      --global-region string                             The region for the aws account ($BATON_GLOBAL_REGION)
+      --global-region string                             The region for the aws account. Use cn-north-1 or cn-northwest-1 for the AWS China (aws-cn) partition. ($BATON_GLOBAL_REGION)
       --global-role-arn string                           The role arn for the aws account ($BATON_GLOBAL_ROLE_ARN)
       --global-secret-access-key string                  The global-secret-access-key for the aws account ($BATON_GLOBAL_SECRET_ACCESS_KEY)
       --health-check                                     Enable the HTTP health check endpoint ($BATON_HEALTH_CHECK)
@@ -130,7 +145,7 @@ Flags:
       --otel-collector-endpoint string                   The endpoint of the OpenTelemetry collector to send observability data to (used for both tracing and logging if specific endpoints are not provided) ($BATON_OTEL_COLLECTOR_ENDPOINT)
       --parallel-sync                                    Deprecated: use --workers instead. ($BATON_PARALLEL_SYNC)
   -p, --provisioning                                     This must be set in order for provisioning actions to be enabled ($BATON_PROVISIONING)
-      --role-arn string                                  The role arn for the aws account ($BATON_ROLE_ARN)
+      --role-arn string                                  The role arn for the aws account. Accepts the aws and aws-cn partitions. ($BATON_ROLE_ARN)
       --skip-entitlements-and-grants                     This must be set to skip syncing of entitlements and grants ($BATON_SKIP_ENTITLEMENTS_AND_GRANTS)
       --skip-full-sync                                   This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
       --storage-engine string                            The storage engine to use when opening the sync c1z file: sqlite or pebble. Defaults to pebble when unset. ($BATON_STORAGE_ENGINE)

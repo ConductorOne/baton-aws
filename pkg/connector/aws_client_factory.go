@@ -8,6 +8,7 @@ import (
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
@@ -76,7 +77,15 @@ func NewAWSClientFactory(config Config, aws *AWS, baseClient *http.Client) *AWSC
 func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (awsSdk.Config, error) {
 	l := ctxzap.Extract(ctx)
 
-	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/%s", accountId, f.config.IamAssumeRoleName)
+	// The partition has to be the connector's own: sts:AssumeRole cannot cross partitions,
+	// so a commercial-partition ARN here would be unassumable from aws-cn credentials (and
+	// vice versa) in every child account.
+	roleArn := arn.ARN{
+		Partition: f.config.partition(),
+		Service:   iamType,
+		AccountID: accountId,
+		Resource:  "role/" + f.config.IamAssumeRoleName,
+	}.String()
 
 	stsClient, err := f.stsClientFn(ctx)
 	if err != nil {

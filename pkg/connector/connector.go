@@ -234,7 +234,10 @@ func ValidateExternalID(input string) error {
 	return nil
 }
 
-func validateConfig(awsc *cfg.Aws) error {
+// ValidateConfig runs the connector's own configuration checks, the ones the field schema
+// cannot express. It is exported so the config tests exercise this exact function rather
+// than a hand-maintained copy that can drift from it.
+func ValidateConfig(awsc *cfg.Aws) error {
 	if awsc.UseAssume {
 		err := IsValidRoleARN(awsc.RoleArn)
 		if err != nil {
@@ -247,8 +250,56 @@ func validateConfig(awsc *cfg.Aws) error {
 			if err != nil {
 				return err
 			}
+			// Role chaining cannot cross partitions, so a C1-hosted two-hop config
+			// (commercial binding account -> customer role) can never reach aws-cn.
+			// Reject it at startup rather than after an opaque STS failure.
+			if PartitionFromARN(awsc.GlobalRoleArn) != PartitionFromARN(awsc.RoleArn) {
+				return fmt.Errorf(
+					"baton-aws: global-role-arn and role-arn are in different partitions (%q vs %q): "+
+						"sts:AssumeRole cannot cross partitions, so this deployment must be self-hosted "+
+						"with credentials in the target partition (static keys or IRSA) and no global-role-arn",
+					PartitionFromARN(awsc.GlobalRoleArn),
+					PartitionFromARN(awsc.RoleArn),
+				)
+			}
 		}
 	}
+	return validatePartitionConsistency(awsc)
+}
+
+// validatePartitionConsistency rejects a configuration whose regions and role ARN do not
+// all live in the same partition.
+//
+// Every one of these is a hard failure at request time rather than a degraded sync -- SigV4
+// scopes credentials to a partition, so credentials from one partition signing a request to
+// another are rejected -- but the resulting errors surface deep in a sync as opaque
+// signature or endpoint failures. Catching it here names the actual mistake.
+//
+// Only non-empty values are compared: global-region may legitimately be empty (the SDK then
+// resolves it from the ambient environment), and the Identity Center region only matters when
+// Identity Center is enabled, where it also carries a commercial-partition default the
+// operator never chose.
+func validatePartitionConsistency(awsc *cfg.Aws) error {
+	partition := PartitionFromARN(awsc.RoleArn)
+	if partition == "" {
+		return nil
+	}
+
+	if awsc.GlobalRegion != "" && PartitionForRegion(awsc.GlobalRegion) != partition {
+		return fmt.Errorf(
+			"baton-aws: global-region %q is not in the %q partition of role-arn",
+			awsc.GlobalRegion, partition,
+		)
+	}
+
+	if awsc.GlobalAwsSsoEnabled && awsc.GlobalAwsSsoRegion != "" &&
+		PartitionForRegion(awsc.GlobalAwsSsoRegion) != partition {
+		return fmt.Errorf(
+			"baton-aws: global-aws-sso-region %q is not in the %q partition of role-arn",
+			awsc.GlobalAwsSsoRegion, partition,
+		)
+	}
+
 	return nil
 }
 
@@ -275,7 +326,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 	if err != nil {
 		return nil, nil, err
 	}
-	err = validateConfig(awsc)
+	err = ValidateConfig(awsc)
 	if err != nil {
 		return nil, nil, err
 	}

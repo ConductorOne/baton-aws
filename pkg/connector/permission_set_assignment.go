@@ -261,6 +261,11 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 		return nil, err
 	}
 
+	// The permission set ARN came back from ssoadmin in the connector's own partition, so
+	// it is the authoritative source for the partition of the account-local policy ARNs
+	// derived below — these are handed straight back to the IAM API.
+	partition := partitionFromARNOrRegion(permissionSetArn, o.account.region)
+
 	rv := make([]*v2.Grant, 0, len(managed)+len(refs))
 	for _, policy := range managed {
 		policyARN := awsSdk.ToString(policy.Arn)
@@ -278,7 +283,7 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 		if name == "" {
 			return nil, fmt.Errorf("baton-aws: customer managed policy reference in permission set %s missing name", permissionSetArn)
 		}
-		grant, err := policyAttachmentGrant(name, customerManagedPolicyARN(accountID, ref), resource.Id, expandable)
+		grant, err := policyAttachmentGrant(name, customerManagedPolicyARN(partition, accountID, ref), resource.Id, expandable)
 		if err != nil {
 			return nil, err
 		}
@@ -308,13 +313,13 @@ func policyAttachmentGrant(policyName string, policyARN string, principalID *v2.
 // reference (name + path, no ARN) to the account-local managed policy ARN. The
 // path defaults to "/" and always carries leading and trailing slashes, so the
 // resource segment concatenates to e.g. "policy/division_abc/MyPolicy".
-func customerManagedPolicyARN(accountID string, ref awsSsoAdminTypes.CustomerManagedPolicyReference) string {
+func customerManagedPolicyARN(partition string, accountID string, ref awsSsoAdminTypes.CustomerManagedPolicyReference) string {
 	path := awsSdk.ToString(ref.Path)
 	if path == "" {
 		path = "/"
 	}
 	id := arn.ARN{
-		Partition: awsPartition,
+		Partition: partition,
 		Service:   iamType,
 		AccountID: accountID,
 		Resource:  "policy" + path + awsSdk.ToString(ref.Name),

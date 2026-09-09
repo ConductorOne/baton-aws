@@ -67,6 +67,11 @@ var (
 			"me-south-1",
 			"me-central-1",
 			"sa-east-1",
+			// aws-cn partition. Requires a self-hosted connector with China-partition
+			// credentials or IRSA: sts:AssumeRole cannot cross partitions, so the
+			// C1-hosted binding-account path cannot reach an aws-cn account.
+			"cn-north-1",
+			"cn-northwest-1",
 		},
 		field.WithDisplayName("Region for AWS IAM Identity Center (successor to AWS Single Sign-On)"),
 		field.WithDescription("The region for the sso identities"),
@@ -81,7 +86,7 @@ var (
 	GlobalRegionField = field.StringField(
 		"global-region",
 		field.WithDisplayName("Global Region"),
-		field.WithDescription("The region for the aws account"),
+		field.WithDescription("The region for the aws account. Use cn-north-1 or cn-northwest-1 for the AWS China (aws-cn) partition."),
 		field.WithExportTarget(field.ExportTargetOps),
 	)
 	GlobalRoleArnField = field.StringField(
@@ -100,7 +105,7 @@ var (
 	RoleArnField = field.StringField(
 		"role-arn",
 		field.WithDisplayName("Role ARN"),
-		field.WithDescription("The role arn for the aws account"),
+		field.WithDescription("The role arn for the aws account. Accepts the aws and aws-cn partitions."),
 	)
 	UseAssumeField = field.BoolField(
 		"use-assume",

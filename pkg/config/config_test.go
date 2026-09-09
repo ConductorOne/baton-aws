@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -16,33 +15,27 @@ const (
 	exampleARN        = "arn:aws:iam::123456789012:role/David"
 	exampleExternalID = "12345678901234567890123456789012"
 	s3ARN             = "arn:aws:s3:::my_corporate_bucket/exampleobject.png"
+	chinaARN          = "arn:aws-cn:iam::123456789012:role/David"
+	govCloudARN       = "arn:aws-us-gov:iam::123456789012:role/David"
 )
 
-// validateConfig is run after the configuration is loaded, and should return an error if it isn't valid.
-// This mirrors the production validateConfig in pkg/connector/connector.go: external-id is only
-// required for two-hop assume-role mode (when global-role-arn is set).
-func validateConfig(ctx context.Context, v *viper.Viper) error {
-	if v.GetBool(config.UseAssumeField.FieldName) {
-		err := connector.IsValidRoleARN(v.GetString(config.RoleArnField.FieldName))
-		if err != nil {
-			return err
-		}
-		if v.GetString(config.GlobalRoleArnField.FieldName) != "" {
-			err = connector.ValidateExternalID(v.GetString(config.ExternalIdField.FieldName))
-			if err != nil {
-				return err
-			}
-		}
+// validateConfig is run after the configuration is loaded, and should return an error if it
+// isn't valid. It decodes into the generated config struct and calls the production
+// connector.ValidateConfig rather than reimplementing it, so these cases cover whatever
+// that function actually enforces.
+func validateConfig(v *viper.Viper) error {
+	var awsc config.Aws
+	if err := v.Unmarshal(&awsc); err != nil {
+		return err
 	}
-	return nil
+	return connector.ValidateConfig(&awsc)
 }
 
 func TestConfigs(t *testing.T) {
-	ctx := context.Background()
 	test.ExerciseTestCasesFromExpressions(
 		t,
 		config.Config,
-		func(viper *viper.Viper) error { return validateConfig(ctx, viper) },
+		validateConfig,
 		ustrings.ParseFlags,
 		[]test.TestCaseFromExpression{
 			{
@@ -121,6 +114,68 @@ func TestConfigs(t *testing.T) {
 				"--sync-secrets",
 				true,
 				"empty",
+			},
+			// aws-cn partition (CXH-2444). global-aws-sso-region is a SelectField, so the
+			// China regions have to be in its allowed set or field.Validate rejects them
+			// before the connector's own validation ever runs.
+			{
+				fmt.Sprintf(
+					"--use-assume --role-arn %s --global-region cn-north-1",
+					chinaARN,
+				),
+				true,
+				"china: single-hop assume with china region",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --role-arn %s --global-region cn-northwest-1"+
+						" --global-aws-orgs-enabled --global-aws-sso-enabled --global-aws-sso-region cn-north-1",
+					chinaARN,
+				),
+				true,
+				"china: identity center in china region",
+			},
+			{
+				"--global-aws-sso-region cn-northwest-1",
+				true,
+				"china: cn-northwest-1 is an allowed identity center region",
+			},
+			{
+				"--global-aws-sso-region cn-nowhere-1",
+				false,
+				"china: unknown region is still rejected",
+			},
+			{
+				fmt.Sprintf("--use-assume --role-arn %s", govCloudARN),
+				false,
+				"govcloud partition is not supported",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --role-arn %s --global-region us-east-1",
+					chinaARN,
+				),
+				false,
+				"china: role arn and global region in different partitions",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --role-arn %s --global-region cn-north-1"+
+						" --global-aws-orgs-enabled --global-aws-sso-enabled --global-aws-sso-region us-east-1",
+					chinaARN,
+				),
+				false,
+				"china: identity center region in the wrong partition",
+			},
+			{
+				fmt.Sprintf(
+					"--use-assume --external-id %s --role-arn %s --global-role-arn %s --global-region cn-north-1",
+					exampleExternalID,
+					chinaARN,
+					exampleARN,
+				),
+				false,
+				"china: two-hop cannot cross partitions",
 			},
 		},
 	)

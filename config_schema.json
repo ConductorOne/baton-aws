@@ -155,7 +155,9 @@
             "eu-north-1",
             "me-south-1",
             "me-central-1",
-            "sa-east-1"
+            "sa-east-1",
+            "cn-north-1",
+            "cn-northwest-1"
           ]
         }
       }
@@ -170,7 +172,7 @@
     {
       "name": "global-region",
       "displayName": "Global Region",
-      "description": "The region for the aws account",
+      "description": "The region for the aws account. Use cn-north-1 or cn-northwest-1 for the AWS China (aws-cn) partition.",
       "isOps": true,
       "stringField": {}
     },
@@ -192,7 +194,7 @@
     {
       "name": "role-arn",
       "displayName": "Role ARN",
-      "description": "The role arn for the aws account",
+      "description": "The role arn for the aws account. Accepts the aws and aws-cn partitions.",
       "stringField": {}
     },
     {

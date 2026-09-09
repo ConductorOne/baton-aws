@@ -10,9 +10,8 @@ import (
 )
 
 const (
-	iamType      = "iam"
-	awsPartition = "aws"
-	ssoType      = "sso"
+	iamType = "iam"
+	ssoType = "sso"
 )
 
 var (
@@ -28,8 +27,12 @@ func IsValidRoleARN(input string) error {
 	if err != nil {
 		return fmt.Errorf("baton-aws: invalid role ARN: %w", err)
 	}
-	if parsedArn.Partition != awsPartition {
-		return fmt.Errorf("baton-aws: invalid role ARN: only aws partition supported")
+	if !isSupportedPartition(parsedArn.Partition) {
+		return fmt.Errorf(
+			"baton-aws: invalid role ARN: unsupported partition %q: must be one of %s",
+			parsedArn.Partition,
+			strings.Join(supportedPartitions, ", "),
+		)
 	}
 	if parsedArn.Service != iamType {
 		return fmt.Errorf("baton-aws: invalid role ARN: invalid service: must be 'iam'")
@@ -69,9 +72,12 @@ func AccountIdFromARN(input string) (string, error) {
 	return parsedArn.AccountID, nil
 }
 
+// ssoUserToARN builds the synthetic identitystore ARN used as an sso_user resource id.
+// Identity Center is regional, so the region determines the partition — there is no
+// cross-partition identity store.
 func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	id := arn.ARN{
-		Partition: awsPartition,
+		Partition: PartitionForRegion(region),
 		Service:   "identitystore",
 		Region:    region,
 		AccountID: "",
@@ -80,9 +86,11 @@ func ssoUserToARN(region string, identityStoreId string, userId string) string {
 	return id.String()
 }
 
+// ssoGroupToARN builds the synthetic identitystore ARN used as an sso_group resource id.
+// See ssoUserToARN on why the partition comes from the region.
 func ssoGroupToARN(region string, identityStoreId string, groupId string) string {
 	id := arn.ARN{
-		Partition: awsPartition,
+		Partition: PartitionForRegion(region),
 		Service:   "identitystore",
 		Region:    region,
 		AccountID: "",
