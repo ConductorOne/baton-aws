@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -21,29 +23,29 @@ var (
 
 func IsValidRoleARN(input string) error {
 	if input == "" {
-		return fmt.Errorf("role arn is missing")
+		return status.Error(codes.InvalidArgument, "role arn is missing")
 	}
 	parsedArn, err := arn.Parse(input)
 	if err != nil {
-		return fmt.Errorf("baton-aws: invalid role ARN: %w", err)
+		return status.Errorf(codes.InvalidArgument, "baton-aws: invalid role ARN: %v", err)
 	}
-	if !isSupportedPartition(parsedArn.Partition) {
-		return unsupportedPartitionError(parsedArn.Partition)
+	if err := unsupportedPartitionError(parsedArn.Partition); err != nil {
+		return err
 	}
 	if parsedArn.Service != iamType {
-		return fmt.Errorf("baton-aws: invalid role ARN: invalid service: must be 'iam'")
+		return status.Error(codes.InvalidArgument, "baton-aws: invalid role ARN: invalid service: must be 'iam'")
 	}
 	if parsedArn.Region != "" {
-		return fmt.Errorf("baton-aws: invalid role ARN: invalid region: must be empty")
+		return status.Error(codes.InvalidArgument, "baton-aws: invalid role ARN: invalid region: must be empty")
 	}
 	if len(parsedArn.AccountID) != 12 {
-		return fmt.Errorf("baton-aws: invalid role ARN: invalid account id: must be 12 characters long")
+		return status.Error(codes.InvalidArgument, "baton-aws: invalid role ARN: invalid account id: must be 12 characters long")
 	}
 	if !strings.HasPrefix(parsedArn.Resource, "role/") {
-		return fmt.Errorf("baton-aws: invalid role ARN: invalid resource: must start with 'role/'")
+		return status.Error(codes.InvalidArgument, "baton-aws: invalid role ARN: invalid resource: must start with 'role/'")
 	}
 	if roleNameRE.MatchString(parsedArn.Resource) {
-		return fmt.Errorf("baton-aws: invalid role ARN: invalid resource: must match regexp '%s'", roleNameRE.String())
+		return status.Errorf(codes.InvalidArgument, "baton-aws: invalid role ARN: invalid resource: must match regexp '%s'", roleNameRE.String())
 	}
 	return nil
 }

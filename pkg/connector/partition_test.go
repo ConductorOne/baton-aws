@@ -6,6 +6,8 @@ import (
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestPartitionForRegion(t *testing.T) {
@@ -37,21 +39,21 @@ func TestPartitionForRegion(t *testing.T) {
 	}
 }
 
-func TestIsSupportedPartition(t *testing.T) {
-	require.True(t, isSupportedPartition("aws"))
-	require.True(t, isSupportedPartition("aws-cn"))
+func TestUnsupportedPartitionError(t *testing.T) {
+	require.NoError(t, unsupportedPartitionError("aws"))
+	require.NoError(t, unsupportedPartitionError("aws-cn"))
+
 	// Nothing here has been exercised against GovCloud or the ISO partitions; accepting
 	// them would trade a clear startup error for a confusing mid-sync failure.
-	require.False(t, isSupportedPartition("aws-us-gov"))
-	require.False(t, isSupportedPartition("aws-iso"))
-	require.False(t, isSupportedPartition(""))
-}
+	for _, partition := range []string{"aws-us-gov", "aws-iso", ""} {
+		err := unsupportedPartitionError(partition)
+		require.Error(t, err)
+		require.Equal(t, codes.InvalidArgument, status.Code(err))
+	}
 
-// TestUnsupportedPartitionErrorNamesSupportedSet: the message is shared by IsValidRoleARN
-// and ValidateConfig, so it has to name the set rather than hardcode it in two places.
-func TestUnsupportedPartitionErrorNamesSupportedSet(t *testing.T) {
-	require.EqualError(t, unsupportedPartitionError("aws-us-gov"),
-		`baton-aws: invalid role ARN: unsupported partition "aws-us-gov": must be one of aws, aws-cn`)
+	// The message names the supported set rather than hardcoding it at each gate.
+	require.ErrorContains(t, unsupportedPartitionError("aws-us-gov"),
+		`unsupported partition "aws-us-gov": must be one of aws, aws-cn`)
 }
 
 // TestConfigPartition covers the accessor the cross-account assume-role ARN is built from.

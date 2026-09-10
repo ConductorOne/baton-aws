@@ -226,11 +226,11 @@ func (o *AWS) getCallingConfig(ctx context.Context, region string) (awsSdk.Confi
 func ValidateExternalID(input string) error {
 	fieldLength := len(input)
 	if fieldLength <= 0 {
-		return fmt.Errorf("baton-aws: external id is missing")
+		return status.Error(codes.InvalidArgument, "baton-aws: external id is missing")
 	}
 
 	if fieldLength < externalIDLengthMinimum || fieldLength > externalIDLengthMaximum {
-		return fmt.Errorf("baton-aws: aws_external_id must be between 32 and 64 bytes")
+		return status.Error(codes.InvalidArgument, "baton-aws: aws_external_id must be between 32 and 64 bytes")
 	}
 	return nil
 }
@@ -239,9 +239,6 @@ func ValidateExternalID(input string) error {
 // cannot express. It is exported so the config tests exercise this exact function rather
 // than a hand-maintained copy that can drift from it.
 func ValidateConfig(awsc *cfg.Aws) error {
-	// Parse the role ARN once; its partition drives the checks below and the ARNs the
-	// connector constructs. An unparseable value leaves this empty and is reported by
-	// IsValidRoleARN (use-assume) or simply carries no partition signal (static creds).
 	var rolePartition string
 	if parsed, err := arn.Parse(awsc.RoleArn); err == nil {
 		rolePartition = parsed.Partition
@@ -259,22 +256,21 @@ func ValidateConfig(awsc *cfg.Aws) error {
 			if err != nil {
 				return err
 			}
-			// global-role-arn never reaches IsValidRoleARN, so reject an unparseable one
-			// on its own terms. Folding it into the partition comparison below would
-			// report a malformed ARN as a cross-partition deployment problem and send the
-			// operator off to re-architect as self-hosted.
+			// global-role-arn never reaches IsValidRoleARN, so a malformed one would
+			// otherwise be reported as a cross-partition problem below.
 			globalRole, err := arn.Parse(awsc.GlobalRoleArn)
 			if err != nil {
-				return fmt.Errorf("baton-aws: global-role-arn %q is not a valid ARN: %w", awsc.GlobalRoleArn, err)
+				return status.Errorf(codes.InvalidArgument,
+					"baton-aws: global-role-arn %q is not a valid ARN: %v", awsc.GlobalRoleArn, err)
 			}
 			if globalRole.Partition == "" {
-				return fmt.Errorf("baton-aws: global-role-arn %q is not a valid ARN: missing partition", awsc.GlobalRoleArn)
+				return status.Errorf(codes.InvalidArgument,
+					"baton-aws: global-role-arn %q is not a valid ARN: missing partition", awsc.GlobalRoleArn)
 			}
-			// Role chaining cannot cross partitions, so a C1-hosted two-hop config
-			// (commercial binding account -> customer role) can never reach aws-cn.
-			// Reject it at startup rather than after an opaque STS failure.
+			// Role chaining cannot cross partitions, so a two-hop config can never reach
+			// aws-cn. Fail at startup rather than on an opaque STS error mid-sync.
 			if globalRole.Partition != rolePartition {
-				return fmt.Errorf(
+				return status.Errorf(codes.InvalidArgument,
 					"baton-aws: global-role-arn and role-arn are in different partitions (%q vs %q): "+
 						"sts:AssumeRole cannot cross partitions, so this deployment must be self-hosted "+
 						"with credentials in the target partition (static keys or IRSA) and no global-role-arn",
@@ -283,37 +279,21 @@ func ValidateConfig(awsc *cfg.Aws) error {
 				)
 			}
 		}
-	} else if rolePartition != "" && !isSupportedPartition(rolePartition) {
-		// role-arn is meaningful without use-assume — Metadata reports the account id
-		// derived from it, and AWSClientFactory uses it to tell own-account entities from
-		// cross-account ones — and Config.partition() derives the connector's partition
-		// from it either way. Applying the same allowlist here keeps an unsupported
-		// partition from reaching every ARN the connector constructs, and names the real
-		// objection instead of letting the region comparison below blame the region.
-		return unsupportedPartitionError(rolePartition)
+	} else if rolePartition != "" {
+		// role-arn is used without use-assume too, and Config.partition() derives from it
+		// either way, so the allowlist has to apply here as well.
+		if err := unsupportedPartitionError(rolePartition); err != nil {
+			return err
+		}
 	}
 	return validatePartitionConsistency(awsc, rolePartition)
 }
 
-// validatePartitionConsistency rejects a configuration whose regions and role ARN do not
-// all live in the same partition.
-//
-// Every one of these is a hard failure at request time rather than a degraded sync -- SigV4
-// scopes credentials to a partition, so credentials from one partition signing a request to
-// another are rejected -- but the resulting errors surface deep in a sync as opaque
-// signature or endpoint failures. Catching it here names the actual mistake.
-//
-// The reference partition follows the same precedence Config.partition() uses -- role ARN
-// first, configured region as the fallback -- so that this check and the ARNs the connector
-// actually constructs can never disagree about which partition it is in. Anchoring only on
-// the role ARN would leave the static-credentials deployment (China access keys, no role
-// ARN) entirely unchecked, which is precisely where the Identity Center region is most
-// likely to be left at its commercial us-east-1 default.
-//
-// The Identity Center region is compared only when Identity Center is enabled, because that
-// default is a value the operator never chose. When neither a role ARN nor a global-region
-// is set there is no signal to compare against -- the SDK resolves the region from the
-// ambient environment, which this function cannot see -- so the check stands down.
+// validatePartitionConsistency rejects regions that disagree with the connector's
+// partition, which would otherwise surface as an opaque SigV4 failure mid-sync. The
+// reference partition uses the same precedence as Config.partition() so the two cannot
+// disagree. The Identity Center region is only compared when Identity Center is enabled,
+// since its us-east-1 default is a value the operator never chose.
 func validatePartitionConsistency(awsc *cfg.Aws, rolePartition string) error {
 	var partition, source string
 	switch {
@@ -327,7 +307,7 @@ func validatePartitionConsistency(awsc *cfg.Aws, rolePartition string) error {
 
 	if source == "role-arn" && awsc.GlobalRegion != "" &&
 		partitionForRegion(awsc.GlobalRegion) != partition {
-		return fmt.Errorf(
+		return status.Errorf(codes.InvalidArgument,
 			"baton-aws: global-region %q is not in the %q partition of role-arn",
 			awsc.GlobalRegion, partition,
 		)
@@ -335,7 +315,7 @@ func validatePartitionConsistency(awsc *cfg.Aws, rolePartition string) error {
 
 	if awsc.GlobalAwsSsoEnabled && awsc.GlobalAwsSsoRegion != "" &&
 		partitionForRegion(awsc.GlobalAwsSsoRegion) != partition {
-		return fmt.Errorf(
+		return status.Errorf(codes.InvalidArgument,
 			"baton-aws: global-aws-sso-region %q is not in the %q partition of %s",
 			awsc.GlobalAwsSsoRegion, partition, source,
 		)

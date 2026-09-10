@@ -245,13 +245,9 @@ func TestGetConfigRoleARN(t *testing.T) {
 	require.Equal(t, "arn:aws:iam::123456789012:role/BatonRole", rec.roleARN)
 }
 
-// TestGetConfigRoleARNPartition guards the cross-account credential ARN: every child-account IAM sync in the
-// aws-cn partition assumed a hardcoded arn:aws: ARN, which does not exist there.
-// sts:AssumeRole cannot cross partitions, so the ARN must carry the connector's own.
-//
-// The two precedence cases below pin Config.partition() in isolation. ValidateConfig rejects
-// a role ARN and a global-region in different partitions, so neither is a loadable
-// configuration -- they are here to prove which signal wins, not to bless mixing them.
+// The cross-account credential ARN must carry the connector's own partition; a hardcoded
+// arn:aws: one does not exist in aws-cn. The two precedence cases pin Config.partition() in
+// isolation -- ValidateConfig rejects mixed configs, so neither is loadable.
 func TestGetConfigRoleARNPartition(t *testing.T) {
 	ctx := context.Background()
 
