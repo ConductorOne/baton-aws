@@ -73,6 +73,10 @@ cluster. A configuration that mixes partitions is rejected at startup rather tha
 an opaque signature error. The partition is taken from `--role-arn` when one is set and from
 `--global-region` otherwise, so a static-key deployment should always set `--global-region`.
 
+Only `aws` and `aws-cn` are accepted. A `--role-arn` in any other partition (GovCloud, the ISO
+partitions) is rejected at startup whether or not `--use-assume` is set — previously such an ARN
+was only checked under `--use-assume`.
+
 ## Sparse ACLs: permission sets as scoped bindings
 
 With both `--global-aws-orgs-enabled` and `--global-aws-sso-enabled` set, `baton-aws` can additionally model Identity Center permission set assignments as **Sparse ACL** bindings, alongside the legacy flat per-account entitlement model. This adds four resource types:

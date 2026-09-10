@@ -5,6 +5,8 @@ import (
 
 	cfg "github.com/conductorone/baton-aws/pkg/config"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -205,4 +207,34 @@ func TestValidateConfigRejectsUnparseableGlobalRoleARN(t *testing.T) {
 	})
 	require.ErrorContains(t, err, `global-role-arn "not-an-arn" is not a valid ARN`)
 	require.NotContains(t, err.Error(), "different partitions")
+}
+
+// Same contract as TestValidationErrorsCarryInvalidArgument, for the branches that live in
+// ValidateConfig rather than IsValidRoleARN.
+func TestValidateConfigErrorsCarryInvalidArgument(t *testing.T) {
+	for name, in := range map[string]*cfg.Aws{
+		"region partition mismatch": {
+			UseAssume: true, RoleArn: chinaRole, GlobalRegion: "us-east-1",
+		},
+		"identity center region mismatch": {
+			GlobalRegion: "cn-north-1", GlobalAwsSsoEnabled: true, GlobalAwsSsoRegion: cfg.RegionDefault,
+		},
+		"cross partition two hop": {
+			UseAssume: true, RoleArn: chinaRole, GlobalRoleArn: commercialRole,
+			ExternalId: validExternalID, GlobalRegion: "cn-north-1",
+		},
+		"malformed global role arn": {
+			UseAssume: true, RoleArn: commercialRole, GlobalRoleArn: "not-an-arn",
+			ExternalId: validExternalID,
+		},
+		"unsupported partition without use-assume": {
+			RoleArn: "arn:aws-us-gov:iam::123456789012:role/David",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := ValidateConfig(in)
+			require.Error(t, err)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
 }

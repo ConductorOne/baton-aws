@@ -830,6 +830,12 @@ from `BATON_GLOBAL_REGION` otherwise, then requires `BATON_GLOBAL_REGION` — an
 `BATON_GLOBAL_AWS_SSO_ENABLED` is set, `BATON_GLOBAL_AWS_SSO_REGION` — to be in that same partition.
 `BATON_GLOBAL_ROLE_ARN` (two-hop mode) must be in it too.
 
+Only the `aws` and `aws-cn` partitions are accepted. A `BATON_ROLE_ARN` in any other partition —
+GovCloud (`aws-us-gov`) or the ISO partitions — is rejected at startup regardless of
+`BATON_USE_ASSUME`. Earlier releases only checked the role ARN's partition when
+`BATON_USE_ASSUME` was set, so a GovCloud role ARN with static credentials would load and then
+construct commercial-partition ARNs; it now fails immediately with the partition named.
+
 Always set `BATON_GLOBAL_REGION` on the static-key shape. It is the only partition signal the
 connector has there, and leaving it empty means the AWS SDK resolves a region from the ambient
 environment that the startup check cannot see. Note in particular that

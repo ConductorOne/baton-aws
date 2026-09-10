@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // TestIsValidRoleARNPartitions is the startup gate for China support: ValidateConfig runs
@@ -84,6 +86,25 @@ func TestIsValidRoleARNPartitions(t *testing.T) {
 func TestIsValidRoleARNPartitionErrorNamesSupportedSet(t *testing.T) {
 	err := IsValidRoleARN("arn:aws-us-gov:iam::123456789012:role/David")
 	require.ErrorContains(t, err, "aws, aws-cn")
+}
+
+// C1 classifies connector initialization failures by gRPC code, so every rejection out of
+// the validation path has to carry InvalidArgument rather than a plain error.
+func TestValidationErrorsCarryInvalidArgument(t *testing.T) {
+	for name, err := range map[string]error{
+		"missing role arn":     IsValidRoleARN(""),
+		"unparseable role arn": IsValidRoleARN("not-an-arn"),
+		"unsupported partition": IsValidRoleARN(
+			"arn:aws-us-gov:iam::123456789012:role/David"),
+		"wrong service":       IsValidRoleARN("arn:aws:s3::123456789012:role/David"),
+		"missing external id": ValidateExternalID(""),
+		"short external id":   ValidateExternalID("tooshort"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Error(t, err)
+			require.Equal(t, codes.InvalidArgument, status.Code(err))
+		})
+	}
 }
 
 func TestAccountIdFromARNIsPartitionAgnostic(t *testing.T) {
