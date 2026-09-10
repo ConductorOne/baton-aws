@@ -56,6 +56,27 @@ Identity Center user Last Login uses a separate CloudTrail event feed. Enable Or
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
+## AWS China (aws-cn) partition
+
+`baton-aws` supports the `aws-cn` partition (`cn-north-1`, `cn-northwest-1`). Set `--global-region`
+(and `--global-aws-sso-region`, when Identity Center support is enabled) to a China region and pass
+an `arn:aws-cn:iam::...` value to `--role-arn`. The partition is derived from the role ARN, falling
+back to the region, and is threaded through every ARN the connector constructs — the cross-account
+assume-role ARN, the synthetic Identity Center principal ARNs (from the Identity Center region,
+since there is no cross-partition identity store), and the account-local policy ARNs resolved from
+permission sets.
+
+China deployments must be **self-hosted**, because `sts:AssumeRole` cannot cross partitions: use
+either static China-partition keys (`--global-access-key-id` / `--global-secret-access-key`) or
+single-hop assume role (`--role-arn` with `--global-role-arn` unset) with IRSA in a China-region EKS
+cluster. A configuration that mixes partitions is rejected at startup rather than failing later with
+an opaque signature error. The partition is taken from `--role-arn` when one is set and from
+`--global-region` otherwise, so a static-key deployment should always set `--global-region`.
+
+Only `aws` and `aws-cn` are accepted. A `--role-arn` in any other partition (GovCloud, the ISO
+partitions) is rejected at startup whether or not `--use-assume` is set — previously such an ARN
+was only checked under `--use-assume`.
+
 ## Sparse ACLs: permission sets as scoped bindings
 
 With both `--global-aws-orgs-enabled` and `--global-aws-sso-enabled` set, `baton-aws` can additionally model Identity Center permission set assignments as **Sparse ACL** bindings, alongside the legacy flat per-account entitlement model. This adds four resource types:

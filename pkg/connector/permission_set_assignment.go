@@ -179,7 +179,13 @@ func (o *permissionSetAssignmentResourceType) Grants(ctx context.Context, resour
 	}
 
 	if pageState.PoliciesPhase {
-		grants, err := o.policyCompositionGrants(ctx, opts.Session, resource, permissionSetArn, accountID)
+		// ssoadmin returned this ARN, so it is the authoritative partition for the
+		// account-local policy ARNs derived from it — those go straight back to the IAM API.
+		permissionSet, err := arn.Parse(permissionSetArn)
+		if err != nil {
+			return nil, nil, fmt.Errorf("baton-aws: permission set id %q is not a valid ARN: %w", permissionSetArn, err)
+		}
+		grants, err := o.policyCompositionGrants(ctx, opts.Session, resource, permissionSet, accountID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -243,9 +249,10 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 	ctx context.Context,
 	ss sessions.SessionStore,
 	resource *v2.Resource,
-	permissionSetArn string,
+	permissionSet arn.ARN,
 	accountID string,
 ) ([]*v2.Grant, error) {
+	permissionSetArn := permissionSet.String()
 	expandable := &v2.GrantExpandable{
 		EntitlementIds: []string{
 			entitlementSdk.NewEntitlementID(resource, permissionSetAssignmentEntitlement),
@@ -278,7 +285,7 @@ func (o *permissionSetAssignmentResourceType) policyCompositionGrants(
 		if name == "" {
 			return nil, fmt.Errorf("baton-aws: customer managed policy reference in permission set %s missing name", permissionSetArn)
 		}
-		grant, err := policyAttachmentGrant(name, customerManagedPolicyARN(accountID, ref), resource.Id, expandable)
+		grant, err := policyAttachmentGrant(name, customerManagedPolicyARN(permissionSet.Partition, accountID, ref), resource.Id, expandable)
 		if err != nil {
 			return nil, err
 		}
@@ -308,13 +315,13 @@ func policyAttachmentGrant(policyName string, policyARN string, principalID *v2.
 // reference (name + path, no ARN) to the account-local managed policy ARN. The
 // path defaults to "/" and always carries leading and trailing slashes, so the
 // resource segment concatenates to e.g. "policy/division_abc/MyPolicy".
-func customerManagedPolicyARN(accountID string, ref awsSsoAdminTypes.CustomerManagedPolicyReference) string {
+func customerManagedPolicyARN(partition string, accountID string, ref awsSsoAdminTypes.CustomerManagedPolicyReference) string {
 	path := awsSdk.ToString(ref.Path)
 	if path == "" {
 		path = "/"
 	}
 	id := arn.ARN{
-		Partition: awsPartition,
+		Partition: partition,
 		Service:   iamType,
 		AccountID: accountID,
 		Resource:  "policy" + path + awsSdk.ToString(ref.Name),

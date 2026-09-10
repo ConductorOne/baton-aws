@@ -67,6 +67,11 @@ var (
 			"me-south-1",
 			"me-central-1",
 			"sa-east-1",
+			// aws-cn partition. Requires a self-hosted connector with China-partition
+			// credentials or IRSA: sts:AssumeRole cannot cross partitions, so the
+			// C1-hosted binding-account path cannot reach an aws-cn account.
+			"cn-north-1",
+			"cn-northwest-1",
 		},
 		field.WithDisplayName("Region for AWS IAM Identity Center (successor to AWS Single Sign-On)"),
 		field.WithDescription("The region for the sso identities"),

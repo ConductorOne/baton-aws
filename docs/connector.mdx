@@ -790,6 +790,69 @@ If support for AWS Organizations is enabled, the IAM Role must be created in the
 
 The `identitystore:CreateUser` and `identitystore:DeleteUser` actions in the SSO policy below are only exercised when `BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user`. They are listed in the policy regardless so an operator who later switches the target does not need to re-grant the role.
 
+#### AWS China (aws-cn) partition
+
+The connector supports the `aws-cn` partition (regions `cn-north-1` and `cn-northwest-1`) **self-hosted only**.
+
+`sts:AssumeRole` cannot cross AWS partitions, so the C1-hosted path — which chains from a
+ConductorOne binding account in the commercial partition into your role — can never reach an
+`aws-cn` account. A China deployment must therefore run in your own environment with credentials
+that already live in the China partition:
+
+- **Static China-partition access keys**, via `BATON_GLOBAL_ACCESS_KEY_ID` / `BATON_GLOBAL_SECRET_ACCESS_KEY`, or
+- **IRSA** inside a China-region EKS cluster, with `BATON_ROLE_ARN` set and `BATON_GLOBAL_ROLE_ARN` left unset (single-hop assume role).
+
+Set the regions to China regions so endpoints resolve to `*.amazonaws.com.cn` and credentials are
+signed for the right partition:
+
+IRSA (single-hop assume role):
+
+```yaml expandable
+  BATON_ROLE_ARN: arn:aws-cn:iam::<account id>:role/<role name>
+  BATON_GLOBAL_REGION: cn-north-1
+  # Only when Identity Center support is enabled
+  BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
+```
+
+Static China-partition access keys (no role ARN):
+
+```yaml expandable
+  BATON_GLOBAL_ACCESS_KEY_ID: <access key id>
+  BATON_GLOBAL_SECRET_ACCESS_KEY: <secret access key>
+  BATON_GLOBAL_REGION: cn-north-1
+  # Only when Identity Center support is enabled
+  BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
+```
+
+The connector rejects a configuration that mixes partitions at startup rather than failing later
+with an opaque signature error. It takes the partition from `BATON_ROLE_ARN` when one is set and
+from `BATON_GLOBAL_REGION` otherwise, then requires `BATON_GLOBAL_REGION` — and, when
+`BATON_GLOBAL_AWS_SSO_ENABLED` is set, `BATON_GLOBAL_AWS_SSO_REGION` — to be in that same partition.
+`BATON_GLOBAL_ROLE_ARN` (two-hop mode) must be in it too.
+
+Only the `aws` and `aws-cn` partitions are accepted. A `BATON_ROLE_ARN` in any other partition —
+GovCloud (`aws-us-gov`) or the ISO partitions — is rejected at startup regardless of
+`BATON_USE_ASSUME`. Earlier releases only checked the role ARN's partition when
+`BATON_USE_ASSUME` was set, so a GovCloud role ARN with static credentials would load and then
+construct commercial-partition ARNs; it now fails immediately with the partition named.
+
+Always set `BATON_GLOBAL_REGION` on the static-key shape. It is the only partition signal the
+connector has there, and leaving it empty means the AWS SDK resolves a region from the ambient
+environment that the startup check cannot see. Note in particular that
+`BATON_GLOBAL_AWS_SSO_REGION` defaults to `us-east-1`, so enabling Identity Center without setting
+it is a partition mismatch the connector will now reject at startup.
+
+Two things to confirm against your own account before rolling out:
+
+- **IAM Identity Center availability.** The AWS SDK carries `cn-north-1` and `cn-northwest-1`
+  endpoints for `identitystore` and `sso-admin`, but check the China region service list for your
+  account rather than assuming the API surface is enabled for you. Leave
+  `BATON_GLOBAL_AWS_SSO_ENABLED` unset if it is not.
+- **Identity Center last login.** `BATON_SYNC_SSO_USER_LAST_LOGIN` filters CloudTrail on the
+  `sso.amazonaws.com` event source. Event sources are partition-independent, so this is expected
+  to work unchanged — but verify events are actually returned, since a mismatch surfaces as an
+  empty last-login result rather than an error.
+
 See the connector's README or run `--help` to see all available configuration flags and environment variables.
 
 #### Deployment configuration
