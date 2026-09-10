@@ -421,14 +421,23 @@ var awsAuthErrorCodes = map[string]struct{}{
 	"SignatureDoesNotMatch":     {},
 }
 
-// wrapAWSError converts AWS throttling errors into gRPC codes.Unavailable so
-// the baton-sdk sync engine can identify them as retryable. Non-throttle errors
-// are returned unchanged.
+// awsNotFoundErrorCodes contains AWS API error codes that mean the addressed
+// resource no longer exists. Mapping these to gRPC codes.NotFound lets baton-sdk
+// skip the current sync action (e.g. listing grants for a group deleted mid-sync)
+// instead of failing the whole sync.
+var awsNotFoundErrorCodes = map[string]struct{}{
+	"ResourceNotFoundException": {},
+	"NoSuchEntity":              {},
+}
+
+// wrapAWSError converts AWS API errors into gRPC status codes so the baton-sdk
+// sync engine can retry, skip, or fail appropriately. Unclassified errors are
+// returned unchanged.
 //
 // Note: status.Error intentionally converts the error to a message string,
 // breaking the errors.As/errors.Is chain. This is acceptable because the SDK
-// only inspects the gRPC status code to decide whether to retry; it does not
-// unwrap the underlying AWS error.
+// only inspects the gRPC status code to decide whether to retry or skip; it does
+// not unwrap the underlying AWS error.
 func wrapAWSError(err error) error {
 	if err == nil {
 		return nil
@@ -447,6 +456,9 @@ func wrapAWSError(err error) error {
 		if _, isAuthError := awsAuthErrorCodes[apiErr.ErrorCode()]; isAuthError {
 			return status.Error(codes.Unauthenticated, err.Error())
 		}
+		if _, isNotFound := awsNotFoundErrorCodes[apiErr.ErrorCode()]; isNotFound {
+			return status.Error(codes.NotFound, err.Error())
+		}
 	}
 
 	if isAccessDeniedError(err) {
@@ -454,6 +466,23 @@ func wrapAWSError(err error) error {
 	}
 
 	return err
+}
+
+// isNotFoundError reports whether err is an AWS (or already-classified gRPC)
+// not-found. Use this after wrapAWSError, which breaks errors.As on the AWS type.
+func isNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if status.Code(err) == codes.NotFound {
+		return true
+	}
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	_, ok := awsNotFoundErrorCodes[apiErr.ErrorCode()]
+	return ok
 }
 
 // isCredentialsRetrievalError reports whether err originated in an STS credential

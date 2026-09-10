@@ -3,14 +3,19 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	pathpkg "path"
 	"testing"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
+	"github.com/aws/smithy-go"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 func TestTrustPolicy_UnmarshalJSON(t *testing.T) {
@@ -704,4 +709,49 @@ func TestClassifyRoleNHI(t *testing.T) {
 			assert.Equal(t, tt.wantDetail, gotDetail)
 		})
 	}
+}
+
+func TestWrapAWSError_ResourceNotFound(t *testing.T) {
+	notFound := &awsIdentityStoreTypes.ResourceNotFoundException{
+		Message:      awsSdk.String("GROUP not found."),
+		ResourceType: awsIdentityStoreTypes.ResourceTypeGroup,
+	}
+
+	t.Run("typed ResourceNotFoundException is codes.NotFound", func(t *testing.T) {
+		err := wrapAWSError(notFound)
+		require.Equal(t, codes.NotFound, status.Code(err))
+		assert.Contains(t, err.Error(), "GROUP not found.")
+	})
+
+	t.Run("wrapped ListGroupMemberships error is codes.NotFound", func(t *testing.T) {
+		err := wrapAWSError(fmt.Errorf("baton-aws: identitystore.ListGroupMemberships failed [%s]: %w", "3468f4e8-70e1-7075-aebf-5d15e965bb38", notFound))
+		require.Equal(t, codes.NotFound, status.Code(err))
+		assert.True(t, isNotFoundError(err))
+	})
+
+	t.Run("generic ResourceNotFoundException code is codes.NotFound", func(t *testing.T) {
+		err := wrapAWSError(&smithy.GenericAPIError{Code: "ResourceNotFoundException", Message: "not found"})
+		require.Equal(t, codes.NotFound, status.Code(err))
+	})
+
+	t.Run("throttling remains Unavailable", func(t *testing.T) {
+		err := wrapAWSError(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"})
+		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+
+	t.Run("unrelated errors are unchanged", func(t *testing.T) {
+		orig := fmt.Errorf("baton-aws: something else failed")
+		err := wrapAWSError(orig)
+		require.Equal(t, orig, err)
+		assert.Equal(t, codes.Unknown, status.Code(err))
+		assert.False(t, isNotFoundError(err))
+	})
+
+	t.Run("IAM NoSuchEntity is codes.NotFound", func(t *testing.T) {
+		err := wrapAWSError(fmt.Errorf("baton-aws: iam.GetGroup failed: %w", &iamTypes.NoSuchEntityException{
+			Message: awsSdk.String("The group with name ci-group-1 cannot be found."),
+		}))
+		require.Equal(t, codes.NotFound, status.Code(err))
+		assert.True(t, isNotFoundError(err))
+	})
 }
