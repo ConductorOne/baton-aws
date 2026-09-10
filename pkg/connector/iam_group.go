@@ -154,14 +154,6 @@ func (o *iamGroupResourceType) Grants(ctx context.Context, resource *v2.Resource
 
 	resp, err := iamClient.GetGroup(ctx, input)
 	if err != nil {
-		var noSuchEntity *iamTypes.NoSuchEntityException
-		if errors.As(err, &noSuchEntity) {
-			ctxzap.Extract(ctx).Warn("baton-aws: group not found, skipping grants for this group",
-				zap.String("group_name", resource.DisplayName),
-				zap.Error(err),
-			)
-			return nil, nil, nil
-		}
 		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetGroup failed: %w", err))
 	}
 
@@ -219,9 +211,8 @@ func (o *iamGroupResourceType) grantsForAttachedGroupPolicies(
 
 	policyGrants, nextMarker, err := listAttachedGroupPolicyGrants(ctx, iamClient, groupName, resource.Id, bag.PageToken())
 	if err != nil {
-		var noSuchEntity *iamTypes.NoSuchEntityException
-		if errors.As(err, &noSuchEntity) {
-			ctxzap.Extract(ctx).Warn("baton-aws: group not found, skipping grants for this group",
+		if isNotFoundError(err) {
+			ctxzap.Extract(ctx).Warn("baton-aws: group not found, skipping remaining grants for this group",
 				zap.String("group_name", groupName),
 				zap.Error(err),
 			)
@@ -333,6 +324,9 @@ func (o *iamGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 		UserName:  awsSdk.String(userName),
 	})
 	if err != nil {
+		if isNotFoundError(err) {
+			return annotations.New(&v2.GrantAlreadyRevoked{}), nil
+		}
 		return nil, wrapAWSError(fmt.Errorf("baton-aws: error removing iam user from iam group: %w", err))
 	}
 

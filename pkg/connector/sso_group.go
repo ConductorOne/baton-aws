@@ -282,9 +282,9 @@ func (g *ssoGroupResourceType) createOrGetMembership(
 	foundMembership, err := g.getGroupMembership(ctx, groupID, userID)
 	if err != nil {
 		// If we lack permission for the `GetGroupMembershipId` operation, fail
-		// more gracefully by returning nil.
-		var accessDeniedException *awsIdentityStoreTypes.AccessDeniedException
-		if errors.As(err, &accessDeniedException) {
+		// more gracefully by returning nil. wrapAWSError classifies this as
+		// PermissionDenied, so match that rather than the raw AWS exception.
+		if isAccessDeniedError(err) {
 			logger.Info("Not authorized to perform `GetGroupMembershipId`, falling back to empty membership")
 			return nil, outputAnnotations, nil
 		}
@@ -405,8 +405,7 @@ func (g *ssoGroupResourceType) Revoke(ctx context.Context, grant *v2.Grant) (ann
 
 	foundMembership, getErr := g.getGroupMembership(ctx, groupId, userId)
 	if getErr != nil {
-		var notFoundException *awsIdentityStoreTypes.ResourceNotFoundException
-		if errors.As(getErr, &notFoundException) {
+		if isNotFoundError(getErr) {
 			l.Debug("group membership already deleted", zap.String("group_id", groupId), zap.String("user_id", userId))
 			annos.Append(&v2.GrantAlreadyRevoked{})
 			return annos, nil
