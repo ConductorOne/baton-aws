@@ -444,6 +444,12 @@ func wrapAWSError(err error) error {
 		return nil
 	}
 
+	var responseErr *smithyhttp.ResponseError
+	if errors.As(err, &responseErr) &&
+		(responseErr.Response == nil || responseErr.Response.Response == nil) {
+		return err
+	}
+
 	// If it's already a gRPC error, return it unchanged.
 	if _, ok := status.FromError(err); ok {
 		return err
@@ -466,8 +472,8 @@ func wrapAWSError(err error) error {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
-	var responseErr *smithyhttp.ResponseError
-	if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.HTTPStatusCode() >= 500 {
+	if errors.As(err, &responseErr) &&
+		responseErr.HTTPStatusCode() >= 500 {
 		return status.Error(codes.Unavailable, err.Error())
 	}
 

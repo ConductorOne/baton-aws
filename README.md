@@ -46,7 +46,7 @@ Set the `--global-aws-sso-enabled` and `--global-aws-orgs-enabled` flags to pull
 - SSO Groups
 - SSO Users
 
-IAM user profiles include the most recent access key activity through `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed`, whether or not secrets are synced. Set `--sync-secrets` to also pull each IAM access key as a secret carrying its status (Active or Inactive), when it was last used, and which service and region it was last used from. Inactive keys were already synced; they now report as disabled rather than carrying no status.
+IAM user profiles include the most recent access key activity through `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed`, whether or not secrets are synced. Set `--sync-secrets` to also pull each IAM access key as a secret carrying its status (Active or Inactive), when it was last used, and which service and region it was last used from. With Organizations cross-account IAM sync enabled, this includes keys from member accounts through the assumed role. Inactive keys were already synced; they now report as disabled rather than carrying no status.
 
 When access-key activity is available, an IAM user's Last Login is the most recent of password-based AWS sign-in (`PasswordLastUsed`, including Management Console) and access-key use. If AWS denies an access-key lookup or the user or an access key disappears during the lookup, `access_key_activity_status` is `unavailable`; the connector preserves `password_last_used` but omits `access_key_last_used` and Last Login. Set `--sync-secrets` to also expose per-key detail. Set `--sync-iam-user-console-access` to report `console_access_status` as `enabled`, `disabled`, or `unavailable` from `iam:GetLoginProfile` (one call per user).
 
@@ -93,9 +93,9 @@ These four resource types are also marked **opt-in** on the ConductorOne platfor
 
 ## Sync modes
 
-`--global-aws-orgs-enabled` can be set on its own: the connector discovers every account in the AWS Organization and assumes a role into each one to sync its IAM users, roles, and groups. `--global-aws-sso-enabled` requires `--global-aws-orgs-enabled` to also be set; with both on, the connector syncs Identity Center users, groups, permission sets, and account assignments from the management account (or a delegated administrator account).
+`--global-aws-orgs-enabled` can be set on its own: the connector discovers every account in the AWS Organization and assumes a role into each one to sync its IAM users, roles, and groups, plus access keys when `--sync-secrets` is enabled. `--global-aws-sso-enabled` requires `--global-aws-orgs-enabled` to also be set; with both on, the connector syncs Identity Center users, groups, permission sets, and account assignments from the management account (or a delegated administrator account).
 
-To also sync cross-account IAM users, roles, and groups while Identity Center is enabled, set `--global-aws-cross-account-iam-enabled`. This flag is off by default so existing Identity-Center deployments don't suddenly require `sts:AssumeRole` on every child account. Turn it on once you've granted the connector role `sts:AssumeRole` on `arn:aws:iam::*:role/OrganizationAccountAccessRole` and configured a matching trust policy in each child account.
+To also sync cross-account IAM users, roles, groups, and access keys while Identity Center is enabled, set `--global-aws-cross-account-iam-enabled`. Access keys additionally require `--sync-secrets`. This flag is off by default so existing Identity-Center deployments don't suddenly require `sts:AssumeRole` on every child account. Turn it on once you've granted the connector role `sts:AssumeRole` on `arn:aws:iam::*:role/OrganizationAccountAccessRole` and configured a matching trust policy in each child account.
 
 # Contributing, Support and Issues
 

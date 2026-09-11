@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"net/http"
 	"testing"
 	"time"
 
@@ -10,18 +11,28 @@ import (
 	awsMiddleware "github.com/aws/aws-sdk-go-v2/aws/middleware"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/smithy-go"
 	smithymiddleware "github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // iamClientWithUserKeys stubs the three IAM calls the secret builder makes for
 // a single user, using the same middleware seam as the other IAM tests.
 // lastUsed is returned verbatim for every GetAccessKeyLastUsed call.
-func iamClientWithUserKeys(userName string, keys []iamTypes.AccessKeyMetadata, lastUsed *iamTypes.AccessKeyLastUsed, lastUsedErr error) *iam.Client {
+func iamClientWithUserKeys(
+	userName string,
+	keys []iamTypes.AccessKeyMetadata,
+	lastUsed *iamTypes.AccessKeyLastUsed,
+	lastUsedErr error,
+	listAccessKeysErr ...error,
+) *iam.Client {
 	return iam.New(iam.Options{
 		Region: "us-east-1",
 		APIOptions: []func(*smithymiddleware.Stack) error{
@@ -39,6 +50,9 @@ func iamClientWithUserKeys(userName string, keys []iamTypes.AccessKeyMetadata, l
 									}}},
 								}, smithymiddleware.Metadata{}, nil
 							case "ListAccessKeys":
+								if len(listAccessKeysErr) > 0 && listAccessKeysErr[0] != nil {
+									return smithymiddleware.FinalizeOutput{}, smithymiddleware.Metadata{}, listAccessKeysErr[0]
+								}
 								return smithymiddleware.FinalizeOutput{
 									Result: &iam.ListAccessKeysOutput{AccessKeyMetadata: keys},
 								}, smithymiddleware.Metadata{}, nil
@@ -199,4 +213,72 @@ func TestSecretList_LookupErrorStillSyncsKey(t *testing.T) {
 	assert.Nil(t, resources[0].GetProfile())
 	assert.Nil(t, requireSecretTrait(t, resources[0]).GetLastUsedAt())
 	assert.Equal(t, v2.Status_RESOURCE_STATUS_ENABLED, resources[0].GetStatus().GetStatus())
+}
+
+func TestSecretList_PreservesAccountParent(t *testing.T) {
+	created := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
+	client := iamClientWithUserKeys("ci-iam-1", []iamTypes.AccessKeyMetadata{{
+		AccessKeyId: awsSdk.String("AKIAEXAMPLE"),
+		UserName:    awsSdk.String("ci-iam-1"),
+		CreateDate:  awsSdk.Time(created),
+		Status:      iamTypes.StatusTypeActive,
+	}}, nil, nil)
+	parentID := &v2.ResourceId{
+		ResourceType: resourceTypeAccountIam.Id,
+		Resource:     "222222222222",
+	}
+	factory := &AWSClientFactory{
+		iamClientMap: map[string]*iam.Client{parentID.Resource: client},
+	}
+
+	resources, _, err := secretBuilder(nil, factory).List(context.Background(), parentID, resourceSdk.SyncOpAttrs{})
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+	assert.Equal(t, parentID, resources[0].GetParentResourceId())
+	assert.Equal(t, resourceTypeIAMUser.Id, requireSecretTrait(t, resources[0]).GetIdentityId().GetResourceType())
+}
+
+func TestSecretList_ListAccessKeysErrors(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{
+			name:     "access denied fails the catalog",
+			err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
+			wantCode: codes.PermissionDenied,
+		},
+		{
+			name:     "throttling remains retryable",
+			err:      &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
+			wantCode: codes.Unavailable,
+		},
+		{
+			name: "service failure remains retryable",
+			err: &smithyhttp.ResponseError{
+				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+				Err:      errors.New("service unavailable"),
+			},
+			wantCode: codes.Unavailable,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil, tc.err)
+
+			resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+			require.Error(t, err)
+			assert.Empty(t, resources)
+			assert.Equal(t, tc.wantCode, status.Code(err))
+			assert.ErrorContains(t, err, "iam.ListAccessKeys failed")
+		})
+	}
+
+	t.Run("deleted user is skipped", func(t *testing.T) {
+		client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil, &iamTypes.NoSuchEntityException{})
+
+		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+		require.NoError(t, err)
+		assert.Empty(t, resources)
+	})
 }
