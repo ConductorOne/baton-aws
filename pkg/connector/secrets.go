@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -73,8 +74,12 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 
 		res, err := iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 		if err != nil {
-			logger.Error("Error listing access keys", zap.Error(err))
-			continue
+			var noSuchEntity *iamTypes.NoSuchEntityException
+			if errors.As(err, &noSuchEntity) {
+				logger.Debug("baton-aws: skipping access keys because the user no longer exists", zap.Error(err))
+				continue
+			}
+			return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListAccessKeys failed: %w", err))
 		}
 		for _, key := range res.AccessKeyMetadata {
 			annos := &v2.V1Identifier{
@@ -127,6 +132,7 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 				resourceSdk.WithResourceCreatedAt(*key.CreateDate),
 				resourceSdk.WithResourceStatus(keyStatus, string(key.Status)),
 				resourceSdk.WithAnnotation(annos),
+				resourceSdk.WithParentResourceID(parentId),
 			}
 			// A key IAM has never reported usage for carries no profile at all,
 			// rather than an empty one.

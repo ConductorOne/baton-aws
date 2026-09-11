@@ -4,14 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/smithy-go"
 	smithymiddleware "github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
+	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // getLoginActivity takes the concrete *iam.Client, so responses are stubbed with
@@ -54,6 +60,15 @@ func iamClientWithKeyLookups(listErr error, lookups []keyLookupResult) *iam.Clie
 					smithymiddleware.InitializeMiddlewareFunc("stubIAM",
 						func(ctx context.Context, in smithymiddleware.InitializeInput, _ smithymiddleware.InitializeHandler) (smithymiddleware.InitializeOutput, smithymiddleware.Metadata, error) {
 							switch input := in.Parameters.(type) {
+							case *iam.ListUsersInput:
+								return smithymiddleware.InitializeOutput{
+									Result: &iam.ListUsersOutput{Users: []iamTypes.User{{
+										UserName:         awsSdk.String("ci-iam-1"),
+										UserId:           awsSdk.String("AIDAEXAMPLE"),
+										Arn:              awsSdk.String("arn:aws:iam::123456789012:user/ci-iam-1"),
+										PasswordLastUsed: tp("2026-07-28T18:38:16Z"),
+									}}},
+								}, smithymiddleware.Metadata{}, nil
 							case *iam.ListAccessKeysInput:
 								if listErr != nil {
 									return smithymiddleware.InitializeOutput{}, smithymiddleware.Metadata{}, listErr
@@ -173,8 +188,10 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 				PasswordLastUsed: tc.consoleSignIn,
 			}
 
-			activity := getLoginActivity(context.Background(), iamClientWithKeys(nil, tc.keys...), user)
+			activity, err := getLoginActivity(context.Background(), iamClientWithKeys(nil, tc.keys...), user)
+			require.NoError(t, err)
 
+			require.Equal(t, accessKeyActivityStatusAvailable, activity.status)
 			require.Equal(t, tc.consoleSignIn, activity.passwordLastUsed,
 				"the console sign-in must survive whatever the keys report")
 			require.Equal(t, tc.wantKeyLastUsed, activity.accessKeyLastUsed,
@@ -185,52 +202,141 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 	}
 }
 
-// Losing the access keys must not also lose the console sign-in we already hold:
-// reporting no activity for a user who has signed in would read as a dormant
-// account.
-func TestGetLoginActivity_KeepsConsoleLoginWhenKeysCannotBeListed(t *testing.T) {
+func TestGetLoginActivity_AccessKeyAvailability(t *testing.T) {
 	consoleLogin := tp("2026-07-28T18:38:16Z")
+	olderKeyUse := tp("2026-01-02T09:00:00Z")
+	newerKeyUse := tp("2026-08-26T00:15:00Z")
 	user := iamTypes.User{
 		UserName:         awsSdk.String("ci-iam-1"),
 		UserId:           awsSdk.String("AIDAEXAMPLE"),
 		PasswordLastUsed: consoleLogin,
 	}
 
-	activity := getLoginActivity(context.Background(),
-		iamClientWithKeys(errors.New("AccessDenied"), tp("2026-08-26T00:15:00Z")), user)
-
-	require.Equal(t, consoleLogin, activity.passwordLastUsed)
-	require.Nil(t, activity.accessKeyLastUsed)
-	require.Equal(t, consoleLogin, activity.mostRecent())
+	accessDenied := &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"}
+	for _, tc := range []struct {
+		name        string
+		listErr     error
+		lookups     []keyLookupResult
+		wantStatus  string
+		wantLastUse *time.Time
+	}{
+		{
+			name:       "denied list is unavailable",
+			listErr:    accessDenied,
+			wantStatus: accessKeyActivityStatusUnavailable,
+		},
+		{
+			name:       "deleted user race is unavailable",
+			listErr:    &iamTypes.NoSuchEntityException{},
+			wantStatus: accessKeyActivityStatusUnavailable,
+		},
+		{
+			name:       "no keys is available",
+			wantStatus: accessKeyActivityStatusAvailable,
+		},
+		{
+			name:       "never-used keys are available",
+			lookups:    []keyLookupResult{{}, {}},
+			wantStatus: accessKeyActivityStatusAvailable,
+		},
+		{
+			name: "partial key lookup failure makes the aggregate unavailable",
+			lookups: []keyLookupResult{
+				{lastUsed: olderKeyUse},
+				{err: accessDenied},
+				{lastUsed: newerKeyUse},
+			},
+			wantStatus: accessKeyActivityStatusUnavailable,
+		},
+		{
+			name: "successful lookups report the maximum",
+			lookups: []keyLookupResult{
+				{lastUsed: newerKeyUse},
+				{lastUsed: olderKeyUse},
+				{},
+			},
+			wantStatus:  accessKeyActivityStatusAvailable,
+			wantLastUse: newerKeyUse,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			activity, err := getLoginActivity(context.Background(), iamClientWithKeyLookups(tc.listErr, tc.lookups), user)
+			require.NoError(t, err)
+			require.Equal(t, tc.wantStatus, activity.status)
+			require.Equal(t, consoleLogin, activity.passwordLastUsed)
+			require.Equal(t, tc.wantLastUse, activity.accessKeyLastUsed)
+		})
+	}
 }
 
-func TestGetLoginActivity_OmitsKeyActivityWhenLastUsedLookupFails(t *testing.T) {
-	consoleLogin := tp("2026-07-28T18:38:16Z")
-	used := tp("2026-08-26T00:15:00Z")
-	user := iamTypes.User{
-		UserName:         awsSdk.String("ci-iam-1"),
-		UserId:           awsSdk.String("AIDAEXAMPLE"),
-		PasswordLastUsed: consoleLogin,
+func TestIAMUserList_OmitsLastLoginWhenAccessKeyActivityUnavailable(t *testing.T) {
+	client := iamClientWithKeys(
+		&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
+	)
+
+	resources, _, err := iamUserBuilder(client, nil, &AWS{}, false).List(
+		context.Background(),
+		nil,
+		resourceSdk.SyncOpAttrs{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+
+	profile := resources[0].GetProfile().AsMap()
+	require.Equal(t, accessKeyActivityStatusUnavailable, profile["access_key_activity_status"])
+	require.Equal(t, "2026-07-28T18:38:16Z", profile["password_last_used"])
+	require.NotContains(t, profile, "access_key_last_used")
+
+	trait, err := resourceSdk.GetUserTrait(resources[0])
+	require.NoError(t, err)
+	require.Nil(t, trait.GetLastLogin())
+}
+
+func TestIAMUserList_EmitsCompleteAccessKeyActivity(t *testing.T) {
+	latestKeyUse := tp("2026-08-26T00:15:00Z")
+	client := iamClientWithKeys(nil, latestKeyUse)
+
+	resources, _, err := iamUserBuilder(client, nil, &AWS{}, false).List(
+		context.Background(),
+		nil,
+		resourceSdk.SyncOpAttrs{},
+	)
+	require.NoError(t, err)
+	require.Len(t, resources, 1)
+
+	profile := resources[0].GetProfile().AsMap()
+	require.Equal(t, accessKeyActivityStatusAvailable, profile["access_key_activity_status"])
+	require.Equal(t, latestKeyUse.Format(time.RFC3339), profile["access_key_last_used"])
+	require.Equal(t, "2026-07-28T18:38:16Z", profile["password_last_used"])
+
+	trait, err := resourceSdk.GetUserTrait(resources[0])
+	require.NoError(t, err)
+	require.Equal(t, *latestKeyUse, trait.GetLastLogin().AsTime())
+}
+
+func TestGetLoginActivity_PropagatesRetryableFailure(t *testing.T) {
+	user := iamTypes.User{UserName: awsSdk.String("ci-iam-1")}
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{
+			name: "throttling",
+			err:  &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
+		},
+		{
+			name: "service error",
+			err: &smithyhttp.ResponseError{
+				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusInternalServerError}},
+				Err:      errors.New("service error"),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := getLoginActivity(context.Background(), iamClientWithKeys(tc.err), user)
+			require.Error(t, err)
+			require.Equal(t, codes.Unavailable, status.Code(err))
+			require.ErrorContains(t, err, "iam.ListAccessKeys failed")
+		})
 	}
-
-	t.Run("a failed lookup is not treated as never used and does not hide a used key", func(t *testing.T) {
-		activity := getLoginActivity(context.Background(), iamClientWithKeyLookups(nil, []keyLookupResult{
-			{err: errors.New("AccessDenied")},
-			{lastUsed: used},
-		}), user)
-
-		require.Equal(t, consoleLogin, activity.passwordLastUsed)
-		require.Equal(t, used, activity.accessKeyLastUsed)
-		require.Equal(t, used, activity.mostRecent())
-	})
-
-	t.Run("every lookup failing leaves key activity unset", func(t *testing.T) {
-		activity := getLoginActivity(context.Background(), iamClientWithKeyLookups(nil, []keyLookupResult{
-			{err: errors.New("AccessDenied")},
-		}), user)
-
-		require.Equal(t, consoleLogin, activity.passwordLastUsed)
-		require.Nil(t, activity.accessKeyLastUsed)
-		require.Equal(t, consoleLogin, activity.mostRecent())
-	})
 }

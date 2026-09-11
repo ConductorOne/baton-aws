@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	pathpkg "path"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -737,6 +739,25 @@ func TestWrapAWSError_ResourceNotFound(t *testing.T) {
 	t.Run("throttling remains Unavailable", func(t *testing.T) {
 		err := wrapAWSError(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"})
 		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+
+	t.Run("HTTP service errors are Unavailable", func(t *testing.T) {
+		err := wrapAWSError(&smithyhttp.ResponseError{
+			Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+			Err:      fmt.Errorf("service unavailable"),
+		})
+		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+
+	t.Run("nested nil HTTP response does not panic", func(t *testing.T) {
+		orig := &smithyhttp.ResponseError{
+			Response: &smithyhttp.Response{},
+			Err:      fmt.Errorf("missing response"),
+		}
+		require.NotPanics(t, func() {
+			err := wrapAWSError(orig)
+			assert.Equal(t, orig, err)
+		})
 	})
 
 	t.Run("unrelated errors are unchanged", func(t *testing.T) {
