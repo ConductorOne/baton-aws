@@ -84,10 +84,14 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			Id: awsSdk.ToString(user.Arn),
 		}
 		profile := iamUserProfile(ctx, user)
-		activity := getLoginActivity(ctx, iamClient, user)
+		activity, err := getLoginActivity(ctx, iamClient, user)
+		if err != nil {
+			return nil, nil, err
+		}
 		if activity.passwordLastUsed != nil {
 			profile["password_last_used"] = activity.passwordLastUsed.Format(time.RFC3339)
 		}
+		profile["access_key_activity_status"] = activity.status
 		if activity.accessKeyLastUsed != nil {
 			profile["access_key_last_used"] = activity.accessKeyLastUsed.Format(time.RFC3339)
 		}
@@ -98,7 +102,8 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			if err != nil {
 				return nil, nil, err
 			}
-			if consoleAccess != nil {
+			profile["console_access_status"] = consoleAccess.Status
+			if consoleAccess.Status != consoleAccessStatusUnavailable {
 				profile["console_access_enabled"] = consoleAccess.Enabled
 				profile["password_reset_required"] = consoleAccess.ResetRequired
 				if consoleAccess.CreatedAt != nil {
@@ -112,8 +117,10 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		}
 		// Last Login is the newest of password sign-in and access-key use. The
 		// two signals stay on the profile so reviewers can tell them apart.
-		if lastLogin := activity.mostRecent(); lastLogin != nil {
-			options = append(options, resourceSdk.WithLastLogin(*lastLogin))
+		if activity.status == accessKeyActivityStatusAvailable {
+			if lastLogin := activity.mostRecent(); lastLogin != nil {
+				options = append(options, resourceSdk.WithLastLogin(*lastLogin))
+			}
 		}
 
 		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName),
@@ -239,13 +246,19 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 }
 
 type consoleAccess struct {
+	Status        string
 	Enabled       bool
 	ResetRequired bool
 	CreatedAt     *time.Time
 }
 
+const (
+	consoleAccessStatusEnabled     = "enabled"
+	consoleAccessStatusDisabled    = "disabled"
+	consoleAccessStatusUnavailable = "unavailable"
+)
+
 // getConsoleAccess returns the console access status for a user.
-// If there is a permission denied error, return nil and no error.
 func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.User) (*consoleAccess, error) {
 	resp, err := client.GetLoginProfile(ctx, &iam.GetLoginProfileInput{
 		UserName: user.UserName,
@@ -254,23 +267,25 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 		var noSuchEntity *iamTypes.NoSuchEntityException
 		if errors.As(err, &noSuchEntity) {
 			return &consoleAccess{
+				Status:        consoleAccessStatusDisabled,
 				Enabled:       false,
 				ResetRequired: false,
 				CreatedAt:     nil,
 			}, nil
 		}
 		if isAccessDeniedError(err) {
-			ctxzap.Extract(ctx).Warn("baton-aws: access denied getting login profile, skipping console access for this user",
+			ctxzap.Extract(ctx).Debug("baton-aws: access denied getting login profile, console access is unavailable",
 				zap.String("user_name", awsSdk.ToString(user.UserName)),
 				zap.Error(err),
 			)
-			return nil, nil
+			return &consoleAccess{Status: consoleAccessStatusUnavailable}, nil
 		}
 		return nil, wrapAWSError(fmt.Errorf("baton-aws: iam.GetLoginProfile failed: %w", err))
 	}
 
 	if resp.LoginProfile == nil {
 		return &consoleAccess{
+			Status:        consoleAccessStatusDisabled,
 			Enabled:       false,
 			ResetRequired: false,
 			CreatedAt:     nil,
@@ -278,6 +293,7 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 	}
 
 	return &consoleAccess{
+		Status:        consoleAccessStatusEnabled,
 		Enabled:       true,
 		ResetRequired: resp.LoginProfile.PasswordResetRequired,
 		CreatedAt:     resp.LoginProfile.CreateDate,
@@ -288,9 +304,15 @@ func getConsoleAccess(ctx context.Context, client *iam.Client, user iamTypes.Use
 // user. Last Login is the newest of the two; the timestamps stay separate on
 // the profile so reviewers can tell a password sign-in from access-key use.
 type loginActivity struct {
+	status            string
 	passwordLastUsed  *time.Time
 	accessKeyLastUsed *time.Time
 }
+
+const (
+	accessKeyActivityStatusAvailable   = "available"
+	accessKeyActivityStatusUnavailable = "unavailable"
+)
 
 func (a loginActivity) mostRecent() *time.Time {
 	switch {
@@ -305,31 +327,43 @@ func (a loginActivity) mostRecent() *time.Time {
 	}
 }
 
-// getLoginActivity reports the user's console sign-in time alongside the most
-// recent use of any of their access keys. A key that has never been used
-// contributes nothing.
-func getLoginActivity(ctx context.Context, client *iam.Client, user iamTypes.User) loginActivity {
-	activity := loginActivity{passwordLastUsed: user.PasswordLastUsed}
+// getLoginActivity reports the user's password sign-in time alongside the most
+// recent use of any access key. Access-key activity is available only when all
+// required IAM lookups complete.
+func getLoginActivity(ctx context.Context, client *iam.Client, user iamTypes.User) (loginActivity, error) {
+	activity := loginActivity{
+		status:           accessKeyActivityStatusAvailable,
+		passwordLastUsed: user.PasswordLastUsed,
+	}
 
 	res, err := client.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 	if err != nil {
-		ctxzap.Extract(ctx).Debug("Error listing access keys",
-			zap.String("user_id", awsSdk.ToString(user.UserId)),
-			zap.Error(err),
-		)
-		return activity
+		if isUnavailableIAMUserLookupError(err) {
+			ctxzap.Extract(ctx).Debug("baton-aws: access key activity is unavailable",
+				zap.String("user_id", awsSdk.ToString(user.UserId)),
+				zap.Error(err),
+			)
+			activity.status = accessKeyActivityStatusUnavailable
+			return activity, nil
+		}
+		return activity, wrapAWSError(fmt.Errorf("baton-aws: iam.ListAccessKeys failed: %w", err))
 	}
 
 	for _, key := range res.AccessKeyMetadata {
 		accessKeyID := awsSdk.ToString(key.AccessKeyId)
 		usage, err := getAccessKeyLastUsed(ctx, client, accessKeyID)
 		if err != nil {
-			ctxzap.Extract(ctx).Debug("Error getting access key last used",
-				zap.String("user_id", awsSdk.ToString(user.UserId)),
-				zap.String("access_key_id", accessKeyID),
-				zap.Error(err),
-			)
-			continue
+			if isUnavailableIAMUserLookupError(err) {
+				ctxzap.Extract(ctx).Debug("baton-aws: access key activity is unavailable",
+					zap.String("user_id", awsSdk.ToString(user.UserId)),
+					zap.String("access_key_id", accessKeyID),
+					zap.Error(err),
+				)
+				activity.status = accessKeyActivityStatusUnavailable
+				activity.accessKeyLastUsed = nil
+				return activity, nil
+			}
+			return activity, wrapAWSError(fmt.Errorf("baton-aws: iam.GetAccessKeyLastUsed failed: %w", err))
 		}
 		if usage.date == nil {
 			continue
@@ -339,7 +373,12 @@ func getLoginActivity(ctx context.Context, client *iam.Client, user iamTypes.Use
 		}
 	}
 
-	return activity
+	return activity, nil
+}
+
+func isUnavailableIAMUserLookupError(err error) bool {
+	var noSuchEntity *iamTypes.NoSuchEntityException
+	return errors.As(err, &noSuchEntity) || isAccessDeniedError(err)
 }
 
 func getUserEmails(user iamTypes.User) []string {

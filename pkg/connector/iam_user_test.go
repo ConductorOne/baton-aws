@@ -115,3 +115,12 @@ func TestIamUserResourceType_SkipsEntitlementsAndGrantsWhenNotSyncingIAMPolicy(t
 	sharedAnnos := annotations.Annotations(resourceTypeIAMUser.Annotations)
 	assert.False(t, sharedAnnos.Contains(&v2.SkipEntitlementsAndGrants{}))
 }
+
+func TestIAMUserCapabilities_OmitOptionalConsoleAccessPermission(t *testing.T) {
+	annos := annotations.Annotations(resourceTypeIAMUser.GetAnnotations())
+	var permissions v2.CapabilityPermissions
+	ok, err := annos.Pick(&permissions)
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.NotContains(t, permissions.GetPermissions(), "iam:GetLoginProfile")
+}

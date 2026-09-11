@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"google.golang.org/grpc/codes"
@@ -463,6 +464,11 @@ func wrapAWSError(err error) error {
 
 	if isAccessDeniedError(err) {
 		return status.Error(codes.PermissionDenied, err.Error())
+	}
+
+	var responseErr *smithyhttp.ResponseError
+	if errors.As(err, &responseErr) && responseErr.Response != nil && responseErr.HTTPStatusCode() >= 500 {
+		return status.Error(codes.Unavailable, err.Error())
 	}
 
 	return err
