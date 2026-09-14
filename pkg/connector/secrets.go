@@ -192,9 +192,13 @@ type accessKeyUsage struct {
 	region  string
 }
 
-// listAccessKeysError reports a failed key listing. A cross-account sync reaches
-// IAM through a role in each member account, so the failure has to name the
-// account it came from or every account produces the same message.
+// listAccessKeysError reports a failed key listing. Listing is how access keys
+// are discovered, so anything other than a vanished user fails the page: a
+// completed snapshot that omitted unread keys would look like those keys were
+// deleted. Last-used lookups still degrade on AccessDenied/NoSuchEntity because
+// they only enrich a key that ListAccessKeys already returned. A cross-account
+// sync reaches IAM through a role in each member account, so the failure names
+// the account or every account produces the same message.
 func listAccessKeysError(parentId *v2.ResourceId, err error) error {
 	if account := parentId.GetResource(); account != "" {
 		return wrapAWSError(fmt.Errorf("baton-aws: iam.ListAccessKeys failed for account %s: %w", account, err))

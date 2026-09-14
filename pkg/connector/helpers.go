@@ -452,9 +452,8 @@ func hasAWSErrorCode(err error, errorCodes map[string]struct{}) bool {
 }
 
 // maxMalformedResponseErrorDepth bounds how far wrapAWSError follows a malformed
-// *smithyhttp.ResponseError down its own chain. Two levels is already more than
-// the SDK produces; the bound only exists so an error that wraps itself cannot
-// spin forever.
+// *smithyhttp.ResponseError down its own chain. The SDK does not nest these;
+// eight is a margin so a self-wrapping error cannot spin forever.
 const maxMalformedResponseErrorDepth = 8
 
 // wrapAWSError converts AWS API errors into gRPC status codes so the baton-sdk
@@ -519,11 +518,12 @@ func wrapAWSErrorAtDepth(err error, depth int) error {
 // malformedResponseError reports whether the outermost *smithyhttp.ResponseError
 // in the chain carries no HTTP response.
 //
-// Only the outermost one is checked because only it can crash the process: a
-// malformed error nested under another wrapper is rendered through %v, and both
-// fmt and ResponseError.Error() recover that panic into a placeholder string. An
-// outer error that is itself well formed keeps its own classification, including
-// the >= 500 mapping.
+// Only the outermost one is checked, because that is the node whose Error()
+// this function must never call: ResponseError.Error() formats StatusCode with
+// no recover, so a missing response panics. fmt recovers that panic only when
+// Error() is invoked as a format argument, not when status.FromError calls it
+// directly. A well-formed outer ResponseError keeps its own classification,
+// including the >= 500 mapping.
 func malformedResponseError(err error) (*smithyhttp.ResponseError, bool) {
 	var responseErr *smithyhttp.ResponseError
 	if !errors.As(err, &responseErr) {
