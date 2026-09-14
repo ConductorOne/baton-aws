@@ -122,5 +122,11 @@ func TestIAMUserCapabilities_OmitOptionalConsoleAccessPermission(t *testing.T) {
 	ok, err := annos.Pick(&permissions)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.NotContains(t, permissions.GetPermissions(), "iam:GetLoginProfile")
+
+	permissionNames := make([]string, 0, len(permissions.GetPermissions()))
+	for _, permission := range permissions.GetPermissions() {
+		permissionNames = append(permissionNames, permission.GetPermission())
+	}
+	require.Contains(t, permissionNames, "iam:ListAccessKeys")
+	require.NotContains(t, permissionNames, "iam:GetLoginProfile")
 }
