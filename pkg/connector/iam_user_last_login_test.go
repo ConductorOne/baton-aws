@@ -26,8 +26,7 @@ import (
 //
 // Each entry in keyLastUsed is one access key the user owns; a nil entry is a key
 // that exists but IAM has never reported usage for. That distinction is the whole
-// point: "owns no keys" and "owns a key that was never used" are different states
-// and used to produce different bugs.
+// point: "owns no keys" and "owns a key that was never used" are different states.
 func iamClientWithKeys(listErr error, keyLastUsed ...*time.Time) *iam.Client {
 	lookups := make([]keyLookupResult, len(keyLastUsed))
 	for i, lastUsed := range keyLastUsed {
@@ -135,9 +134,8 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			wantLastLogin: consoleLogin,
 		},
 		{
-			// The original defect: a key that exists but was never used left the
-			// running comparison at its zero value, and comparing the sign-in
-			// against that zero discarded it entirely.
+			// A never-used key has no last-used timestamp and must not overwrite
+			// the password sign-in when computing Last Login.
 			name:          "a key that was never used does not discard the console sign-in",
 			consoleSignIn: consoleLogin,
 			keys:          []*time.Time{nil},
@@ -231,6 +229,21 @@ func TestGetLoginActivity_AccessKeyAvailability(t *testing.T) {
 			wantStatus: accessKeyActivityStatusUnavailable,
 		},
 		{
+			// IAM answers over the HTTP Query protocol, so the same race can arrive
+			// unmodeled. Matching only the typed exception failed the whole sync here.
+			name:       "unmodeled deleted user race is unavailable",
+			listErr:    &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"},
+			wantStatus: accessKeyActivityStatusUnavailable,
+		},
+		{
+			name: "unmodeled key deletion mid-lookup is unavailable",
+			lookups: []keyLookupResult{
+				{lastUsed: olderKeyUse},
+				{err: &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"}},
+			},
+			wantStatus: accessKeyActivityStatusUnavailable,
+		},
+		{
 			name:       "no keys is available",
 			wantStatus: accessKeyActivityStatusAvailable,
 		},
@@ -265,6 +278,79 @@ func TestGetLoginActivity_AccessKeyAvailability(t *testing.T) {
 			require.Equal(t, tc.wantStatus, activity.status)
 			require.Equal(t, consoleLogin, activity.passwordLastUsed)
 			require.Equal(t, tc.wantLastUse, activity.accessKeyLastUsed)
+		})
+	}
+}
+
+// The predicate decides whether a failed IAM lookup degrades one detail or fails
+// the sync, so it has to recognize a condition in every shape IAM can express it.
+func TestIsUnavailableIAMUserLookupError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "modeled NoSuchEntity",
+			err:  &iamTypes.NoSuchEntityException{Message: awsSdk.String("cannot be found")},
+			want: true,
+		},
+		{
+			// The discriminating case: IAM's HTTP Query protocol delivers the same
+			// condition as a generic API error whenever the SDK does not model the
+			// shape, and only the code is common to both.
+			name: "unmodeled NoSuchEntity carrying the same code",
+			err:  &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"},
+			want: true,
+		},
+		{
+			name: "resource denial",
+			err:  iamAccessDenied(),
+			want: true,
+		},
+		{
+			// A credentials outage must stay loud: treating it as a skippable denial
+			// reports a successful sync with access silently missing.
+			name: "credentials retrieval denial",
+			err:  stsAccessDenied(),
+			want: false,
+		},
+		{
+			name: "throttling",
+			err:  &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
+			want: false,
+		},
+		{
+			name: "unexpected error",
+			err:  errors.New("boom"),
+			want: false,
+		},
+		{
+			name: "malformed response wrapping AccessDenied is unavailable",
+			err: &smithyhttp.ResponseError{
+				Response: &smithyhttp.Response{},
+				Err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
+			},
+			want: true,
+		},
+		{
+			name: "malformed response with no underlying error is not unavailable",
+			err:  &smithyhttp.ResponseError{Response: &smithyhttp.Response{}, Err: nil},
+			want: false,
+		},
+		{
+			name: "malformed response wrapping a plain error is not unavailable",
+			err: &smithyhttp.ResponseError{
+				Response: &smithyhttp.Response{},
+				Err:      errors.New("missing response"),
+			},
+			want: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got bool
+			require.NotPanics(t, func() { got = isUnavailableIAMUserLookupError(tc.err) })
+			require.Equal(t, tc.want, got)
 		})
 	}
 }

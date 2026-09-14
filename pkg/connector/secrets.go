@@ -2,7 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -74,12 +73,11 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 
 		res, err := iamClient.ListAccessKeys(ctx, &iam.ListAccessKeysInput{UserName: user.UserName})
 		if err != nil {
-			var noSuchEntity *iamTypes.NoSuchEntityException
-			if errors.As(err, &noSuchEntity) {
+			if hasAWSErrorCode(err, awsNotFoundErrorCodes) {
 				logger.Debug("baton-aws: skipping access keys because the user no longer exists", zap.Error(err))
 				continue
 			}
-			return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListAccessKeys failed: %w", err))
+			return nil, nil, listAccessKeysError(parentId, err)
 		}
 		for _, key := range res.AccessKeyMetadata {
 			annos := &v2.V1Identifier{
@@ -102,27 +100,23 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 
 			// Which service the key last called separates a person doing work from
 			// automation, so reviewers can judge whether the key is still needed.
-			profile := map[string]any{}
-			usage, err := getAccessKeyLastUsed(ctx, iamClient, *key.AccessKeyId)
+			usage, err := accessKeyUsageForSecret(ctx, iamClient, awsSdk.ToString(key.AccessKeyId))
 			if err != nil {
-				logger.Debug("Error getting access key last used",
-					zap.String("access_key_id", awsSdk.ToString(key.AccessKeyId)),
-					zap.Error(err),
-				)
-			} else {
-				if usage.date != nil {
-					options = append(options, resourceSdk.WithSecretLastUsedAt(*usage.date))
-				}
-				if usage.service != "" {
-					profile["last_used_service"] = usage.service
-				}
-				if usage.region != "" {
-					profile["last_used_region"] = usage.region
-				}
+				return nil, nil, err
+			}
+			profile := map[string]any{"last_used_status": usage.status}
+			if usage.date != nil {
+				options = append(options, resourceSdk.WithSecretLastUsedAt(*usage.date))
+			}
+			if usage.service != "" {
+				profile["last_used_service"] = usage.service
+			}
+			if usage.region != "" {
+				profile["last_used_region"] = usage.region
 			}
 
-			// Inactive keys already synced; they now carry a disabled status so
-			// reviewers can tell them apart from active keys.
+			// Inactive keys are synced with a disabled status so reviewers can
+			// tell them apart from active keys.
 			keyStatus := v2.Status_RESOURCE_STATUS_DISABLED
 			if key.Status == iamTypes.StatusTypeActive {
 				keyStatus = v2.Status_RESOURCE_STATUS_ENABLED
@@ -133,11 +127,7 @@ func (o *secretResourceType) List(ctx context.Context, parentId *v2.ResourceId, 
 				resourceSdk.WithResourceStatus(keyStatus, string(key.Status)),
 				resourceSdk.WithAnnotation(annos),
 				resourceSdk.WithParentResourceID(parentId),
-			}
-			// A key IAM has never reported usage for carries no profile at all,
-			// rather than an empty one.
-			if len(profile) > 0 {
-				resourceOptions = append(resourceOptions, resourceSdk.WithResourceProfile(profile))
+				resourceSdk.WithResourceProfile(profile),
 			}
 
 			secretResource, err := resourceSdk.NewSecretResource(
@@ -180,13 +170,61 @@ func (o *secretResourceType) Grants(ctx context.Context, resource *v2.Resource, 
 // has never been used.
 const notApplicable = "N/A"
 
+// Whether IAM answered the last-used lookup at all. A key AWS confirms has never
+// been used and a key whose activity the connector may not read both arrive with
+// no timestamp, so without this the two are indistinguishable on the Inventory
+// page. The values match access_key_activity_status on the IAM user profile.
+const (
+	lastUsedStatusAvailable   = "available"
+	lastUsedStatusUnavailable = "unavailable"
+)
+
 // accessKeyUsage is what IAM knows about the last call made with a key. A key
 // that has never been used carries a nil date and no service, and is left that
 // way rather than filled in with a placeholder.
 type accessKeyUsage struct {
+	// status carries the lastUsedStatus reported on the key's own secret resource
+	// and is set by accessKeyUsageForSecret. The IAM user profile reports the same
+	// distinction per user through loginActivity, so it leaves this empty.
+	status  string
 	date    *time.Time
 	service string
 	region  string
+}
+
+// listAccessKeysError reports a failed key listing. A cross-account sync reaches
+// IAM through a role in each member account, so the failure has to name the
+// account it came from or every account produces the same message.
+func listAccessKeysError(parentId *v2.ResourceId, err error) error {
+	if account := parentId.GetResource(); account != "" {
+		return wrapAWSError(fmt.Errorf("baton-aws: iam.ListAccessKeys failed for account %s: %w", account, err))
+	}
+	return wrapAWSError(fmt.Errorf("baton-aws: iam.ListAccessKeys failed: %w", err))
+}
+
+// accessKeyUsageForSecret resolves what IAM reports about a key's last use for the
+// key's own secret resource.
+//
+// Reading a key's activity needs iam:GetAccessKeyLastUsed, a separate permission
+// from the iam:ListAccessKeys that produced the key, and the key can be deleted
+// between the two calls. Neither invalidates the key itself, so it is still
+// synced with its activity marked unreadable. Every other failure — throttling,
+// 5xx, anything unexpected — is returned so the sync retries or fails instead of
+// recording a key as never used on the strength of an error.
+func accessKeyUsageForSecret(ctx context.Context, iamClient *iam.Client, accessKeyId string) (accessKeyUsage, error) {
+	usage, err := getAccessKeyLastUsed(ctx, iamClient, accessKeyId)
+	if err != nil {
+		if !isUnavailableIAMUserLookupError(err) {
+			return accessKeyUsage{}, wrapAWSError(fmt.Errorf("baton-aws: iam.GetAccessKeyLastUsed failed: %w", err))
+		}
+		ctxzap.Extract(ctx).Debug("baton-aws: access key last used is unavailable",
+			zap.String("access_key_id", accessKeyId),
+			zap.Error(err),
+		)
+		return accessKeyUsage{status: lastUsedStatusUnavailable}, nil
+	}
+	usage.status = lastUsedStatusAvailable
+	return usage, nil
 }
 
 func getAccessKeyLastUsed(ctx context.Context, iamClient *iam.Client, accessKeyId string) (accessKeyUsage, error) {

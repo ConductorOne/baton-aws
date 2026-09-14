@@ -431,6 +431,32 @@ var awsNotFoundErrorCodes = map[string]struct{}{
 	"NoSuchEntity":              {},
 }
 
+// hasAWSErrorCode reports whether err carries one of the given AWS API error
+// codes.
+//
+// Matching on the code rather than on a modeled error type is what makes this
+// reliable: IAM answers over the HTTP Query protocol and the SDK only produces
+// the typed exception when it recognizes the shape, so the same condition can
+// arrive as a *smithy.GenericAPIError carrying the identical code. Every modeled
+// type reports its own code through the same interface, so the code covers both.
+//
+// It reads only the code, never the message, so it is safe on a response-less
+// *smithyhttp.ResponseError whose Error() panics.
+func hasAWSErrorCode(err error, errorCodes map[string]struct{}) bool {
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	_, ok := errorCodes[apiErr.ErrorCode()]
+	return ok
+}
+
+// maxMalformedResponseErrorDepth bounds how far wrapAWSError follows a malformed
+// *smithyhttp.ResponseError down its own chain. Two levels is already more than
+// the SDK produces; the bound only exists so an error that wraps itself cannot
+// spin forever.
+const maxMalformedResponseErrorDepth = 8
+
 // wrapAWSError converts AWS API errors into gRPC status codes so the baton-sdk
 // sync engine can retry, skip, or fail appropriately. Unclassified errors are
 // returned unchanged.
@@ -440,14 +466,23 @@ var awsNotFoundErrorCodes = map[string]struct{}{
 // only inspects the gRPC status code to decide whether to retry or skip; it does
 // not unwrap the underlying AWS error.
 func wrapAWSError(err error) error {
+	return wrapAWSErrorAtDepth(err, 0)
+}
+
+func wrapAWSErrorAtDepth(err error, depth int) error {
 	if err == nil {
 		return nil
 	}
 
-	var responseErr *smithyhttp.ResponseError
-	if errors.As(err, &responseErr) &&
-		(responseErr.Response == nil || responseErr.Response.Response == nil) {
-		return err
+	// A response-less *smithyhttp.ResponseError panics inside its own Error(), and
+	// everything below reads the message: status.FromError formats err.Error() on
+	// its fallthrough. So the malformed shape is resolved first, from the error it
+	// wraps, without the chain's text ever being read.
+	if responseErr, ok := malformedResponseError(err); ok {
+		if responseErr.Err == nil || depth >= maxMalformedResponseErrorDepth {
+			return status.Error(codes.Unknown, "baton-aws: AWS returned a malformed error carrying no HTTP response")
+		}
+		return wrapAWSErrorAtDepth(responseErr.Err, depth+1)
 	}
 
 	// If it's already a gRPC error, return it unchanged.
@@ -472,12 +507,32 @@ func wrapAWSError(err error) error {
 		return status.Error(codes.PermissionDenied, err.Error())
 	}
 
+	var responseErr *smithyhttp.ResponseError
 	if errors.As(err, &responseErr) &&
 		responseErr.HTTPStatusCode() >= 500 {
 		return status.Error(codes.Unavailable, err.Error())
 	}
 
 	return err
+}
+
+// malformedResponseError reports whether the outermost *smithyhttp.ResponseError
+// in the chain carries no HTTP response.
+//
+// Only the outermost one is checked because only it can crash the process: a
+// malformed error nested under another wrapper is rendered through %v, and both
+// fmt and ResponseError.Error() recover that panic into a placeholder string. An
+// outer error that is itself well formed keeps its own classification, including
+// the >= 500 mapping.
+func malformedResponseError(err error) (*smithyhttp.ResponseError, bool) {
+	var responseErr *smithyhttp.ResponseError
+	if !errors.As(err, &responseErr) {
+		return nil, false
+	}
+	if responseErr.Response != nil && responseErr.Response.Response != nil {
+		return nil, false
+	}
+	return responseErr, true
 }
 
 // isNotFoundError reports whether err is an AWS (or already-classified gRPC)
@@ -489,12 +544,7 @@ func isNotFoundError(err error) bool {
 	if status.Code(err) == codes.NotFound {
 		return true
 	}
-	var apiErr smithy.APIError
-	if !errors.As(err, &apiErr) {
-		return false
-	}
-	_, ok := awsNotFoundErrorCodes[apiErr.ErrorCode()]
-	return ok
+	return hasAWSErrorCode(err, awsNotFoundErrorCodes)
 }
 
 // isCredentialsRetrievalError reports whether err originated in an STS credential
@@ -545,23 +595,25 @@ func isAccessDeniedError(err error) bool {
 	if isCredentialsRetrievalError(err) {
 		return false
 	}
-	if code, ok := status.FromError(err); ok {
-		if code.Code() == codes.PermissionDenied {
+
+	// Read the AWS error code before status.FromError: a response-less
+	// *smithyhttp.ResponseError panics when its message is formatted, but the
+	// APIError it wraps is still reachable through errors.As.
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case errCodeAccessDenied, errCodeAccessDeniedException:
 			return true
 		}
 	}
-
-	var apiErr smithy.APIError
-	if !errors.As(err, &apiErr) {
+	if _, malformed := malformedResponseError(err); malformed {
 		return false
 	}
 
-	switch apiErr.ErrorCode() {
-	case errCodeAccessDenied, errCodeAccessDeniedException:
-		return true
-	default:
-		return false
+	if code, ok := status.FromError(err); ok {
+		return code.Code() == codes.PermissionDenied
 	}
+	return false
 }
 
 type ssoUserCreateProfile struct {

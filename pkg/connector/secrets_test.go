@@ -86,8 +86,8 @@ func requireSecretTrait(t *testing.T, resource *v2.Resource) *v2.SecretTrait {
 	return trait
 }
 
-// Inactive keys already synced; they now carry a disabled status so reviewers
-// can tell them apart from active keys.
+// Inactive keys are synced with a disabled status so reviewers can tell them
+// apart from active keys.
 func TestSecretList_ReportsAccessKeyStatus(t *testing.T) {
 	created := time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)
 
@@ -140,9 +140,10 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 	used := time.Date(2026, time.August, 26, 0, 15, 0, 0, time.UTC)
 
 	for _, tc := range []struct {
-		name       string
-		lastUsed   *iamTypes.AccessKeyLastUsed
-		wantFields map[string]any
+		name         string
+		lastUsed     *iamTypes.AccessKeyLastUsed
+		wantProfile  map[string]any
+		wantLastUsed *time.Time
 	}{
 		{
 			name: "service and region are surfaced",
@@ -151,15 +152,25 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 				ServiceName:  awsSdk.String("iam"),
 				Region:       awsSdk.String("us-east-1"),
 			},
-			wantFields: map[string]any{"last_used_service": "iam", "last_used_region": "us-east-1"},
+			wantProfile: map[string]any{
+				"last_used_status":  "available",
+				"last_used_service": "iam",
+				"last_used_region":  "us-east-1",
+			},
+			wantLastUsed: &used,
 		},
 		{
-			name: "never used key reports no service",
+			name: "never used key is reported as available with no usage",
 			lastUsed: &iamTypes.AccessKeyLastUsed{
 				ServiceName: awsSdk.String("N/A"),
 				Region:      awsSdk.String("N/A"),
 			},
-			wantFields: map[string]any{},
+			wantProfile: map[string]any{"last_used_status": "available"},
+		},
+		{
+			name:        "missing last-used payload is still an answered lookup",
+			lastUsed:    nil,
+			wantProfile: map[string]any{"last_used_status": "available"},
 		},
 		{
 			name: "N/A placeholders are omitted even when a last-used date is present",
@@ -168,7 +179,8 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 				ServiceName:  awsSdk.String("N/A"),
 				Region:       awsSdk.String("N/A"),
 			},
-			wantFields: map[string]any{},
+			wantProfile:  map[string]any{"last_used_status": "available"},
+			wantLastUsed: &used,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -183,36 +195,130 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, resources, 1)
 
+			assert.Equal(t, tc.wantProfile, resources[0].GetProfile().AsMap())
+
 			trait := requireSecretTrait(t, resources[0])
-			if tc.lastUsed == nil || tc.lastUsed.LastUsedDate == nil {
-				assert.Nil(t, resources[0].GetProfile())
+			if tc.wantLastUsed == nil {
 				assert.Nil(t, trait.GetLastUsedAt())
 			} else {
-				assert.Equal(t, used, trait.GetLastUsedAt().AsTime())
-				if len(tc.wantFields) == 0 {
-					assert.Nil(t, resources[0].GetProfile())
-				} else {
-					assert.Equal(t, tc.wantFields, resources[0].GetProfile().AsMap())
-				}
+				assert.Equal(t, *tc.wantLastUsed, trait.GetLastUsedAt().AsTime())
 			}
 		})
 	}
 }
 
-func TestSecretList_LookupErrorStillSyncsKey(t *testing.T) {
-	client := iamClientWithUserKeys("ci-iam-1", []iamTypes.AccessKeyMetadata{{
+// A key AWS confirms has never been used and a key whose activity we may not read
+// both arrive with no timestamp. They must not produce the same resource, or a
+// permission gap reads as "this credential is dormant, revoke it".
+func TestSecretList_LastUsedLookupErrors(t *testing.T) {
+	activeKey := []iamTypes.AccessKeyMetadata{{
 		AccessKeyId: awsSdk.String("AKIAEXAMPLE"),
 		UserName:    awsSdk.String("ci-iam-1"),
 		CreateDate:  awsSdk.Time(time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)),
 		Status:      iamTypes.StatusTypeActive,
-	}}, nil, errors.New("AccessDenied"))
+	}}
 
-	resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
-	require.NoError(t, err)
-	require.Len(t, resources, 1)
-	assert.Nil(t, resources[0].GetProfile())
-	assert.Nil(t, requireSecretTrait(t, resources[0]).GetLastUsedAt())
-	assert.Equal(t, v2.Status_RESOURCE_STATUS_ENABLED, resources[0].GetStatus().GetStatus())
+	t.Run("unreadable activity still syncs the key and says so", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			err  error
+		}{
+			{
+				name: "access denied",
+				err:  &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
+			},
+			{
+				name: "key deleted mid-sync",
+				err:  &iamTypes.NoSuchEntityException{Message: awsSdk.String("key not found")},
+			},
+			{
+				// IAM answers over the HTTP Query protocol, so the same deletion race
+				// arrives unmodeled whenever the SDK does not recognize the shape.
+				// Matching only the typed exception aborted the page and emitted no
+				// keys at all for the account.
+				name: "key deleted mid-sync reported as a generic API error",
+				err:  &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "The Access Key with id AKIAEXAMPLE cannot be found"},
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				client := iamClientWithUserKeys("ci-iam-1", activeKey, nil, tc.err)
+
+				resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+				require.NoError(t, err)
+				require.Len(t, resources, 1)
+
+				assert.Equal(t, map[string]any{"last_used_status": "unavailable"}, resources[0].GetProfile().AsMap())
+				assert.Nil(t, requireSecretTrait(t, resources[0]).GetLastUsedAt())
+				assert.Equal(t, v2.Status_RESOURCE_STATUS_ENABLED, resources[0].GetStatus().GetStatus())
+			})
+		}
+	})
+
+	t.Run("never used and unavailable are distinguishable", func(t *testing.T) {
+		neverUsed := iamClientWithUserKeys("ci-iam-1", activeKey, &iamTypes.AccessKeyLastUsed{
+			ServiceName: awsSdk.String("N/A"),
+			Region:      awsSdk.String("N/A"),
+		}, nil)
+		denied := iamClientWithUserKeys("ci-iam-1", activeKey, nil,
+			&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"})
+
+		neverUsedResources, _, err := secretBuilder(neverUsed, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+		require.NoError(t, err)
+		deniedResources, _, err := secretBuilder(denied, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+		require.NoError(t, err)
+
+		require.Len(t, neverUsedResources, 1)
+		require.Len(t, deniedResources, 1)
+		assert.NotEqual(t,
+			neverUsedResources[0].GetProfile().AsMap()["last_used_status"],
+			deniedResources[0].GetProfile().AsMap()["last_used_status"],
+		)
+	})
+
+	t.Run("retryable and unexpected failures fail the page", func(t *testing.T) {
+		for _, tc := range []struct {
+			name     string
+			err      error
+			wantCode codes.Code
+		}{
+			{
+				name:     "throttling remains retryable",
+				err:      &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
+				wantCode: codes.Unavailable,
+			},
+			{
+				name: "service failure remains retryable",
+				err: &smithyhttp.ResponseError{
+					Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+					Err:      errors.New("service unavailable"),
+				},
+				wantCode: codes.Unavailable,
+			},
+			{
+				name:     "unexpected failure is not swallowed",
+				err:      errors.New("boom"),
+				wantCode: codes.Unknown,
+			},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				// Two keys so a page that failed on the second one cannot quietly
+				// return the first: a short page reads as deleted keys downstream.
+				keys := append(append([]iamTypes.AccessKeyMetadata{}, activeKey...), iamTypes.AccessKeyMetadata{
+					AccessKeyId: awsSdk.String("AKIAEXAMPLE2"),
+					UserName:    awsSdk.String("ci-iam-1"),
+					CreateDate:  awsSdk.Time(time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)),
+					Status:      iamTypes.StatusTypeActive,
+				})
+				client := iamClientWithUserKeys("ci-iam-1", keys, nil, tc.err)
+
+				resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+				require.Error(t, err)
+				assert.Empty(t, resources)
+				assert.Equal(t, tc.wantCode, status.Code(err))
+				assert.ErrorContains(t, err, "iam.GetAccessKeyLastUsed failed")
+			})
+		}
+	})
 }
 
 func TestSecretList_PreservesAccountParent(t *testing.T) {
@@ -271,6 +377,9 @@ func TestSecretList_ListAccessKeysErrors(t *testing.T) {
 			assert.Empty(t, resources)
 			assert.Equal(t, tc.wantCode, status.Code(err))
 			assert.ErrorContains(t, err, "iam.ListAccessKeys failed")
+			// The management account is the only one the connector talks to
+			// directly, so naming it would be noise.
+			assert.NotContains(t, err.Error(), "for account")
 		})
 	}
 
@@ -280,5 +389,34 @@ func TestSecretList_ListAccessKeysErrors(t *testing.T) {
 		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 		require.NoError(t, err)
 		assert.Empty(t, resources)
+	})
+
+	t.Run("deleted user reported as a generic API error is skipped", func(t *testing.T) {
+		client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil,
+			&smithy.GenericAPIError{Code: "NoSuchEntity", Message: "The user with name ci-iam-1 cannot be found"})
+
+		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+		require.NoError(t, err)
+		assert.Empty(t, resources)
+	})
+
+	// A cross-account sync reaches IAM through a role in each member account, so
+	// without the account the failure is the same message from every one of them.
+	t.Run("member account failure names the account", func(t *testing.T) {
+		parentID := &v2.ResourceId{
+			ResourceType: resourceTypeAccountIam.Id,
+			Resource:     "222222222222",
+		}
+		client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil,
+			&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"})
+		factory := &AWSClientFactory{
+			iamClientMap: map[string]*iam.Client{parentID.Resource: client},
+		}
+
+		resources, _, err := secretBuilder(nil, factory).List(context.Background(), parentID, resourceSdk.SyncOpAttrs{})
+		require.Error(t, err)
+		assert.Empty(t, resources)
+		assert.Equal(t, codes.PermissionDenied, status.Code(err))
+		assert.ErrorContains(t, err, "iam.ListAccessKeys failed for account 222222222222")
 	})
 }

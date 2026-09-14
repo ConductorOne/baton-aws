@@ -376,9 +376,12 @@ func getLoginActivity(ctx context.Context, client *iam.Client, user iamTypes.Use
 	return activity, nil
 }
 
+// isUnavailableIAMUserLookupError reports whether an IAM lookup failed in a way
+// that leaves the user or key itself valid: the caller may not read that detail,
+// or it was deleted between the listing and the lookup. Anything else has to fail
+// the sync instead of being recorded as missing activity.
 func isUnavailableIAMUserLookupError(err error) bool {
-	var noSuchEntity *iamTypes.NoSuchEntityException
-	return errors.As(err, &noSuchEntity) || isAccessDeniedError(err)
+	return hasAWSErrorCode(err, awsNotFoundErrorCodes) || isAccessDeniedError(err)
 }
 
 func getUserEmails(user iamTypes.User) []string {
