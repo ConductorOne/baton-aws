@@ -795,6 +795,12 @@ func TestWrapAWSError_MalformedResponseError(t *testing.T) {
 			wantCode: codes.Unknown,
 			wantMsg:  "malformed error carrying no HTTP response",
 		},
+		{
+			name:     "wrapped nested malformed errors are classified recursively",
+			err:      fmt.Errorf("iam call failed: %w", malformed(malformed(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}))),
+			wantCode: codes.Unavailable,
+			wantMsg:  "slow down",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got error
@@ -807,11 +813,16 @@ func TestWrapAWSError_MalformedResponseError(t *testing.T) {
 }
 
 func TestIsAccessDeniedError_MalformedResponse(t *testing.T) {
-	err := &smithyhttp.ResponseError{
+	accessDenied := &smithyhttp.ResponseError{
 		Response: &smithyhttp.Response{},
 		Err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
 	}
 	require.NotPanics(t, func() {
-		assert.True(t, isAccessDeniedError(err))
+		assert.True(t, isAccessDeniedError(accessDenied))
+	})
+
+	missingInner := &smithyhttp.ResponseError{Response: &smithyhttp.Response{}}
+	require.NotPanics(t, func() {
+		assert.False(t, isAccessDeniedError(missingInner))
 	})
 }
