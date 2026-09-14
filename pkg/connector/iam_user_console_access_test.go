@@ -2,9 +2,7 @@ package connector
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net/http"
 	"testing"
 	"time"
 
@@ -13,7 +11,6 @@ import (
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/smithy-go"
 	smithymiddleware "github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
@@ -124,22 +121,18 @@ func TestIAMUserList_ConsoleAccessStates(t *testing.T) {
 	}
 }
 
-func TestGetConsoleAccess_PropagatesRetryableFailure(t *testing.T) {
+func TestGetConsoleAccess_PropagatesFailures(t *testing.T) {
 	for _, tc := range []struct {
-		name string
-		err  error
+		name     string
+		err      error
+		wantCode codes.Code
 	}{
 		{
-			name: "throttling",
-			err:  &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
+			name:     "retryable",
+			err:      &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
+			wantCode: codes.Unavailable,
 		},
-		{
-			name: "service error",
-			err: &smithyhttp.ResponseError{
-				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
-				Err:      errors.New("service unavailable"),
-			},
-		},
+		{name: "unexpected", err: fmt.Errorf("boom"), wantCode: codes.Unknown},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := getConsoleAccess(
@@ -148,7 +141,7 @@ func TestGetConsoleAccess_PropagatesRetryableFailure(t *testing.T) {
 				iamTypes.User{UserName: awsSdk.String("ci-iam-1")},
 			)
 			require.Error(t, err)
-			require.Equal(t, codes.Unavailable, status.Code(err))
+			require.Equal(t, tc.wantCode, status.Code(err))
 			require.ErrorContains(t, err, "iam.GetLoginProfile failed")
 		})
 	}

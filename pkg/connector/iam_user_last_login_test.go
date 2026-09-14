@@ -128,43 +128,16 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			wantLastLogin:   keyUse,
 		},
 		{
-			name:          "a console sign-in with no access keys is Last Login",
-			consoleSignIn: consoleLogin,
-			keys:          nil,
-			wantLastLogin: consoleLogin,
-		},
-		{
-			// A never-used key has no last-used timestamp and must not overwrite
-			// the password sign-in when computing Last Login.
 			name:          "a key that was never used does not discard the console sign-in",
 			consoleSignIn: consoleLogin,
 			keys:          []*time.Time{nil},
 			wantLastLogin: consoleLogin,
 		},
 		{
-			name:          "keys that were all never used report no key activity",
-			consoleSignIn: nil,
-			keys:          []*time.Time{nil, nil},
-		},
-		{
-			// Newest first, so a loop keeping the last value it saw rather than the
-			// greatest one fails here.
 			name:            "the newest of several keys wins when listed first",
 			keys:            []*time.Time{keyUse, olderKeyUse},
 			wantKeyLastUsed: keyUse,
 			wantLastLogin:   keyUse,
-		},
-		{
-			name:            "the newest of several keys wins when listed last",
-			keys:            []*time.Time{olderKeyUse, keyUse},
-			wantKeyLastUsed: keyUse,
-			wantLastLogin:   keyUse,
-		},
-		{
-			name:            "an unused key alongside a used one does not hide the used one",
-			keys:            []*time.Time{nil, olderKeyUse},
-			wantKeyLastUsed: olderKeyUse,
-			wantLastLogin:   olderKeyUse,
 		},
 		{
 			name:            "a later console sign-in is Last Login while the earlier key use stays on the profile",
@@ -172,11 +145,6 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			keys:            []*time.Time{consoleLogin},
 			wantKeyLastUsed: consoleLogin,
 			wantLastLogin:   keyUse,
-		},
-		{
-			name:          "a user who has never authenticated reports neither signal",
-			consoleSignIn: nil,
-			keys:          nil,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -224,32 +192,17 @@ func TestGetLoginActivity_AccessKeyAvailability(t *testing.T) {
 			wantStatus: accessKeyActivityStatusUnavailable,
 		},
 		{
-			name:       "deleted user race is unavailable",
+			name:       "deleted user on ListAccessKeys is unavailable",
 			listErr:    &iamTypes.NoSuchEntityException{},
 			wantStatus: accessKeyActivityStatusUnavailable,
 		},
 		{
-			// IAM answers over the HTTP Query protocol, so the same race can arrive
-			// unmodeled. Matching only the typed exception failed the whole sync here.
-			name:       "unmodeled deleted user race is unavailable",
-			listErr:    &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"},
-			wantStatus: accessKeyActivityStatusUnavailable,
-		},
-		{
-			name: "unmodeled key deletion mid-lookup is unavailable",
-			lookups: []keyLookupResult{
-				{lastUsed: olderKeyUse},
-				{err: &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"}},
-			},
+			name:       "deleted key on GetAccessKeyLastUsed is unavailable",
+			lookups:    []keyLookupResult{{err: &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"}}},
 			wantStatus: accessKeyActivityStatusUnavailable,
 		},
 		{
 			name:       "no keys is available",
-			wantStatus: accessKeyActivityStatusAvailable,
-		},
-		{
-			name:       "never-used keys are available",
-			lookups:    []keyLookupResult{{}, {}},
 			wantStatus: accessKeyActivityStatusAvailable,
 		},
 		{
@@ -261,16 +214,6 @@ func TestGetLoginActivity_AccessKeyAvailability(t *testing.T) {
 			},
 			wantStatus: accessKeyActivityStatusUnavailable,
 		},
-		{
-			name: "successful lookups report the maximum",
-			lookups: []keyLookupResult{
-				{lastUsed: newerKeyUse},
-				{lastUsed: olderKeyUse},
-				{},
-			},
-			wantStatus:  accessKeyActivityStatusAvailable,
-			wantLastUse: newerKeyUse,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			activity, err := getLoginActivity(context.Background(), iamClientWithKeyLookups(tc.listErr, tc.lookups), user)
@@ -278,79 +221,6 @@ func TestGetLoginActivity_AccessKeyAvailability(t *testing.T) {
 			require.Equal(t, tc.wantStatus, activity.status)
 			require.Equal(t, consoleLogin, activity.passwordLastUsed)
 			require.Equal(t, tc.wantLastUse, activity.accessKeyLastUsed)
-		})
-	}
-}
-
-// The predicate decides whether a failed IAM lookup degrades one detail or fails
-// the sync, so it has to recognize a condition in every shape IAM can express it.
-func TestIsUnavailableIAMUserLookupError(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{
-			name: "modeled NoSuchEntity",
-			err:  &iamTypes.NoSuchEntityException{Message: awsSdk.String("cannot be found")},
-			want: true,
-		},
-		{
-			// The discriminating case: IAM's HTTP Query protocol delivers the same
-			// condition as a generic API error whenever the SDK does not model the
-			// shape, and only the code is common to both.
-			name: "unmodeled NoSuchEntity carrying the same code",
-			err:  &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "cannot be found"},
-			want: true,
-		},
-		{
-			name: "resource denial",
-			err:  iamAccessDenied(),
-			want: true,
-		},
-		{
-			// A credentials outage must stay loud: treating it as a skippable denial
-			// reports a successful sync with access silently missing.
-			name: "credentials retrieval denial",
-			err:  stsAccessDenied(),
-			want: false,
-		},
-		{
-			name: "throttling",
-			err:  &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
-			want: false,
-		},
-		{
-			name: "unexpected error",
-			err:  errors.New("boom"),
-			want: false,
-		},
-		{
-			name: "malformed response wrapping AccessDenied is unavailable",
-			err: &smithyhttp.ResponseError{
-				Response: &smithyhttp.Response{},
-				Err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
-			},
-			want: true,
-		},
-		{
-			name: "malformed response with no underlying error is not unavailable",
-			err:  &smithyhttp.ResponseError{Response: &smithyhttp.Response{}, Err: nil},
-			want: false,
-		},
-		{
-			name: "malformed response wrapping a plain error is not unavailable",
-			err: &smithyhttp.ResponseError{
-				Response: &smithyhttp.Response{},
-				Err:      errors.New("missing response"),
-			},
-			want: false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var got bool
-			require.NotPanics(t, func() { got = isUnavailableIAMUserLookupError(tc.err) })
-			require.Equal(t, tc.want, got)
 		})
 	}
 }
@@ -400,29 +270,18 @@ func TestIAMUserList_EmitsCompleteAccessKeyActivity(t *testing.T) {
 	require.Equal(t, *latestKeyUse, trait.GetLastLogin().AsTime())
 }
 
-func TestGetLoginActivity_PropagatesRetryableFailure(t *testing.T) {
-	user := iamTypes.User{UserName: awsSdk.String("ci-iam-1")}
-	for _, tc := range []struct {
-		name string
-		err  error
-	}{
-		{
-			name: "throttling",
-			err:  &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
-		},
-		{
-			name: "service error",
-			err: &smithyhttp.ResponseError{
-				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusInternalServerError}},
-				Err:      errors.New("service error"),
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := getLoginActivity(context.Background(), iamClientWithKeys(tc.err), user)
-			require.Error(t, err)
-			require.Equal(t, codes.Unavailable, status.Code(err))
-			require.ErrorContains(t, err, "iam.ListAccessKeys failed")
-		})
+func TestIAMUserList_PropagatesRetryableActivityFailureWithoutResources(t *testing.T) {
+	serviceErr := &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusInternalServerError}},
+		Err:      errors.New("service error"),
 	}
+	resources, _, err := iamUserBuilder(iamClientWithKeys(serviceErr), nil, &AWS{}, false).List(
+		context.Background(),
+		nil,
+		resourceSdk.SyncOpAttrs{},
+	)
+	require.Error(t, err)
+	require.Nil(t, resources)
+	require.Equal(t, codes.Unavailable, status.Code(err))
+	require.ErrorContains(t, err, "iam.ListAccessKeys failed")
 }

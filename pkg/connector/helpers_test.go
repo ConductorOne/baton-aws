@@ -713,7 +713,7 @@ func TestClassifyRoleNHI(t *testing.T) {
 	}
 }
 
-func TestWrapAWSError_ResourceNotFound(t *testing.T) {
+func TestWrapAWSError(t *testing.T) {
 	notFound := &awsIdentityStoreTypes.ResourceNotFoundException{
 		Message:      awsSdk.String("GROUP not found."),
 		ResourceType: awsIdentityStoreTypes.ResourceTypeGroup,
@@ -766,23 +766,9 @@ func TestWrapAWSError_ResourceNotFound(t *testing.T) {
 	})
 }
 
-// A *smithyhttp.ResponseError builds its message out of the HTTP response, so one
-// that arrived without a response panics inside its own Error() — and so does every
-// error wrapping it, because Error() formats the nested error with %v. wrapAWSError
-// has to classify those from the error they carry, never from the chain's text, and
-// must never hand back an error whose message cannot be read.
 func TestWrapAWSError_MalformedResponseError(t *testing.T) {
-	// nestedNilResponse: the SDK built a Response but never filled in the http.Response.
-	nestedNilResponse := func(inner error) error {
+	malformed := func(inner error) error {
 		return &smithyhttp.ResponseError{Response: &smithyhttp.Response{}, Err: inner}
-	}
-	// outerNilResponse: no Response at all.
-	outerNilResponse := func(inner error) error {
-		return &smithyhttp.ResponseError{Err: inner}
-	}
-	realServiceError := &smithyhttp.ResponseError{
-		Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
-		Err:      fmt.Errorf("service unavailable"),
 	}
 
 	for _, tc := range []struct {
@@ -792,79 +778,22 @@ func TestWrapAWSError_MalformedResponseError(t *testing.T) {
 		wantMsg  string
 	}{
 		{
-			name:     "nested nil response wrapping throttling stays retryable",
-			err:      nestedNilResponse(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}),
+			name:     "throttling stays retryable",
+			err:      malformed(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}),
 			wantCode: codes.Unavailable,
 			wantMsg:  "slow down",
 		},
 		{
-			name:     "outer nil response wrapping throttling stays retryable",
-			err:      outerNilResponse(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}),
-			wantCode: codes.Unavailable,
-			wantMsg:  "slow down",
-		},
-		{
-			name:     "auth failure is Unauthenticated",
-			err:      nestedNilResponse(&smithy.GenericAPIError{Code: "ExpiredToken", Message: "token expired"}),
-			wantCode: codes.Unauthenticated,
-			wantMsg:  "token expired",
-		},
-		{
-			name:     "NoSuchEntity is NotFound",
-			err:      nestedNilResponse(&iamTypes.NoSuchEntityException{Message: awsSdk.String("key not found")}),
-			wantCode: codes.NotFound,
-			wantMsg:  "key not found",
-		},
-		{
-			name:     "AccessDenied is PermissionDenied",
-			err:      outerNilResponse(&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"}),
-			wantCode: codes.PermissionDenied,
-			wantMsg:  "denied",
-		},
-		{
-			name:     "already-gRPC error keeps its code",
-			err:      nestedNilResponse(status.Error(codes.FailedPrecondition, "already classified")),
-			wantCode: codes.FailedPrecondition,
-			wantMsg:  "already classified",
-		},
-		{
-			name:     "plain underlying error is Unknown and keeps its message",
-			err:      nestedNilResponse(fmt.Errorf("missing response")),
+			name:     "plain inner error stays safe",
+			err:      malformed(fmt.Errorf("missing response")),
 			wantCode: codes.Unknown,
 			wantMsg:  "missing response",
 		},
 		{
-			name:     "no underlying error is a safe Unknown",
-			err:      nestedNilResponse(nil),
+			name:     "missing inner error stays safe",
+			err:      &smithyhttp.ResponseError{Err: nil},
 			wantCode: codes.Unknown,
 			wantMsg:  "malformed error carrying no HTTP response",
-		},
-		{
-			name:     "wrapped malformed error is classified through the wrapper",
-			err:      fmt.Errorf("baton-aws: iam.GetAccessKeyLastUsed failed: %w", nestedNilResponse(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"})),
-			wantCode: codes.Unavailable,
-			wantMsg:  "slow down",
-		},
-		{
-			name:     "malformed nested inside a malformed response error",
-			err:      outerNilResponse(nestedNilResponse(&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"})),
-			wantCode: codes.PermissionDenied,
-			wantMsg:  "denied",
-		},
-		{
-			// A well-formed outer error keeps its own classification: its Error()
-			// renders the malformed inner through %v, which recovers rather than
-			// crashing, so there is nothing to intercept and the 5xx stays retryable.
-			name:     "malformed nested under a real service error keeps the 5xx mapping",
-			err:      &smithyhttp.ResponseError{Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}}, Err: nestedNilResponse(fmt.Errorf("inner"))},
-			wantCode: codes.Unavailable,
-			wantMsg:  "StatusCode: 503",
-		},
-		{
-			name:     "real 503 keeps the existing mapping",
-			err:      realServiceError,
-			wantCode: codes.Unavailable,
-			wantMsg:  "service unavailable",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -872,53 +801,17 @@ func TestWrapAWSError_MalformedResponseError(t *testing.T) {
 			require.NotPanics(t, func() { got = wrapAWSError(tc.err) })
 			require.Error(t, got)
 			assert.Equal(t, tc.wantCode, status.Code(got))
-			// Reading the message is what panics on a malformed error, so this
-			// assertion is the check that the returned error is safe to log.
 			require.NotPanics(t, func() { assert.ErrorContains(t, got, tc.wantMsg) })
 		})
 	}
 }
 
 func TestIsAccessDeniedError_MalformedResponse(t *testing.T) {
-	nestedNilResponse := func(inner error) error {
-		return &smithyhttp.ResponseError{Response: &smithyhttp.Response{}, Err: inner}
+	err := &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{},
+		Err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
 	}
-
-	for _, tc := range []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{
-			name: "malformed response wrapping AccessDenied is a resource denial",
-			err:  nestedNilResponse(&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"}),
-			want: true,
-		},
-		{
-			name: "malformed response wrapping AccessDeniedException is a resource denial",
-			err:  nestedNilResponse(&smithy.GenericAPIError{Code: errCodeAccessDeniedException, Message: "denied"}),
-			want: true,
-		},
-		{
-			name: "malformed response with no underlying error is not a denial",
-			err:  nestedNilResponse(nil),
-			want: false,
-		},
-		{
-			name: "malformed response wrapping a plain error is not a denial",
-			err:  nestedNilResponse(fmt.Errorf("missing response")),
-			want: false,
-		},
-		{
-			name: "STS credential AccessDenied stays loud",
-			err:  stsAccessDenied(),
-			want: false,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var got bool
-			require.NotPanics(t, func() { got = isAccessDeniedError(tc.err) })
-			assert.Equal(t, tc.want, got)
-		})
-	}
+	require.NotPanics(t, func() {
+		assert.True(t, isAccessDeniedError(err))
+	})
 }

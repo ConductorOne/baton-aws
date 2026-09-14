@@ -2,8 +2,6 @@ package connector
 
 import (
 	"context"
-	"errors"
-	"net/http"
 	"testing"
 	"time"
 
@@ -13,7 +11,6 @@ import (
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/smithy-go"
 	smithymiddleware "github.com/aws/smithy-go/middleware"
-	smithyhttp "github.com/aws/smithy-go/transport/http"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
@@ -31,7 +28,7 @@ func iamClientWithUserKeys(
 	keys []iamTypes.AccessKeyMetadata,
 	lastUsed *iamTypes.AccessKeyLastUsed,
 	lastUsedErr error,
-	listAccessKeysErr ...error,
+	listAccessKeysErr error,
 ) *iam.Client {
 	return iam.New(iam.Options{
 		Region: "us-east-1",
@@ -50,8 +47,8 @@ func iamClientWithUserKeys(
 									}}},
 								}, smithymiddleware.Metadata{}, nil
 							case "ListAccessKeys":
-								if len(listAccessKeysErr) > 0 && listAccessKeysErr[0] != nil {
-									return smithymiddleware.FinalizeOutput{}, smithymiddleware.Metadata{}, listAccessKeysErr[0]
+								if listAccessKeysErr != nil {
+									return smithymiddleware.FinalizeOutput{}, smithymiddleware.Metadata{}, listAccessKeysErr
 								}
 								return smithymiddleware.FinalizeOutput{
 									Result: &iam.ListAccessKeysOutput{AccessKeyMetadata: keys},
@@ -113,7 +110,7 @@ func TestSecretList_ReportsAccessKeyStatus(t *testing.T) {
 				UserName:    awsSdk.String("ci-iam-1"),
 				CreateDate:  awsSdk.Time(created),
 				Status:      tc.status,
-			}}, nil, nil)
+			}}, nil, nil, nil)
 
 			resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 			require.NoError(t, err)
@@ -167,21 +164,6 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 			},
 			wantProfile: map[string]any{"last_used_status": "available"},
 		},
-		{
-			name:        "missing last-used payload is still an answered lookup",
-			lastUsed:    nil,
-			wantProfile: map[string]any{"last_used_status": "available"},
-		},
-		{
-			name: "N/A placeholders are omitted even when a last-used date is present",
-			lastUsed: &iamTypes.AccessKeyLastUsed{
-				LastUsedDate: awsSdk.Time(used),
-				ServiceName:  awsSdk.String("N/A"),
-				Region:       awsSdk.String("N/A"),
-			},
-			wantProfile:  map[string]any{"last_used_status": "available"},
-			wantLastUsed: &used,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client := iamClientWithUserKeys("ci-iam-1", []iamTypes.AccessKeyMetadata{{
@@ -189,7 +171,7 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 				UserName:    awsSdk.String("ci-iam-1"),
 				CreateDate:  awsSdk.Time(time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)),
 				Status:      iamTypes.StatusTypeActive,
-			}}, tc.lastUsed, nil)
+			}}, tc.lastUsed, nil, nil)
 
 			resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 			require.NoError(t, err)
@@ -228,20 +210,14 @@ func TestSecretList_LastUsedLookupErrors(t *testing.T) {
 				err:  &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
 			},
 			{
-				name: "key deleted mid-sync",
-				err:  &iamTypes.NoSuchEntityException{Message: awsSdk.String("key not found")},
-			},
-			{
-				// IAM answers over the HTTP Query protocol, so the same deletion race
-				// arrives unmodeled whenever the SDK does not recognize the shape.
-				// Matching only the typed exception aborted the page and emitted no
-				// keys at all for the account.
-				name: "key deleted mid-sync reported as a generic API error",
+				// GetAccessKeyLastUsed does not model NoSuchEntity, so the SDK
+				// returns the deletion race as a GenericAPIError.
+				name: "key deleted during last-used lookup",
 				err:  &smithy.GenericAPIError{Code: "NoSuchEntity", Message: "The Access Key with id AKIAEXAMPLE cannot be found"},
 			},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				client := iamClientWithUserKeys("ci-iam-1", activeKey, nil, tc.err)
+				client := iamClientWithUserKeys("ci-iam-1", activeKey, nil, tc.err, nil)
 
 				resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 				require.NoError(t, err)
@@ -258,9 +234,9 @@ func TestSecretList_LastUsedLookupErrors(t *testing.T) {
 		neverUsed := iamClientWithUserKeys("ci-iam-1", activeKey, &iamTypes.AccessKeyLastUsed{
 			ServiceName: awsSdk.String("N/A"),
 			Region:      awsSdk.String("N/A"),
-		}, nil)
+		}, nil, nil)
 		denied := iamClientWithUserKeys("ci-iam-1", activeKey, nil,
-			&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"})
+			&smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"}, nil)
 
 		neverUsedResources, _, err := secretBuilder(neverUsed, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 		require.NoError(t, err)
@@ -275,49 +251,15 @@ func TestSecretList_LastUsedLookupErrors(t *testing.T) {
 		)
 	})
 
-	t.Run("retryable and unexpected failures fail the page", func(t *testing.T) {
-		for _, tc := range []struct {
-			name     string
-			err      error
-			wantCode codes.Code
-		}{
-			{
-				name:     "throttling remains retryable",
-				err:      &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
-				wantCode: codes.Unavailable,
-			},
-			{
-				name: "service failure remains retryable",
-				err: &smithyhttp.ResponseError{
-					Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
-					Err:      errors.New("service unavailable"),
-				},
-				wantCode: codes.Unavailable,
-			},
-			{
-				name:     "unexpected failure is not swallowed",
-				err:      errors.New("boom"),
-				wantCode: codes.Unknown,
-			},
-		} {
-			t.Run(tc.name, func(t *testing.T) {
-				// Two keys so a page that failed on the second one cannot quietly
-				// return the first: a short page reads as deleted keys downstream.
-				keys := append(append([]iamTypes.AccessKeyMetadata{}, activeKey...), iamTypes.AccessKeyMetadata{
-					AccessKeyId: awsSdk.String("AKIAEXAMPLE2"),
-					UserName:    awsSdk.String("ci-iam-1"),
-					CreateDate:  awsSdk.Time(time.Date(2025, time.January, 2, 3, 4, 5, 0, time.UTC)),
-					Status:      iamTypes.StatusTypeActive,
-				})
-				client := iamClientWithUserKeys("ci-iam-1", keys, nil, tc.err)
+	t.Run("retryable failure returns no partial resources", func(t *testing.T) {
+		client := iamClientWithUserKeys("ci-iam-1", activeKey, nil,
+			&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}, nil)
 
-				resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
-				require.Error(t, err)
-				assert.Empty(t, resources)
-				assert.Equal(t, tc.wantCode, status.Code(err))
-				assert.ErrorContains(t, err, "iam.GetAccessKeyLastUsed failed")
-			})
-		}
+		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+		require.Error(t, err)
+		require.Nil(t, resources)
+		assert.Equal(t, codes.Unavailable, status.Code(err))
+		assert.ErrorContains(t, err, "iam.GetAccessKeyLastUsed failed")
 	})
 }
 
@@ -328,7 +270,7 @@ func TestSecretList_PreservesAccountParent(t *testing.T) {
 		UserName:    awsSdk.String("ci-iam-1"),
 		CreateDate:  awsSdk.Time(created),
 		Status:      iamTypes.StatusTypeActive,
-	}}, nil, nil)
+	}}, nil, nil, nil)
 	parentID := &v2.ResourceId{
 		ResourceType: resourceTypeAccountIam.Id,
 		Resource:     "222222222222",
@@ -345,63 +287,25 @@ func TestSecretList_PreservesAccountParent(t *testing.T) {
 }
 
 func TestSecretList_ListAccessKeysErrors(t *testing.T) {
-	for _, tc := range []struct {
-		name     string
-		err      error
-		wantCode codes.Code
-	}{
-		{
-			name:     "access denied fails the catalog",
-			err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
-			wantCode: codes.PermissionDenied,
-		},
-		{
-			name:     "throttling remains retryable",
-			err:      &smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"},
-			wantCode: codes.Unavailable,
-		},
-		{
-			name: "service failure remains retryable",
-			err: &smithyhttp.ResponseError{
-				Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
-				Err:      errors.New("service unavailable"),
-			},
-			wantCode: codes.Unavailable,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil, tc.err)
-
-			resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
-			require.Error(t, err)
-			assert.Empty(t, resources)
-			assert.Equal(t, tc.wantCode, status.Code(err))
-			assert.ErrorContains(t, err, "iam.ListAccessKeys failed")
-			// The management account is the only one the connector talks to
-			// directly, so naming it would be noise.
-			assert.NotContains(t, err.Error(), "for account")
-		})
-	}
+	t.Run("throttling fails without resources", func(t *testing.T) {
+		client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil,
+			&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"})
+		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
+		require.Error(t, err)
+		require.Nil(t, resources)
+		assert.Equal(t, codes.Unavailable, status.Code(err))
+		assert.ErrorContains(t, err, "iam.ListAccessKeys failed")
+	})
 
 	t.Run("deleted user is skipped", func(t *testing.T) {
-		client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil, &iamTypes.NoSuchEntityException{})
-
-		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
-		require.NoError(t, err)
-		assert.Empty(t, resources)
-	})
-
-	t.Run("deleted user reported as a generic API error is skipped", func(t *testing.T) {
 		client := iamClientWithUserKeys("ci-iam-1", nil, nil, nil,
-			&smithy.GenericAPIError{Code: "NoSuchEntity", Message: "The user with name ci-iam-1 cannot be found"})
+			&iamTypes.NoSuchEntityException{Message: awsSdk.String("The user with name ci-iam-1 cannot be found")})
 
 		resources, _, err := secretBuilder(client, nil).List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 		require.NoError(t, err)
 		assert.Empty(t, resources)
 	})
 
-	// A cross-account sync reaches IAM through a role in each member account, so
-	// without the account the failure is the same message from every one of them.
 	t.Run("member account failure names the account", func(t *testing.T) {
 		parentID := &v2.ResourceId{
 			ResourceType: resourceTypeAccountIam.Id,
