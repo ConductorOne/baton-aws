@@ -108,6 +108,10 @@ Populating `access_key_last_used` requires `iam:ListAccessKeys` and `iam:GetAcce
 
 When access-key activity is available, C1 reports **Last Login** as the newer of the password and access-key timestamps. If access-key activity is unavailable, the connector preserves `password_last_used` on the profile but leaves **Last Login** unset rather than presenting an incomplete timestamp as authoritative. A missing password date does not mean the user has no console password; use `console_access_status` for that distinction.
 
+<Note>
+Leaving **Last Login** unset does not erase a **Last Login** that C1 already recorded for that user. A user who synced earlier with readable access-key activity keeps that earlier date on display while `access_key_activity_status` is `unavailable`. Check that field to tell whether the latest sync could read access-key activity: when it is `unavailable`, read the displayed **Last Login** as the last activity C1 was able to see, not as confirmation of current activity.
+</Note>
+
 Per-key detail lives on the access key itself, on the [Inventory page](/product/admin/inventory):
 
 - **Last used**, together with `last_used_service` and `last_used_region` — what the key was calling and from where. For a key with no tracked use, AWS returns a null date and `"N/A"` placeholders; the connector omits those values.
