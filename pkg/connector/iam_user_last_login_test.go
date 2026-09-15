@@ -140,6 +140,16 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			wantLastLogin:   keyUse,
 		},
 		{
+			name:            "an unused key does not stop the scan and the newest key later in the list wins",
+			consoleSignIn:   consoleLogin,
+			keys:            []*time.Time{nil, olderKeyUse, keyUse},
+			wantKeyLastUsed: keyUse,
+			wantLastLogin:   keyUse,
+		},
+		{
+			name: "a user with no password and no keys reports neither signal",
+		},
+		{
 			name:            "a later console sign-in is Last Login while the earlier key use stays on the profile",
 			consoleSignIn:   keyUse,
 			keys:            []*time.Time{consoleLogin},

@@ -157,6 +157,16 @@ func TestSecretList_ReportsLastUsedService(t *testing.T) {
 			wantLastUsed: &used,
 		},
 		{
+			name: "N/A placeholders are omitted even when a last-used date is present",
+			lastUsed: &iamTypes.AccessKeyLastUsed{
+				LastUsedDate: awsSdk.Time(used),
+				ServiceName:  awsSdk.String("N/A"),
+				Region:       awsSdk.String("N/A"),
+			},
+			wantProfile:  map[string]any{"last_used_status": "available"},
+			wantLastUsed: &used,
+		},
+		{
 			name: "never used key is reported as available with no usage",
 			lastUsed: &iamTypes.AccessKeyLastUsed{
 				ServiceName: awsSdk.String("N/A"),
