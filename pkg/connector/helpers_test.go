@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	pathpkg "path"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	awsIdentityStoreTypes "github.com/aws/aws-sdk-go-v2/service/identitystore/types"
 	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -711,7 +713,7 @@ func TestClassifyRoleNHI(t *testing.T) {
 	}
 }
 
-func TestWrapAWSError_ResourceNotFound(t *testing.T) {
+func TestWrapAWSError(t *testing.T) {
 	notFound := &awsIdentityStoreTypes.ResourceNotFoundException{
 		Message:      awsSdk.String("GROUP not found."),
 		ResourceType: awsIdentityStoreTypes.ResourceTypeGroup,
@@ -739,6 +741,14 @@ func TestWrapAWSError_ResourceNotFound(t *testing.T) {
 		require.Equal(t, codes.Unavailable, status.Code(err))
 	})
 
+	t.Run("HTTP service errors are Unavailable", func(t *testing.T) {
+		err := wrapAWSError(&smithyhttp.ResponseError{
+			Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusServiceUnavailable}},
+			Err:      fmt.Errorf("service unavailable"),
+		})
+		require.Equal(t, codes.Unavailable, status.Code(err))
+	})
+
 	t.Run("unrelated errors are unchanged", func(t *testing.T) {
 		orig := fmt.Errorf("baton-aws: something else failed")
 		err := wrapAWSError(orig)
@@ -753,5 +763,66 @@ func TestWrapAWSError_ResourceNotFound(t *testing.T) {
 		}))
 		require.Equal(t, codes.NotFound, status.Code(err))
 		assert.True(t, isNotFoundError(err))
+	})
+}
+
+func TestWrapAWSError_MalformedResponseError(t *testing.T) {
+	malformed := func(inner error) error {
+		return &smithyhttp.ResponseError{Response: &smithyhttp.Response{}, Err: inner}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+		wantMsg  string
+	}{
+		{
+			name:     "throttling stays retryable",
+			err:      malformed(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}),
+			wantCode: codes.Unavailable,
+			wantMsg:  "slow down",
+		},
+		{
+			name:     "plain inner error stays safe",
+			err:      malformed(fmt.Errorf("missing response")),
+			wantCode: codes.Unknown,
+			wantMsg:  "missing response",
+		},
+		{
+			name:     "missing inner error stays safe",
+			err:      &smithyhttp.ResponseError{Err: nil},
+			wantCode: codes.Unknown,
+			wantMsg:  "malformed error carrying no HTTP response",
+		},
+		{
+			name:     "wrapped nested malformed errors are classified recursively",
+			err:      fmt.Errorf("iam call failed: %w", malformed(malformed(&smithy.GenericAPIError{Code: "ThrottlingException", Message: "slow down"}))),
+			wantCode: codes.Unavailable,
+			wantMsg:  "slow down",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got error
+			require.NotPanics(t, func() { got = wrapAWSError(tc.err) })
+			require.Error(t, got)
+			assert.Equal(t, tc.wantCode, status.Code(got))
+			require.NotPanics(t, func() { assert.ErrorContains(t, got, tc.wantMsg) })
+		})
+	}
+}
+
+func TestIsAccessDeniedError_MalformedResponse(t *testing.T) {
+	accessDenied := &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{},
+		Err:      &smithy.GenericAPIError{Code: errCodeAccessDenied, Message: "denied"},
+	}
+	require.NotPanics(t, func() {
+		assert.True(t, isAccessDeniedError(accessDenied))
+	})
+
+	missingInner := &smithyhttp.ResponseError{Response: &smithyhttp.Response{}}
+	require.NotPanics(t, func() {
+		assert.False(t, isAccessDeniedError(missingInner))
 	})
 }

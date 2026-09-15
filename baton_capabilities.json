@@ -422,9 +422,6 @@
                 "permission": "iam:GetUser"
               },
               {
-                "permission": "iam:GetLoginProfile"
-              },
-              {
                 "permission": "iam:ListAccessKeys"
               },
               {
@@ -500,9 +497,6 @@
           },
           {
             "permission": "iam:GetUser"
-          },
-          {
-            "permission": "iam:GetLoginProfile"
           },
           {
             "permission": "iam:ListAccessKeys"
