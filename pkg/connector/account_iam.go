@@ -75,6 +75,15 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 			Id: awsSdk.ToString(account.Id),
 		}
 		profile := accountProfile(ctx, account)
+
+		if o.aws != nil && o.aws.syncResourceTags {
+			tags, err := fetchAccountTags(ctx, o.orgClient, awsSdk.ToString(account.Id))
+			if err != nil {
+				return nil, nil, err
+			}
+			profile[tagsProfileField] = tags
+		}
+
 		userResource, err := resourceSdk.NewAppResource(
 			awsSdk.ToString(account.Name),
 			resourceTypeAccountIam,

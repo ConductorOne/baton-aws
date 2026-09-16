@@ -123,6 +123,8 @@ Two optional settings gate parts of this, and both are off by default:
 - **Sync secrets** — without it no access keys are synced, so none of the per-key detail above appears.
 - **Sync IAM User Console Access** (`BATON_SYNC_IAM_USER_CONSOLE_ACCESS`) — reports `console_access_status` as `enabled` when AWS returns a login profile, `disabled` when no login profile exists, or `unavailable` when AWS denies the lookup. The connector includes `console_access_enabled`, `password_reset_required`, and `login_profile_created_at` only when the state is known. It is off by default because it costs one `iam:GetLoginProfile` call per IAM user and requires `iam:GetLoginProfile` on the connector role. This setting detects an IAM console password; it does not detect access through Identity Center or an assumed role.
 
+- **Sync Resource Tags** (`BATON_SYNC_RESOURCE_TAGS`) — without it the `aws_tags` profile field on accounts, IAM users, and IAM roles is empty. It is off by default because tags are not returned by any `List*` call, so it costs at least one extra call per resource (`organizations:ListTagsForResource`, `iam:ListUserTags`, `iam:ListRoleTags`). The 50-tag quota covers only user-created tags — AWS-reserved `aws:` system tags are additional — so tags are read across pages. `organizations:ListTagsForResource` is throttled at 10 requests/second per account, which is the practical cost in a large organization. A missing tag permission fails the sync with a `PermissionDenied` naming the action to grant, rather than quietly syncing untagged resources: enabling this setting is an explicit request for tags, so losing them silently would leave policy rules evaluating against tags that are not there.
+
 IAM user **Last Login** does not depend on either optional setting.
 
 Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and **Sync SSO User Last Login** (`BATON_SYNC_SSO_USER_LAST_LOGIN`), and grant `cloudtrail:LookupEvents` to report Identity Center sign-ins. This setting is also off by default and does not affect IAM user Last Login or access key activity.
@@ -268,7 +270,9 @@ Next, you will create an inline policy to define the specific data this role can
             "iam:GetRole",
             "iam:ListAccessKeys",
             "iam:GetAccessKeyLastUsed",
-            "iam:GetLoginProfile"
+            "iam:GetLoginProfile",
+            "iam:ListUserTags",
+            "iam:ListRoleTags"
           ],
           "Resource": "*"
         },
@@ -277,7 +281,8 @@ Next, you will create an inline policy to define the specific data this role can
           "Effect": "Allow",
           "Action": [
             "organizations:ListAccounts",
-            "organizations:DescribeOrganization"
+            "organizations:DescribeOrganization",
+            "organizations:ListTagsForResource"
           ],
           "Resource": "*"
         },
@@ -331,6 +336,11 @@ Next, you will create an inline policy to define the specific data this role can
     **Optional: IAM User Console Access** The JSON above includes this permission. It is used only when **Sync IAM User Console Access** (`BATON_SYNC_IAM_USER_CONSOLE_ACCESS`) is enabled. The flag is off by default because it makes one `iam:GetLoginProfile` call per IAM user.
 
     * iam:GetLoginProfile: Allows C1 to see whether each IAM user has a console login profile, and whether a password reset is required.
+
+    **Optional: Resource Tags** The JSON above includes these permissions. They are used only when **Sync Resource Tags** (`BATON_SYNC_RESOURCE_TAGS`) is enabled. The flag is off by default because it makes at least one extra call per account, IAM user, and IAM role. If you enable it, these permissions are required — the sync fails without them rather than silently omitting tags.
+
+    * iam:ListUserTags and iam:ListRoleTags: Allow C1 to read the tags on each IAM user and role. The `ListUsers` and `ListRoles` responses do not include tags, so these per-resource calls are the only source.
+    * organizations:ListTagsForResource: Allows C1 to read the tags on each AWS account. The `ListAccounts` response has no tags field at all.
 
     **Optional: AWS Organizations Support** Include these permissions if you enable the "Enable support for AWS Organizations" checkbox in the C1 UI.
 
@@ -492,6 +502,9 @@ The permissions policy below is broken into several sections to align with these
 	        "sso:ListPermissionSetsProvisionedToAccount",
 	        "organizations:ListRoots",
 	        "organizations:ListOrganizationalUnitsForParent",
+	        "organizations:ListTagsForResource",
+	        "iam:ListUserTags",
+	        "iam:ListRoleTags",
 	        "iam:GetUser",
 	        "iam:ListAccessKeys",
 	        "iam:ListSigningCertificates",
@@ -991,6 +1004,9 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "organizations:ListOrganizationalUnitsForParent",
             "organizations:ListParents",
             "organizations:ListRoots",
+            "organizations:ListTagsForResource",
+            "iam:ListUserTags",
+            "iam:ListRoleTags",
             "sso:DescribePermissionSet",
             "sso:GetInlinePolicyForPermissionSet",
             "sso:ListAccountAssignments",

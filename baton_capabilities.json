@@ -68,6 +68,9 @@
                 "permission": "organizations:ListParents"
               },
               {
+                "permission": "organizations:ListTagsForResource"
+              },
+              {
                 "permission": "sso:ListPermissionSets"
               },
               {
@@ -151,6 +154,9 @@
           },
           {
             "permission": "organizations:ListParents"
+          },
+          {
+            "permission": "organizations:ListTagsForResource"
           },
           {
             "permission": "sso:ListPermissionSets"
@@ -241,6 +247,9 @@
             "permissions": [
               {
                 "permission": "iam:ListAccountAliases"
+              },
+              {
+                "permission": "organizations:ListTagsForResource"
               }
             ]
           }
@@ -253,6 +262,9 @@
         "permissions": [
           {
             "permission": "iam:ListAccountAliases"
+          },
+          {
+            "permission": "organizations:ListTagsForResource"
           }
         ]
       }
@@ -449,6 +461,9 @@
                 "permission": "iam:ListGroupsForUser"
               },
               {
+                "permission": "iam:ListUserTags"
+              },
+              {
                 "permission": "iam:CreateUser"
               },
               {
@@ -524,6 +539,9 @@
           },
           {
             "permission": "iam:ListGroupsForUser"
+          },
+          {
+            "permission": "iam:ListUserTags"
           },
           {
             "permission": "iam:CreateUser"
@@ -900,6 +918,9 @@
               },
               {
                 "permission": "iam:ListAttachedRolePolicies"
+              },
+              {
+                "permission": "iam:ListRoleTags"
               }
             ]
           }
@@ -918,6 +939,9 @@
           },
           {
             "permission": "iam:ListAttachedRolePolicies"
+          },
+          {
+            "permission": "iam:ListRoleTags"
           }
         ]
       }

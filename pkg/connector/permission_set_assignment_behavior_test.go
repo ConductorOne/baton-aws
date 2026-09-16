@@ -162,8 +162,10 @@ type fakeOrgs struct {
 	listOUsFn         func(*awsOrgs.ListOrganizationalUnitsForParentInput) (*awsOrgs.ListOrganizationalUnitsForParentOutput, error)
 	listParentsFn     func(*awsOrgs.ListParentsInput) (*awsOrgs.ListParentsOutput, error)
 	describeAccountFn func(*awsOrgs.DescribeAccountInput) (*awsOrgs.DescribeAccountOutput, error)
+	listTagsFn        func(*awsOrgs.ListTagsForResourceInput) (*awsOrgs.ListTagsForResourceOutput, error)
 
 	listParentsCalls int
+	listTagsCalls    int
 }
 
 func (f *fakeOrgs) DescribeAccount(_ context.Context, in *awsOrgs.DescribeAccountInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.DescribeAccountOutput, error) {
@@ -198,6 +200,18 @@ func (f *fakeOrgs) ListOrganizationalUnitsForParent(
 	return &awsOrgs.ListOrganizationalUnitsForParentOutput{}, nil
 }
 
+func (f *fakeOrgs) ListTagsForResource(
+	_ context.Context,
+	in *awsOrgs.ListTagsForResourceInput,
+	_ ...func(*awsOrgs.Options),
+) (*awsOrgs.ListTagsForResourceOutput, error) {
+	f.listTagsCalls++
+	if f.listTagsFn != nil {
+		return f.listTagsFn(in)
+	}
+	return &awsOrgs.ListTagsForResourceOutput{}, nil
+}
+
 func (f *fakeOrgs) ListParents(_ context.Context, in *awsOrgs.ListParentsInput, _ ...func(*awsOrgs.Options)) (*awsOrgs.ListParentsOutput, error) {
 	f.listParentsCalls++
 	if f.listParentsFn != nil {
@@ -219,7 +233,7 @@ func newBehaviorAccount(sso *fakeSSOAdmin) *accountResourceType {
 		IdentityStoreId: awsSdk.String(behaviorIdentityStoreID),
 	}
 	return accountBuilder(&fakeOrgs{}, "", sso, identityInstance, behaviorRegion, &test.MockedIdentityStoreClient{},
-		HierarchySyncFlags{Organization: true, OrganizationalUnit: true})
+		HierarchySyncFlags{Organization: true, OrganizationalUnit: true}, false)
 }
 
 func behaviorBinding(t *testing.T) (*v2.Resource, *v2.Entitlement) {

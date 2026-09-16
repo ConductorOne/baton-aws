@@ -31,6 +31,9 @@ type roleResourceType struct {
 	iamClient           *iam.Client
 	awsClientFactory    *AWSClientFactory
 	syncIAMPolicyGrants bool
+
+	// syncResourceTags gates the per-role iam:ListRoleTags call. See tags.go.
+	syncResourceTags bool
 }
 
 func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -74,6 +77,18 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 			Id: awsSdk.ToString(role.Arn),
 		}
 		profile := roleProfile(ctx, role)
+
+		// ListRoles always returns an empty Tags slice, so the aws_tags set by
+		// roleProfile is a placeholder. Only a per-role iam:ListRoleTags call
+		// yields real tags; see tags.go.
+		if o.syncResourceTags {
+			tags, err := fetchIAMRoleTags(ctx, iamClient, awsSdk.ToString(role.RoleName))
+			if err != nil {
+				return nil, nil, err
+			}
+			profile[tagsProfileField] = tags
+		}
+
 		nhiType, nhiDetail := classifyRoleNHI(ctx, role)
 		roleResource, err := resourceSdk.NewRoleResource(
 			awsSdk.ToString(role.RoleName),
@@ -259,12 +274,13 @@ func (o *roleResourceType) Grants(
 	return grants, nil, nil
 }
 
-func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, syncIAMPolicyGrants bool) *roleResourceType {
+func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, syncIAMPolicyGrants bool, syncResourceTags bool) *roleResourceType {
 	return &roleResourceType{
 		resourceType:        resourceTypeRole,
 		iamClient:           iamClient,
 		awsClientFactory:    awsClientFactory,
 		syncIAMPolicyGrants: syncIAMPolicyGrants,
+		syncResourceTags:    syncResourceTags,
 	}
 }
 

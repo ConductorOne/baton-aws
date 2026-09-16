@@ -72,4 +72,9 @@ type orgsAPI interface {
 		optFns ...func(*awsOrgs.Options),
 	) (*awsOrgs.ListOrganizationalUnitsForParentOutput, error)
 	ListParents(ctx context.Context, params *awsOrgs.ListParentsInput, optFns ...func(*awsOrgs.Options)) (*awsOrgs.ListParentsOutput, error)
+	ListTagsForResource(
+		ctx context.Context,
+		params *awsOrgs.ListTagsForResourceInput,
+		optFns ...func(*awsOrgs.Options),
+	) (*awsOrgs.ListTagsForResourceOutput, error)
 }
