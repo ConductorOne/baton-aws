@@ -11,10 +11,8 @@ import (
 	awsOrgsTypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 )
 
-// tagsProfileField is the profile key every resource type publishes its AWS tags under.
-// It is a nested map of tag key -> tag value, which c1 exposes to CEL as
-// resource.profile.aws_tags["Owner"]. Rule authors must guard lookups with
-// `"Owner" in resource.profile.aws_tags` — a missing key is an eval error, not null.
+// tagsProfileField is the profile key carrying a resource's AWS tags, a nested map of tag
+// key -> tag value. c1 exposes it to CEL as resource.profile.aws_tags["Owner"].
 const tagsProfileField = "aws_tags"
 
 // iamTagsMaxItems is the page size requested from iam:ListUserTags / iam:ListRoleTags.
@@ -24,11 +22,6 @@ const tagsProfileField = "aws_tags"
 // with more than 50 tags arrive in one response. organizations:ListTagsForResource has no
 // page-size parameter at all. Pagination is therefore not avoidable on either API.
 const iamTagsMaxItems int32 = 100
-
-// maxTagPages bounds every tag paginator below. The documented user-tag quota is 50 per
-// resource and system tags are a small fixed set per resource, so five pages is already
-// far past anything real — the bound exists so a misbehaving endpoint cannot stall a sync.
-const maxTagPages = 5
 
 // None of the List* calls this connector uses return tags: organizations.Account has no
 // Tags field at all, and iam.ListUsers / iam.ListRoles return an empty Tags slice. Tags
@@ -66,16 +59,6 @@ type iamTagsAPI interface {
 	ListRoleTags(ctx context.Context, params *iam.ListRoleTagsInput, optFns ...func(*iam.Options)) (*iam.ListRoleTagsOutput, error)
 }
 
-// errTagPageCap reports a tag listing that ran past maxTagPages. Truncated tags are as
-// unusable as absent ones for routing, so this fails rather than returning a partial set.
-func errTagPageCap(kind string, name string) error {
-	return fmt.Errorf(
-		"baton-aws: %s %q returned more than %d pages of tags; refusing to sync a truncated aws_tags set. "+
-			"Disable sync-resource-tags if this resource's tags are not needed",
-		kind, name, maxTagPages,
-	)
-}
-
 func putIAMTags(rv map[string]interface{}, tags []iamTypes.Tag) {
 	for _, tag := range tags {
 		rv[awsSdk.ToString(tag.Key)] = awsSdk.ToString(tag.Value)
@@ -100,10 +83,7 @@ func fetchAccountTags(ctx context.Context, orgClient orgsAPI, accountID string) 
 	)
 
 	rv := make(map[string]interface{})
-	for pages := 0; paginator.HasMorePages(); pages++ {
-		if pages == maxTagPages {
-			return nil, errTagPageCap("account", accountID)
-		}
+	for paginator.HasMorePages() {
 		resp, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, wrapAWSError(fmt.Errorf(
@@ -129,10 +109,7 @@ func fetchIAMUserTags(ctx context.Context, iamClient iamTagsAPI, userName string
 	)
 
 	rv := make(map[string]interface{})
-	for pages := 0; paginator.HasMorePages(); pages++ {
-		if pages == maxTagPages {
-			return nil, errTagPageCap("iam user", userName)
-		}
+	for paginator.HasMorePages() {
 		resp, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, wrapAWSError(fmt.Errorf(
@@ -158,10 +135,7 @@ func fetchIAMRoleTags(ctx context.Context, iamClient iamTagsAPI, roleName string
 	)
 
 	rv := make(map[string]interface{})
-	for pages := 0; paginator.HasMorePages(); pages++ {
-		if pages == maxTagPages {
-			return nil, errTagPageCap("role", roleName)
-		}
+	for paginator.HasMorePages() {
 		resp, err := paginator.NextPage(ctx)
 		if err != nil {
 			return nil, wrapAWSError(fmt.Errorf(

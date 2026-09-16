@@ -78,7 +78,7 @@ func oneActiveAccount(_ *awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput
 	}}}, nil
 }
 
-func accountTagsFromProfile(t *testing.T, acct *accountResourceType, orgs *fakeOrgs) (map[string]interface{}, bool) {
+func accountTagsFromProfile(t *testing.T, acct *accountResourceType) (map[string]interface{}, bool) {
 	t.Helper()
 	resources, _, err := acct.List(context.Background(), nil, resourceSdk.SyncOpAttrs{})
 	require.NoError(t, err)
@@ -110,7 +110,7 @@ func TestAccountList_TagsOnProfileWhenEnabled(t *testing.T) {
 		},
 	}
 
-	tags, present := accountTagsFromProfile(t, newOrgAccountWithTags(orgs), orgs)
+	tags, present := accountTagsFromProfile(t, newOrgAccountWithTags(orgs))
 	require.True(t, present, "aws_tags must be set when sync-resource-tags is enabled")
 	assert.Equal(t, map[string]interface{}{
 		"Owner":       "cloudinfrastructure",
@@ -130,7 +130,7 @@ func TestAccountList_NoTagCallWhenDisabled(t *testing.T) {
 		},
 	}
 
-	_, present := accountTagsFromProfile(t, newOrgAccount(orgs), orgs)
+	_, present := accountTagsFromProfile(t, newOrgAccount(orgs))
 	assert.False(t, present, "aws_tags must be absent when sync-resource-tags is disabled")
 	assert.Equal(t, 0, orgs.listTagsCalls)
 }
@@ -204,24 +204,27 @@ func TestFetchAccountTags_SinglePageStopsImmediately(t *testing.T) {
 	assert.Equal(t, 1, orgs.listTagsCalls)
 }
 
-// An endpoint that never stops handing back tokens must be bounded — and a truncated tag
-// set is as unusable for routing as a missing one, so the bound is an error, not a partial
-// result.
-func TestFetchAccountTags_PageCapIsFatal(t *testing.T) {
+// A resource whose tags arrive in many small pages must sync completely. ListTagsForResource
+// documents no page size, so nothing here may assume pages are large.
+func TestFetchAccountTags_ManySmallPagesSucceed(t *testing.T) {
 	page := 0
 	orgs := &fakeOrgs{
 		listTagsFn: func(_ *awsOrgs.ListTagsForResourceInput) (*awsOrgs.ListTagsForResourceOutput, error) {
 			page++
-			return &awsOrgs.ListTagsForResourceOutput{
-				Tags:      []awsOrgsTypes.Tag{orgTag(fmt.Sprintf("k%d", page), "v")},
-				NextToken: awsSdk.String(fmt.Sprintf("tok%d", page)),
-			}, nil
+			out := &awsOrgs.ListTagsForResourceOutput{
+				Tags: []awsOrgsTypes.Tag{orgTag(fmt.Sprintf("k%d", page), "v")},
+			}
+			if page < 60 {
+				out.NextToken = awsSdk.String(fmt.Sprintf("tok%d", page))
+			}
+			return out, nil
 		},
 	}
 
-	_, err := fetchAccountTags(context.Background(), orgs, testAccountID)
-	require.Error(t, err)
-	assert.Equal(t, maxTagPages, orgs.listTagsCalls, "must stop at the page cap")
+	tags, err := fetchAccountTags(context.Background(), orgs, testAccountID)
+	require.NoError(t, err)
+	assert.Len(t, tags, 60)
+	assert.Equal(t, 60, orgs.listTagsCalls)
 }
 
 // An endpoint that echoes the same token back must terminate on the first repeat.

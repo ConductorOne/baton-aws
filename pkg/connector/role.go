@@ -296,7 +296,7 @@ func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{}
 	profile := make(map[string]interface{})
 	profile["aws_arn"] = awsSdk.ToString(role.Arn)
 	profile["aws_path"] = awsSdk.ToString(role.Path)
-	profile["aws_tags"] = roleTagsToMap(role)
+	profile[tagsProfileField] = roleTagsToMap(role)
 	profile["aws_role_name"] = awsSdk.ToString(role.RoleName)
 	profile["aws_role_description"] = awsSdk.ToString(role.Description)
 	// MaxSessionDuration is an IAM-owned role setting returned by ListRoles.
