@@ -24,6 +24,7 @@ type accountIAMResourceType struct {
 	orgClient        *awsOrgs.Client
 	awsClientFactory *AWSClientFactory
 	aws              *AWS
+	syncSecrets      bool
 }
 
 func (o *accountIAMResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -123,7 +124,7 @@ func (o *accountIAMResourceType) parseAssumeRole(
 			return nil, nil
 		}
 
-		return []proto.Message{
+		childResourceTypes := []proto.Message{
 			&v2.ChildResourceType{
 				ResourceTypeId: resourceTypeIAMUser.Id,
 			},
@@ -136,7 +137,13 @@ func (o *accountIAMResourceType) parseAssumeRole(
 			&v2.ChildResourceType{
 				ResourceTypeId: resourceTypeIAMPolicy.Id,
 			},
-		}, nil
+		}
+		if o.syncSecrets {
+			childResourceTypes = append(childResourceTypes, &v2.ChildResourceType{
+				ResourceTypeId: resourceTypeSecret.Id,
+			})
+		}
+		return childResourceTypes, nil
 	}
 
 	return nil, nil
@@ -146,11 +153,13 @@ func accountIAMBuilder(
 	orgClient *awsOrgs.Client,
 	awsClientFactory *AWSClientFactory,
 	aws *AWS,
+	syncSecrets bool,
 ) *accountIAMResourceType {
 	return &accountIAMResourceType{
 		resourceType:     resourceTypeAccountIam,
 		orgClient:        orgClient,
 		awsClientFactory: awsClientFactory,
 		aws:              aws,
+		syncSecrets:      syncSecrets,
 	}
 }

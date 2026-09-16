@@ -573,7 +573,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	}
 
 	if c.shouldSyncCrossAccountIAM() {
-		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c))
+		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c, c.syncSecrets))
 	}
 
 	if c.orgsEnabled && c.ssoEnabled {
@@ -630,7 +630,7 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true})),
 		organizationBuilder(nil),
 		organizationalUnitBuilder(nil),
-		accountIAMBuilder(nil, nil, nil),
+		accountIAMBuilder(nil, nil, nil, true),
 		secretBuilder(nil, nil),
 	}
 }
