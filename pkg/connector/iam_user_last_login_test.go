@@ -128,6 +128,11 @@ func TestGetLoginActivity_ReportsBothSignalsIndependently(t *testing.T) {
 			wantLastLogin:   keyUse,
 		},
 		{
+			name:          "a console sign-in with no access keys is Last Login",
+			consoleSignIn: consoleLogin,
+			wantLastLogin: consoleLogin,
+		},
+		{
 			name:          "a key that was never used does not discard the console sign-in",
 			consoleSignIn: consoleLogin,
 			keys:          []*time.Time{nil},
