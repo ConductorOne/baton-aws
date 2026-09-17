@@ -12,48 +12,21 @@ import (
 )
 
 // tagsProfileField is the profile key carrying a resource's AWS tags, a nested map of tag
-// key -> tag value. c1 exposes it to CEL as resource.profile.aws_tags["Owner"].
+// key -> tag value.
 const tagsProfileField = "aws_tags"
 
-// iamTagsMaxItems is the page size requested from iam:ListUserTags / iam:ListRoleTags.
-// It is set explicitly so the request does not depend on the API default changing, but it
-// buys nothing: MaxItems accepts up to 1000 while the response schema caps Tags at 50
-// items ("Array Members: Maximum number of 50 items"), so no page size makes a resource
-// with more than 50 tags arrive in one response. organizations:ListTagsForResource has no
-// page-size parameter at all. Pagination is therefore not avoidable on either API.
+// iamTagsMaxItems is the API default, set explicitly so the request does not depend on it.
 const iamTagsMaxItems int32 = 100
 
-// None of the List* calls this connector uses return tags: organizations.Account has no
-// Tags field at all, and iam.ListUsers / iam.ListRoles return an empty Tags slice. Tags
-// are only reachable through a separate per-resource call, so syncing them costs at least
-// one extra API call per resource. That is why every fetch below is gated on the
-// sync-resource-tags config field (default false) — at org scale the added Organizations
-// traffic is a deliberate trade, not a free enrichment. organizations:ListTagsForResource
-// is throttled at 10 req/s (burst 15) per account, so ~1000 accounts is ~100s of tag reads.
-//
-// These fetchers paginate, and must: the documented 50-tag quota counts only user-created
-// tags. AWS states for Organizations that "system tags don't count against your tags per
-// resource limit" (INVALID_SYSTEM_TAGS_PARAMETER, ListTagsForResource API reference), and
-// aws:-prefixed system tags are reserved and invisible to that quota on IAM resources too.
-// A resource can therefore hold more than 50 tags in total, while iam:ListUserTags and
-// iam:ListRoleTags cap their response array at 50 items ("Array Members: Maximum number of
-// 50 items"). Reading only the first response would silently drop tags, and IAM returns
-// tags sorted by key, so the dropped ones are not a random sample.
-//
-// Pagination is driven by the AWS SDK's own paginators rather than a hand-rolled token
-// loop. A tag cursor cannot be hoisted into the caller's page token: these are per-resource
-// sub-fetches inside a List that already owns a single pagination.Bag for its own page, and
-// a resource's profile has to be complete before the resource is emitted.
-//
-// Every failure here is fatal, including a missing tag permission. sync-resource-tags is
-// opt-in: a tenant that turns it on has asked for tags, and the tags feed access-routing
-// decisions in c1. Degrading to untagged resources would leave routing rules silently
-// evaluating against absent tags, and nobody reads warnings on a sync that reported
-// success. Failing loudly with a PermissionDenied naming the missing action is recoverable;
-// a quietly wrong approval route is not.
+// Tags are not returned by any List* call, so each resource costs an extra request, which
+// is why sync-resource-tags is opt-in. The fetchers paginate because the documented 50-tag
+// quota excludes aws: system tags while the IAM responses cap at 50 items, so a resource
+// can exceed one page. Every error is fatal, including a missing permission: the flag is an
+// explicit request for tags, and silently untagged resources would leave c1 policy rules
+// evaluating against tags that are not there.
 
-// iamTagsAPI is the subset of the IAM client used for per-resource tag reads. It satisfies
-// the SDK's ListUserTagsAPIClient and ListRoleTagsAPIClient paginator interfaces.
+// iamTagsAPI is the subset of the IAM client used for tag reads. It satisfies the SDK's
+// ListUserTagsAPIClient and ListRoleTagsAPIClient paginator interfaces.
 type iamTagsAPI interface {
 	ListUserTags(ctx context.Context, params *iam.ListUserTagsInput, optFns ...func(*iam.Options)) (*iam.ListUserTagsOutput, error)
 	ListRoleTags(ctx context.Context, params *iam.ListRoleTagsInput, optFns ...func(*iam.Options)) (*iam.ListRoleTagsOutput, error)
