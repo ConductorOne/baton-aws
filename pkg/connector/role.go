@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/conductorone/baton-aws/internal/awspolicy"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
@@ -291,7 +291,7 @@ func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{}
 		profile[roleMaxSessionDurationProfileField] = awsSdk.ToInt32(role.MaxSessionDuration)
 	}
 	if role.AssumeRolePolicyDocument != nil {
-		document, err := url.QueryUnescape(awsSdk.ToString(role.AssumeRolePolicyDocument))
+		document, err := awspolicy.DecodePolicyDocument(awsSdk.ToString(role.AssumeRolePolicyDocument))
 		if err != nil {
 			ctxzap.Extract(ctx).Warn("baton-aws: failed to decode role trust policy, omitting it from the role profile",
 				zap.String("role_arn", awsSdk.ToString(role.Arn)),

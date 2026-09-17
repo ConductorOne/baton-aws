@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
+	"github.com/conductorone/baton-aws/internal/awspolicy"
 )
 
 const (
@@ -295,14 +296,11 @@ func parseIAMARN(value string, resourcePrefix string) (arn.ARN, bool) {
 }
 
 func parseTrustPolicyDocument(document string) (trustPolicy, bool) {
-	var policy trustPolicy
-	if err := json.Unmarshal([]byte(document), &policy); err == nil {
-		return policy, true
-	}
-	decoded, err := url.QueryUnescape(document)
+	decoded, err := awspolicy.DecodePolicyDocument(document)
 	if err != nil {
 		return trustPolicy{}, false
 	}
+	var policy trustPolicy
 	if err := json.Unmarshal([]byte(decoded), &policy); err != nil {
 		return trustPolicy{}, false
 	}
