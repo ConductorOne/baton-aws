@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"path"
 	"sort"
 	"strings"
@@ -24,6 +25,7 @@ import (
 const (
 	roleAssignmentEntitlement          = "assignment"
 	roleMaxSessionDurationProfileField = "aws_max_session_duration_seconds"
+	roleTrustPolicyProfileField        = "trust_policy_document"
 )
 
 type roleResourceType struct {
@@ -287,6 +289,17 @@ func roleProfile(ctx context.Context, role iamTypes.Role) map[string]interface{}
 	// Keep it distinct from any product-requested TTL or issuance topology.
 	if role.MaxSessionDuration != nil {
 		profile[roleMaxSessionDurationProfileField] = awsSdk.ToInt32(role.MaxSessionDuration)
+	}
+	if role.AssumeRolePolicyDocument != nil {
+		document, err := url.QueryUnescape(awsSdk.ToString(role.AssumeRolePolicyDocument))
+		if err != nil {
+			ctxzap.Extract(ctx).Warn("baton-aws: failed to decode role trust policy, omitting it from the role profile",
+				zap.String("role_arn", awsSdk.ToString(role.Arn)),
+				zap.Error(err),
+			)
+		} else if document != "" {
+			profile[roleTrustPolicyProfileField] = document
+		}
 	}
 
 	return profile
