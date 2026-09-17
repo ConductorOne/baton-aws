@@ -49,7 +49,29 @@ func TestEvaluateWebIdentityTrustGolden(t *testing.T) {
 		{
 			name:     "encoded_object_list_success",
 			expected: expectedWithTagSession(),
-			observed: observedWithPolicy(url.QueryEscape(singleStatementPolicy(exactTrustStatement(testProviderARN, testAudience, testSubject, true, true)))),
+			observed: observedWithPolicy(url.PathEscape(singleStatementPolicy(exactTrustStatement(testProviderARN, testAudience, testSubject, true, true)))),
+		},
+		{
+			name: "encoded_percent_plus_in_subject_success",
+			expected: func() ExpectedWebIdentityTrust {
+				value := validExpectedTrust()
+				value.Subject = testSubject + "+suffix"
+				return value
+			}(),
+			observed: observedWithPolicy(strings.ReplaceAll(
+				url.PathEscape(policyDocument(exactTrustStatement(testProviderARN, testAudience, testSubject+"+suffix", false, false))),
+				"+",
+				"%2B",
+			)),
+		},
+		{
+			name: "encoded_literal_plus_in_subject_success",
+			expected: func() ExpectedWebIdentityTrust {
+				value := validExpectedTrust()
+				value.Subject = testSubject + "+suffix"
+				return value
+			}(),
+			observed: observedWithPolicy(url.PathEscape(policyDocument(exactTrustStatement(testProviderARN, testAudience, testSubject+"+suffix", false, false)))),
 		},
 		{
 			name:     "wildcard_audience",

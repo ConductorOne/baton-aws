@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -13,6 +12,7 @@ import (
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	"github.com/aws/smithy-go/middleware"
+	"github.com/conductorone/baton-aws/internal/awspolicy"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
@@ -321,7 +321,7 @@ func (o *inlinePolicyResourceType) getInlinePolicyDocument(
 		return "", wrapAWSError(fmt.Errorf("baton-aws: failed to get inline policy document: %w", getErr))
 	}
 
-	document, err := url.QueryUnescape(awsSdk.ToString(rawDocument))
+	document, err := awspolicy.DecodePolicyDocument(awsSdk.ToString(rawDocument))
 	if err != nil {
 		return "", fmt.Errorf("baton-aws: failed to decode inline policy document: %w", err)
 	}

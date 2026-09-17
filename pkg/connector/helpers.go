@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"path"
 	"slices"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	smithy "github.com/aws/smithy-go"
 	"github.com/aws/smithy-go/middleware"
 	smithyhttp "github.com/aws/smithy-go/transport/http"
+	"github.com/conductorone/baton-aws/internal/awspolicy"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"google.golang.org/grpc/codes"
@@ -164,7 +164,7 @@ func extractRequestID(md *middleware.Metadata) proto.Message {
 // Have Effect == "Allow"
 // Include the action "sts:AssumeRole".
 func extractTrustPrincipals(policyDocument string) ([]string, error) {
-	decodedPolicy, err := url.QueryUnescape(policyDocument)
+	decodedPolicy, err := awspolicy.DecodePolicyDocument(policyDocument)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode trust policy: %w", err)
 	}
@@ -211,7 +211,7 @@ type trustPrincipals struct {
 func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error) {
 	var tp trustPrincipals
 
-	decodedPolicy, err := url.QueryUnescape(policyDocument)
+	decodedPolicy, err := awspolicy.DecodePolicyDocument(policyDocument)
 	if err != nil {
 		return tp, fmt.Errorf("baton-aws: failed to decode trust policy: %w", err)
 	}

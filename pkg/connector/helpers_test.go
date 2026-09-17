@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	pathpkg "path"
 	"testing"
 
@@ -620,6 +621,18 @@ func TestExtractTrustPrincipals(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{"arn:aws:iam::123456789012:user/test"}, principals)
+	})
+
+	t.Run("should preserve plus signs in principal names", func(t *testing.T) {
+		policy := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow",` +
+			`"Principal":{"AWS":"arn:aws:iam::123456789012:user/test+user"},` +
+			`"Action":"sts:AssumeRole"}]}`
+		encoded := url.PathEscape(policy)
+
+		principals, err := extractTrustPrincipals(encoded)
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"arn:aws:iam::123456789012:user/test+user"}, principals)
 	})
 }
 

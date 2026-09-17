@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
 	"github.com/aws/smithy-go/middleware"
+	"github.com/conductorone/baton-aws/internal/awspolicy"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
@@ -106,7 +106,7 @@ func (o *iamPolicyResourceType) fetchPolicyDocument(ctx context.Context, iamClie
 		return "", wrapAWSError(fmt.Errorf("baton-aws: failed to get managed policy document: %w", getErr))
 	}
 
-	document, err := url.QueryUnescape(rawDocument)
+	document, err := awspolicy.DecodePolicyDocument(rawDocument)
 	if err != nil {
 		return "", fmt.Errorf("baton-aws: failed to decode managed policy document: %w", err)
 	}

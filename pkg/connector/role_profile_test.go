@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"net/url"
 	"testing"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -52,6 +53,22 @@ func TestRoleProfileIncludesDecodedTrustPolicy(t *testing.T) {
 
 	require.Contains(t, profile[roleTrustPolicyProfileField], `"Action":"sts:AssumeRoleWithSAML"`)
 	require.Contains(t, profile[roleTrustPolicyProfileField], `"arn:aws:iam::123456789012:saml-provider/AWSSSO"`)
+}
+
+func TestRoleProfilePreservesPlusSignsInTrustPolicy(t *testing.T) {
+	policy := `{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Sid":"a+b c",` +
+		`"Principal":{"Federated":"arn:aws:iam::123456789012:saml-provider/AWS+SSO"},` +
+		`"Action":"sts:AssumeRoleWithSAML"}]}`
+	encoded := url.PathEscape(policy)
+
+	profile := roleProfile(context.Background(), iamTypes.Role{
+		RoleName:                 awsSdk.String("plus-role"),
+		AssumeRolePolicyDocument: awsSdk.String(encoded),
+	})
+
+	require.Equal(t, policy, profile[roleTrustPolicyProfileField])
+	require.Contains(t, profile[roleTrustPolicyProfileField], `"Sid":"a+b c"`)
+	require.NotContains(t, profile[roleTrustPolicyProfileField], `"Sid":"a b c"`)
 }
 
 func TestRoleProfileOmitsMissingTrustPolicy(t *testing.T) {
