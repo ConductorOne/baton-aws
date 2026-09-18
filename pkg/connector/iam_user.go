@@ -97,6 +97,17 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		}
 		options := make([]resourceSdk.UserTraitOption, 0)
 
+		// ListUsers always returns an empty Tags slice, so the aws_tags set by
+		// iamUserProfile is a placeholder. Only a per-user iam:ListUserTags call
+		// yields real tags; see tags.go.
+		if o.aws != nil && o.aws.syncResourceTags {
+			tags, err := fetchIAMUserTags(ctx, iamClient, awsSdk.ToString(user.UserName))
+			if err != nil {
+				return nil, nil, err
+			}
+			profile[tagsProfileField] = tags
+		}
+
 		if o.aws != nil && o.aws.syncIAMUserConsoleAccess {
 			consoleAccess, err := getConsoleAccess(ctx, iamClient, user)
 			if err != nil {
@@ -239,7 +250,7 @@ func iamUserProfile(ctx context.Context, user iamTypes.User) map[string]interfac
 	profile["aws_arn"] = awsSdk.ToString(user.Arn)
 	profile["aws_path"] = awsSdk.ToString(user.Path)
 	profile["aws_user_type"] = iamType
-	profile["aws_tags"] = userTagsToMap(user)
+	profile[tagsProfileField] = userTagsToMap(user)
 	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
 
 	return profile

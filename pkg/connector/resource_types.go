@@ -5,6 +5,12 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 )
 
+// resourceTypeIDOrganizationalUnit is the organizational_unit resource type id. It is a
+// const rather than a reference to resourceTypeOrganizationalUnit.Id because the OU type
+// declares itself as its own child (nested OUs), which as a var reference would be an
+// initialization cycle.
+const resourceTypeIDOrganizationalUnit = "organizational_unit"
+
 func capabilityPermissions(perms ...string) *v2.CapabilityPermissions {
 	cp := &v2.CapabilityPermissions{}
 	for _, p := range perms {
@@ -28,6 +34,8 @@ var (
 			"iam:ListRoles",
 			"iam:GetRole",
 			"iam:ListAttachedRolePolicies",
+			// Only called when sync-resource-tags is enabled; ListRoles returns no tags.
+			"iam:ListRoleTags",
 		)),
 	}
 
@@ -78,6 +86,8 @@ var (
 				// Sparse ACLs hierarchy (Phase 2): resolve each account's parent (Root/OU) so
 				// c1's by-inheritance review can walk the org tree. Fail-soft if absent.
 				"organizations:ListParents",
+				// Only called when sync-resource-tags is enabled; ListAccounts returns no tags.
+				"organizations:ListTagsForResource",
 				"sso:ListPermissionSets",
 				"sso:DescribePermissionSet",
 				"sso:ListPermissionSetsProvisionedToAccount",
@@ -114,6 +124,8 @@ var (
 			&v2.V1Identifier{Id: "account_iam"},
 			capabilityPermissions(
 				"iam:ListAccountAliases",
+				// Only called when sync-resource-tags is enabled; ListAccounts returns no tags.
+				"organizations:ListTagsForResource",
 			),
 		),
 	}
@@ -158,6 +170,8 @@ var (
 				"iam:ListUserPolicies",
 				"iam:ListAttachedUserPolicies",
 				"iam:ListGroupsForUser",
+				// Only called when sync-resource-tags is enabled; ListUsers returns no tags.
+				"iam:ListUserTags",
 				// Provision
 				"iam:CreateUser",
 				"iam:DeleteLoginProfile",
@@ -253,7 +267,7 @@ var (
 			&v2.SkipEntitlementsAndGrants{},
 			&v2.OptInRequired{},
 			// The root is the crawl seed for the OU tree.
-			&v2.ChildResourceType{ResourceTypeId: "organizational_unit"},
+			&v2.ChildResourceType{ResourceTypeId: resourceTypeIDOrganizationalUnit},
 			capabilityPermissions(
 				"organizations:ListRoots",
 				"organizations:ListOrganizationalUnitsForParent",
@@ -268,12 +282,12 @@ var (
 	// matching annotation attached to each emitted resource instance (see
 	// organizationalUnitResource in organization.go). SkipEntitlementsAndGrants + OptInRequired.
 	resourceTypeOrganizationalUnit = &v2.ResourceType{
-		Id:          "organizational_unit",
+		Id:          resourceTypeIDOrganizationalUnit,
 		DisplayName: "Organizational Unit",
 		Annotations: annotations.New(
 			&v2.SkipEntitlementsAndGrants{},
 			&v2.OptInRequired{},
-			&v2.ChildResourceType{ResourceTypeId: "organizational_unit"},
+			&v2.ChildResourceType{ResourceTypeId: resourceTypeIDOrganizationalUnit},
 			capabilityPermissions(
 				"organizations:ListOrganizationalUnitsForParent",
 			),

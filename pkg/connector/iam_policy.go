@@ -28,6 +28,10 @@ import (
 const (
 	iamPolicyAttachedEntitlement = "attached"
 
+	// policyNameProfileField is the profile key carrying a policy's name, shared by
+	// managed policies and the inline policies in inline_policy.go.
+	policyNameProfileField = "aws_policy_name"
+
 	// AWS-managed policy documents are global; cache them so multi-account List
 	// does not re-fetch the same public document once per account.
 	iamPolicyDocumentCacheKeyPrefix = "aws-connector-iam-policy-document:"
@@ -152,8 +156,8 @@ func (o *iamPolicyResourceType) List(ctx context.Context, parentId *v2.ResourceI
 		awsManaged := isAWSManagedPolicyARN(policyARN)
 
 		profile := map[string]any{
-			"aws_policy_name": awsSdk.ToString(policy.PolicyName),
-			"aws_policy_arn":  policyARN,
+			policyNameProfileField: awsSdk.ToString(policy.PolicyName),
+			"aws_policy_arn":       policyARN,
 		}
 
 		policyDocument, err := o.getPolicyDocument(ctx, opts.Session, iamClient, policyARN)

@@ -237,6 +237,12 @@
       "boolField": {}
     },
     {
+      "name": "sync-resource-tags",
+      "displayName": "Sync Resource Tags",
+      "description": "Sync AWS resource tags onto accounts, IAM users, and IAM roles as the aws_tags profile field. Tags are not returned by the List APIs, so this costs at least one extra API call per resource.",
+      "boolField": {}
+    },
+    {
       "name": "create-account-resource-type",
       "displayName": "Account Provisioning Target",
       "description": "Which AWS user type C1 should create when provisioning accounts. 'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. Only one path can be active at a time per connector instance.",

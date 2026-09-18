@@ -143,6 +143,15 @@ var (
 		field.WithDescription("Only sync IAM managed policies that are attached to at least one user, role, or group"),
 		field.WithDefaultValue(false),
 	)
+	SyncResourceTags = field.BoolField(
+		"sync-resource-tags",
+		field.WithDisplayName("Sync Resource Tags"),
+		field.WithDescription(
+			"Sync AWS resource tags onto accounts, IAM users, and IAM roles as the aws_tags profile field. "+
+				"Tags are not returned by the List APIs, so this costs at least one extra API call per resource.",
+		),
+		field.WithDefaultValue(false),
+	)
 	GlobalAwsAccountProvisioningTargetField = field.SelectField(
 		"create-account-resource-type",
 		[]string{"iam_user", "sso_user"},
@@ -176,6 +185,7 @@ var Config = field.NewConfiguration(
 		SyncSSOUserLastLogin,
 		SyncIAMUserConsoleAccess,
 		SyncOnlyAttachedPolicies,
+		SyncResourceTags,
 		GlobalAwsAccountProvisioningTargetField,
 	},
 	field.WithConstraints(

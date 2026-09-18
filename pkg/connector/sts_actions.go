@@ -31,6 +31,10 @@ const actionAssumeRoleWithWebIdentity = "assume_role_with_web_identity"
 
 const maxSTSSessionPolicyLength = 2048
 
+// stsExpirationField is the expiration key, shared by the action's declared return type,
+// the encrypted credential envelope, and the action response, so the three cannot drift.
+const stsExpirationField = "expiration"
+
 var roleSessionNamePattern = regexp.MustCompile(`^[\w+=,.@-]{2,64}$`)
 
 var assumeRoleWithWebIdentitySchema = &v2.BatonActionSchema{
@@ -73,7 +77,7 @@ var assumeRoleWithWebIdentitySchema = &v2.BatonActionSchema{
 			Description: "Base64-encoded age ciphertext; never plaintext STS material.", Field: &configv1.Field_StringField{},
 		},
 		{Name: "encryption_key_id", DisplayName: "Encryption key ID", Field: &configv1.Field_StringField{}},
-		{Name: "expiration", DisplayName: "Expiration", Field: &configv1.Field_StringField{}},
+		{Name: stsExpirationField, DisplayName: "Expiration", Field: &configv1.Field_StringField{}},
 		{Name: "assumed_role_arn", DisplayName: "Assumed role ARN", Field: &configv1.Field_StringField{}},
 	},
 	ActionType: []v2.ActionType{v2.ActionType_ACTION_TYPE_DYNAMIC},
@@ -149,7 +153,7 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 		"access_key_id":     awsSdk.ToString(output.Credentials.AccessKeyId),
 		"secret_access_key": awsSdk.ToString(output.Credentials.SecretAccessKey),
 		"session_token":     awsSdk.ToString(output.Credentials.SessionToken),
-		"expiration":        expiration,
+		stsExpirationField:  expiration,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("baton-aws: marshal STS credential envelope: %w", err)
@@ -169,7 +173,7 @@ func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Str
 	response, err := structpb.NewStruct(map[string]any{
 		"encrypted_credentials": base64.StdEncoding.EncodeToString(ciphertext.Bytes()),
 		"encryption_key_id":     hex.EncodeToString(keyID[:]),
-		"expiration":            expiration,
+		stsExpirationField:      expiration,
 		"assumed_role_arn":      awsSdk.ToString(output.AssumedRoleUser.Arn),
 	})
 	if err != nil {

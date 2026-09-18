@@ -59,6 +59,7 @@ type Config struct {
 	SyncSSOUserLastLogin            bool
 	SyncIAMUserConsoleAccess        bool
 	SyncOnlyAttachedPolicies        bool
+	SyncResourceTags                bool
 
 	AccountProvisioningTarget string
 }
@@ -111,6 +112,7 @@ type AWS struct {
 	syncIAMUserConsoleAccess bool
 	syncOnlyAttachedPolicies bool
 	syncIAMPolicyGrants      bool
+	syncResourceTags         bool
 
 	accountProvisioningTarget string
 }
@@ -370,6 +372,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		SyncSSOUserLastLogin:            awsc.SyncSsoUserLastLogin,
 		SyncIAMUserConsoleAccess:        awsc.SyncIamUserConsoleAccess,
 		SyncOnlyAttachedPolicies:        awsc.SyncOnlyAttachedPolicies,
+		SyncResourceTags:                awsc.SyncResourceTags,
 		AccountProvisioningTarget:       awsc.CreateAccountResourceType,
 	}
 	if config.AccountProvisioningTarget == "" {
@@ -411,6 +414,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		syncIAMUserConsoleAccess: config.SyncIAMUserConsoleAccess,
 		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
 		syncIAMPolicyGrants:      syncIAMPolicyGrants,
+		syncResourceTags:         config.SyncResourceTags,
 
 		accountProvisioningTarget: config.AccountProvisioningTarget,
 
@@ -555,7 +559,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
 		iamUserBuilder(c.iamClient, c.awsClientFactory, c, c.syncIAMPolicyGrants),
-		iamRoleBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants),
+		iamRoleBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants, c.syncResourceTags),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants),
 		iamPolicyBuilder(c.iamClient, c.awsClientFactory, c.syncOnlyAttachedPolicies),
 		// ssoAdminClient/identityInstance are nil when SSO is disabled; the inline
@@ -579,7 +583,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
 		acct := accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient,
-			HierarchySyncFlags{Organization: c.willSyncOrganization, OrganizationalUnit: c.willSyncOrganizationalUnit})
+			HierarchySyncFlags{Organization: c.willSyncOrganization, OrganizationalUnit: c.willSyncOrganizationalUnit}, c.syncResourceTags)
 		rs = append(rs,
 			acct,
 			// Sparse ACLs (Cloud Infrastructure Access): permission set as role, and the
@@ -619,15 +623,15 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
 		iamUserBuilder(nil, nil, nil, true),
-		iamRoleBuilder(nil, nil, true),
+		iamRoleBuilder(nil, nil, true, true),
 		iamGroupBuilder(nil, nil, true),
 		iamPolicyBuilder(nil, nil, false),
 		inlinePolicyBuilder(nil, nil, nil, nil),
 		ssoUserBuilder("", nil, nil, nil, nil),
 		ssoGroupBuilder("", nil, nil, nil),
-		accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}),
+		accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}, true),
 		permissionSetBuilder(nil, nil, true),
-		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true})),
+		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}, true)),
 		organizationBuilder(nil),
 		organizationalUnitBuilder(nil),
 		accountIAMBuilder(nil, nil, nil, true),

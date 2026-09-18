@@ -52,6 +52,8 @@ When access-key activity is available, an IAM user's Last Login is the most rece
 
 Omitting `UserTrait.LastLogin` keeps the connector from publishing an incomplete timestamp as authoritative, but it does not clear a Last Login that C1 already stored. C1's current ingestion skips users whose incoming `UserTrait.LastLogin` is nil and only advances a stored timestamp when the incoming value is newer, so a user synced first with readable access-key activity and then with the lookup denied keeps the previously ingested value in C1. Use `access_key_activity_status` to tell whether the sync that produced a profile could read current access-key activity; clearing or propagating an unavailable Last Login requires platform-side support.
 
+Set `--sync-resource-tags` to publish AWS resource tags on accounts, IAM users, and IAM roles as an `aws_tags` profile field (a nested map of tag key to tag value). None of the `List*` APIs return tags — `organizations.Account` has no `Tags` field at all, and `iam:ListUsers` / `iam:ListRoles` always return an empty `Tags` slice — so each resource costs at least one extra call (`organizations:ListTagsForResource`, `iam:ListUserTags`, `iam:ListRoleTags`). The documented 50-tag quota counts only user-created tags; AWS-reserved `aws:`-prefixed system tags are additional, so the connector reads tags across pages rather than assuming one response covers them. The flag is off by default because `organizations:ListTagsForResource` is throttled at 10 requests/second (burst 15) per account, so a 1,000-account organization spends roughly 100 seconds on tag reads alone. A missing tag permission fails the sync with a `PermissionDenied` naming the action to grant, rather than quietly syncing untagged resources — enabling the flag is an explicit request for tags, and C1 policy rules that read them would otherwise evaluate against tags that silently are not there.
+
 Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and `--sync-sso-user-last-login`, and grant `cloudtrail:LookupEvents` to report those sign-ins.
 
 `baton-aws` also supports account provisioning and deprovisioning for AWS IAM Identity Center (SSO) users via the Identity Store API. See the "Syncing and Provisioning all supported objects" IAM policy below for the required permissions.
@@ -159,6 +161,7 @@ Flags:
       --storage-engine string                            The storage engine to use when opening the sync c1z file: sqlite or pebble. Defaults to pebble when unset. ($BATON_STORAGE_ENGINE)
       --sync-iam-user-console-access                     Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default. ($BATON_SYNC_IAM_USER_CONSOLE_ACCESS)
       --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
+      --sync-resource-tags                               Sync AWS resource tags onto accounts, IAM users, and IAM roles as the aws_tags profile field. Tags are not returned by the List APIs, so this costs at least one extra API call per resource. ($BATON_SYNC_RESOURCE_TAGS)
       --sync-resource-types strings                      The resource type IDs to sync ($BATON_SYNC_RESOURCE_TYPES)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
       --sync-secrets                                     Whether to sync secrets or not ($BATON_SYNC_SECRETS)
@@ -198,6 +201,9 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:GetAccessKeyLastUsed",
         // Optional: only used with --sync-iam-user-console-access.
         "iam:GetLoginProfile",
+        // Optional: only used with --sync-resource-tags.
+        "iam:ListUserTags",
+        "iam:ListRoleTags",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
@@ -239,6 +245,8 @@ _These policies have comments prefixed with // that need to be removed before us
         "organizations:ListParents",
         "organizations:ListRoots",
         "organizations:ListOrganizationalUnitsForParent",
+        // Optional: only used with --sync-resource-tags.
+        "organizations:ListTagsForResource",
         "sso:ListInstances",
         "sso:ListPermissionSets",
         "sso:DescribePermissionSet",
@@ -306,6 +314,9 @@ _These policies have comments prefixed with // that need to be removed before us
         "iam:GetAccessKeyLastUsed",
         // Optional: only used with --sync-iam-user-console-access.
         "iam:GetLoginProfile",
+        // Optional: only used with --sync-resource-tags.
+        "iam:ListUserTags",
+        "iam:ListRoleTags",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
@@ -347,6 +358,8 @@ _These policies have comments prefixed with // that need to be removed before us
         "organizations:ListParents",
         "organizations:ListRoots",
         "organizations:ListOrganizationalUnitsForParent",
+        // Optional: only used with --sync-resource-tags.
+        "organizations:ListTagsForResource",
         "sso:ListInstances",
         "sso:ListPermissionSets",
         "sso:DescribePermissionSet",
@@ -547,6 +560,9 @@ Each sub-account will need to have the following policy attached to the role tha
         "iam:GetAccessKeyLastUsed",
         // Optional: only used with --sync-iam-user-console-access.
         "iam:GetLoginProfile",
+        // Optional: only used with --sync-resource-tags.
+        "iam:ListUserTags",
+        "iam:ListRoleTags",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",

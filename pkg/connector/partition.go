@@ -10,12 +10,16 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// awsPartition is the commercial AWS partition id, and the fallback for any region that
+// matches no other partition's region prefix.
+const awsPartition = "aws"
+
 // Supported partitions, and the region prefixes that identify each. GovCloud and the ISO
 // partitions are absent because nothing here has been exercised against them. Matching is
 // case-sensitive, like the SDK's own aws-cn region regex.
 var partitionRegionPrefixes = map[string][]string{
-	"aws":    {},
-	"aws-cn": {"cn-"},
+	awsPartition: {},
+	"aws-cn":     {"cn-"},
 }
 
 func partitionForRegion(region string) string {
@@ -26,7 +30,7 @@ func partitionForRegion(region string) string {
 			}
 		}
 	}
-	return "aws"
+	return awsPartition
 }
 
 // unsupportedPartitionError returns nil for a partition the connector supports. Shared by

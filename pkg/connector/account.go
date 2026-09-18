@@ -145,6 +145,10 @@ type accountResourceType struct {
 	// this so accounts never point at a Root/OU resource that this run never syncs, which
 	// would otherwise leave a dangling "MISSING RESOURCE" parent.
 	hierarchySync HierarchySyncFlags
+
+	// syncResourceTags gates the per-account organizations:ListTagsForResource call.
+	// See tags.go for why this is opt-in.
+	syncResourceTags bool
 }
 
 func (o *accountResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -194,6 +198,15 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		l.Debug("baton-aws: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
 
 		profile := accountProfile(ctx, account)
+
+		if o.syncResourceTags {
+			tags, err := fetchAccountTags(ctx, o.orgClient, accountId)
+			if err != nil {
+				return nil, nil, err
+			}
+			profile[tagsProfileField] = tags
+		}
+
 		resourceOpts := []resourceSdk.ResourceOption{
 			resourceSdk.WithAnnotation(annos),
 			// Sparse ACLs: advertise the scope-binding type as a child so the SDK
@@ -973,6 +986,7 @@ func accountBuilder(
 	region string,
 	identityClient client.IdentityStoreClient,
 	hierarchySync HierarchySyncFlags,
+	syncResourceTags bool,
 ) *accountResourceType {
 	return &accountResourceType{
 		resourceType:     resourceTypeAccount,
@@ -983,6 +997,7 @@ func accountBuilder(
 		identityInstance: identityInstance,
 		region:           region,
 		hierarchySync:    hierarchySync,
+		syncResourceTags: syncResourceTags,
 	}
 }
 

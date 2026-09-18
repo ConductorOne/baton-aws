@@ -94,8 +94,8 @@ func (o *inlinePolicyResourceType) List(ctx context.Context, parentId *v2.Resour
 		resourceID := inlinePolicyResourceID(parentId.Resource, policyName)
 
 		profile := map[string]any{
-			"aws_policy_name": policyName,
-			"aws_parent_arn":  parentId.Resource,
+			policyNameProfileField: policyName,
+			"aws_parent_arn":       parentId.Resource,
 		}
 		policyDocument, err := o.getInlinePolicyDocument(ctx, iamClient, parentId, policyName)
 		if err != nil {
@@ -175,9 +175,9 @@ func (o *inlinePolicyResourceType) listPermissionSetInlinePolicy(ctx context.Con
 	}
 
 	profile := map[string]any{
-		"aws_policy_name": permissionSetInlinePolicyName,
-		"aws_parent_arn":  parentId.Resource,
-		"policy_document": document,
+		policyNameProfileField: permissionSetInlinePolicyName,
+		"aws_parent_arn":       parentId.Resource,
+		"policy_document":      document,
 	}
 	policyResource, err := resourceSdk.NewRoleResource(
 		permissionSetInlinePolicyName,
