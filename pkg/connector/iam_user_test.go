@@ -21,7 +21,7 @@ func TestIamUserToResource_AttachesEmailAndProfile(t *testing.T) {
 		UserId:   awsSdk.String("AIDAEXAMPLE"),
 	}
 
-	resource, err := iamUserToResource(context.Background(), user, "ci-iam-1@example.com")
+	resource, err := (&iamUserResourceType{}).iamUserToResource(context.Background(), user, "ci-iam-1@example.com")
 	require.NoError(t, err)
 	require.NotNil(t, resource)
 
@@ -48,7 +48,7 @@ func TestIamUserToResource_NoEmailFallsBackToUsername(t *testing.T) {
 		UserId:   awsSdk.String("AIDAEXAMPLE2"),
 	}
 
-	resource, err := iamUserToResource(context.Background(), user, "")
+	resource, err := (&iamUserResourceType{}).iamUserToResource(context.Background(), user, "")
 	require.NoError(t, err)
 
 	trait, err := resourceSdk.GetUserTrait(resource)
@@ -68,7 +68,7 @@ func TestIamUserToResource_DedupesEmailFromUsername(t *testing.T) {
 		UserId:   awsSdk.String("AIDAEXAMPLE3"),
 	}
 
-	resource, err := iamUserToResource(context.Background(), user, "dup@example.com")
+	resource, err := (&iamUserResourceType{}).iamUserToResource(context.Background(), user, "dup@example.com")
 	require.NoError(t, err)
 
 	trait, err := resourceSdk.GetUserTrait(resource)

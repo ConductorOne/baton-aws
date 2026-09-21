@@ -75,7 +75,9 @@ func (o *ssoUserResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			Id: userARN,
 		}
 		profile := ssoUserProfile(ctx, user)
-		userOptions := make([]resourceSdk.UserTraitOption, 0)
+		userOptions := []resourceSdk.UserTraitOption{
+			resourceSdk.WithUserLogin(awsSdk.ToString(user.UserName)),
+		}
 		foundPrimaryEmail := false
 		emailFromUsername := getSsoUserEmail(user)
 		if emailFromUsername != "" {
@@ -214,6 +216,7 @@ func (o *ssoUserResourceType) CreateAccount(
 		userARN,
 		[]resourceSdk.UserTraitOption{
 			resourceSdk.WithEmail(profile.Email, true),
+			resourceSdk.WithUserLogin(profile.UserName),
 		},
 		resourceSdk.WithResourceProfile(map[string]interface{}{
 			"aws_user_type": ssoType,
@@ -294,6 +297,7 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 		userARN,
 		[]resourceSdk.UserTraitOption{
 			resourceSdk.WithEmail(email, true),
+			resourceSdk.WithUserLogin(awsSdk.ToString(existing.UserName)),
 		},
 		resourceSdk.WithResourceProfile(map[string]interface{}{
 			"aws_user_type": ssoType,

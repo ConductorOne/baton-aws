@@ -5,16 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/connectorbuilder"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
+	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
@@ -23,10 +26,15 @@ import (
 )
 
 type iamUserResourceType struct {
-	resourceType        *v2.ResourceType
-	iamClient           *iam.Client
-	awsClientFactory    *AWSClientFactory
-	aws                 *AWS
+	resourceType     *v2.ResourceType
+	iamClient        *iam.Client
+	awsClientFactory *AWSClientFactory
+	aws              *AWS
+	// orgClient resolves account names when Organizations is enabled. Nil
+	// otherwise, which falls the lookup back to the account alias.
+	orgClient   orgsAPI
+	orgAccounts orgAccountNameCache
+
 	syncIAMPolicyGrants bool
 }
 
@@ -78,6 +86,9 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.ListUsers failed: %w", err))
 	}
 
+	qualifyWithAccount := o.qualifyWithAccount(parentId)
+	accountNames := make(map[string]string)
+
 	rv := make([]*v2.Resource, 0, len(resp.Users))
 	for _, user := range resp.Users {
 		annos := &v2.V1Identifier{
@@ -95,7 +106,22 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 		if activity.accessKeyLastUsed != nil {
 			profile["access_key_last_used"] = activity.accessKeyLastUsed.Format(time.RFC3339)
 		}
-		options := make([]resourceSdk.UserTraitOption, 0)
+		accountID := accountIDForUser(ctx, parentId, awsSdk.ToString(user.Arn))
+		if accountID != "" {
+			profile["aws_account_id"] = accountID
+		}
+		accountName, ok := accountNames[accountID]
+		if !ok {
+			accountName = o.accountName(ctx, opts.Session, iamClient, accountID)
+			accountNames[accountID] = accountName
+		}
+		if accountName != "" {
+			profile["aws_account_name"] = accountName
+		}
+
+		options := []resourceSdk.UserTraitOption{
+			resourceSdk.WithUserLogin(awsSdk.ToString(user.UserName)),
+		}
 
 		// ListUsers always returns an empty Tags slice, so the aws_tags set by
 		// iamUserProfile is a placeholder. Only a per-user iam:ListUserTags call
@@ -134,7 +160,9 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 			}
 		}
 
-		userResource, err := resourceSdk.NewUserResource(awsSdk.ToString(user.UserName),
+		displayName := iamUserDisplayName(awsSdk.ToString(user.UserName), accountName, accountID, qualifyWithAccount)
+
+		userResource, err := resourceSdk.NewUserResource(displayName,
 			resourceTypeIAMUser,
 			awsSdk.ToString(user.Arn),
 			options,
@@ -162,6 +190,209 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 	}
 
 	return rv, nil, nil
+}
+
+// accountName resolves the human-readable name of accountID.
+//
+// Resource types sync in a non-deterministic order, so this never assumes the
+// account or account_iam syncer has already cached a name. It reads from
+// organizations:ListAccounts — the same source those syncers cache from, and a
+// permission the Organizations policy already grants — then falls back to the
+// account alias. Resolving from the same source is what keeps a user's display
+// name identical regardless of which resource type synced first.
+//
+// The result is cached even when empty, so an account with no readable name
+// costs one lookup rather than one per page. That entry is only written once
+// every source has given a settled answer, so neither a name another syncer
+// would have found nor one a retry would have found gets masked.
+func (o *iamUserResourceType) accountName(
+	ctx context.Context,
+	ss sessions.SessionStore,
+	iamClient *iam.Client,
+	accountID string,
+) string {
+	if accountID == "" {
+		return ""
+	}
+	if name, found := getCachedAccountName(ctx, ss, accountID); found {
+		return name
+	}
+
+	name, settled := o.resolveAccountName(ctx, ss, iamClient, accountID)
+	if !settled {
+		// A source failed rather than reporting no name. Leaving the cache
+		// untouched keeps that failure from pinning every remaining user in the
+		// account to a bare account id.
+		return name
+	}
+	setCachedAccountName(ctx, ss, accountID, name)
+	return name
+}
+
+// resolveAccountName asks each name source in turn. The bool reports whether the
+// answer is settled: false means a source failed in a way a retry may fix, so an
+// empty name is not yet proof that the account has none.
+func (o *iamUserResourceType) resolveAccountName(
+	ctx context.Context,
+	ss sessions.SessionStore,
+	iamClient *iam.Client,
+	accountID string,
+) (string, bool) {
+	name, orgSettled := o.orgAccountName(ctx, ss, accountID)
+	if name != "" {
+		return name, true
+	}
+	alias, aliasSettled := accountAlias(ctx, iamClient, accountID)
+	if alias != "" {
+		return alias, true
+	}
+	return "", orgSettled && aliasSettled
+}
+
+// orgAccountName reads accountID's name from the Organizations account list.
+// ListAccounts returns every account's name in one paginated sweep, so this runs
+// once per connector rather than once per account, and the results prime the
+// shared cache for the account syncers too.
+func (o *iamUserResourceType) orgAccountName(ctx context.Context, ss sessions.SessionStore, accountID string) (string, bool) {
+	if o.orgClient == nil {
+		// There is nothing to ask, which no retry would change.
+		return "", true
+	}
+	return o.orgAccounts.lookup(ctx, o.orgClient, ss, accountID)
+}
+
+// orgAccountNameCache holds every account name in the organization, filled by a
+// single organizations:ListAccounts sweep shared by every List page and by the
+// provisioning path.
+//
+// The sweep is latched only once its answer is settled — it succeeded, or it was
+// denied, which no retry fixes. A transient failure (a throttle, or the
+// short-lived context of a CreateAccount call) leaves the cache unfilled so the
+// next lookup sweeps again: one bad moment must not strand a whole connector
+// process on account names it could have read a second later.
+type orgAccountNameCache struct {
+	// mu is held across the sweep so that concurrent lookups wait for it rather
+	// than each issuing their own.
+	mu sync.Mutex
+	// names is populated only when loaded is true.
+	names  map[string]string
+	loaded bool
+	denied bool
+}
+
+// lookup reports accountID's name and whether that answer is settled.
+func (c *orgAccountNameCache) lookup(
+	ctx context.Context,
+	orgClient orgsAPI,
+	ss sessions.SessionStore,
+	accountID string,
+) (string, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.loaded && !c.denied {
+		names, err := listOrgAccountNames(ctx, orgClient)
+		switch {
+		case err == nil:
+			c.names = names
+			c.loaded = true
+			rememberOrgAccountNames(ctx, ss, names)
+		case isAccessDeniedError(err):
+			c.denied = true
+			ctxzap.Extract(ctx).Debug("baton-aws: organizations.ListAccounts denied, falling back to account aliases",
+				zap.Error(err),
+			)
+		default:
+			ctxzap.Extract(ctx).Debug("baton-aws: organizations.ListAccounts failed, retrying on the next account name lookup",
+				zap.Error(err),
+			)
+			return "", false
+		}
+	}
+
+	if c.denied {
+		return "", true
+	}
+	return c.names[accountID], true
+}
+
+// listOrgAccountNames drains ListAccounts in one go. An id and a name per
+// account, against AWS's default quota of 10 accounts per organization and a
+// ceiling in the low thousands even when raised, is a few hundred kilobytes at
+// worst — small enough that paying for it once beats resolving names a page at a
+// time and re-entering this code on every cache miss.
+func listOrgAccountNames(ctx context.Context, orgClient orgsAPI) (map[string]string, error) {
+	names := make(map[string]string)
+	paginator := awsOrgs.NewListAccountsPaginator(orgClient, &awsOrgs.ListAccountsInput{})
+	for paginator.HasMorePages() {
+		resp, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("baton-aws: organizations.ListAccounts failed: %w", err)
+		}
+		for _, account := range resp.Accounts {
+			if id := awsSdk.ToString(account.Id); id != "" {
+				names[id] = awsSdk.ToString(account.Name)
+			}
+		}
+	}
+	return names, nil
+}
+
+// accountAlias reads the account alias as a fallback for deployments without
+// Organizations. iamClient must be the client for accountID — assumed into the
+// parent account, or the connector's own client for a top-level user — since
+// ListAccountAliases only ever reports the calling account's alias.
+//
+// The bool reports whether the answer is settled, matching orgAccountName: an
+// account with no alias is settled, a denied call is settled, and anything else
+// is worth another try.
+func accountAlias(ctx context.Context, iamClient *iam.Client, accountID string) (string, bool) {
+	if iamClient == nil {
+		return "", true
+	}
+	aliases, err := iamClient.ListAccountAliases(ctx, &iam.ListAccountAliasesInput{})
+	if err != nil {
+		if isAccessDeniedError(err) {
+			ctxzap.Extract(ctx).Debug("baton-aws: iam.ListAccountAliases denied, syncing IAM users without an account name",
+				zap.String("account_id", accountID),
+				zap.Error(err),
+			)
+			return "", true
+		}
+		ctxzap.Extract(ctx).Debug("baton-aws: iam.ListAccountAliases failed, retrying on the next account name lookup",
+			zap.String("account_id", accountID),
+			zap.Error(err),
+		)
+		return "", false
+	}
+	if len(aliases.AccountAliases) > 0 {
+		return aliases.AccountAliases[0], true
+	}
+	return "", true
+}
+
+// accountIDForUser reports which AWS account a user belongs to: the account the
+// crawl assumed into, or the one encoded in the user's ARN.
+func accountIDForUser(ctx context.Context, parentId *v2.ResourceId, userARN string) string {
+	if parentId != nil {
+		return parentId.Resource
+	}
+	accountID, err := AccountIdFromARN(userARN)
+	if err != nil {
+		ctxzap.Extract(ctx).Debug("baton-aws: could not read an account id from the user ARN, syncing the user without account identity",
+			zap.String("user_arn", userARN),
+			zap.Error(err),
+		)
+		return ""
+	}
+	return accountID
+}
+
+// qualifyWithAccount reports whether IAM user names need an account suffix to stay
+// unique. Both signals come from config and parentage, never from whether another
+// resource type has synced yet, so a user's display name is stable across runs.
+func (o *iamUserResourceType) qualifyWithAccount(parentId *v2.ResourceId) bool {
+	return parentId != nil || (o.aws != nil && o.aws.shouldSyncCrossAccountIAM())
 }
 
 func (o *iamUserResourceType) Entitlements(_ context.Context, _ *v2.Resource, _ resourceSdk.SyncOpAttrs) ([]*v2.Entitlement, *resourceSdk.SyncOpResults, error) {
@@ -228,13 +459,19 @@ func (o *iamUserResourceType) Grants(ctx context.Context, resource *v2.Resource,
 }
 
 func iamUserBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, aws *AWS, syncIAMPolicyGrants bool) *iamUserResourceType {
-	return &iamUserResourceType{
+	o := &iamUserResourceType{
 		resourceType:        resourceTypeIAMUser,
 		iamClient:           iamClient,
 		awsClientFactory:    awsClientFactory,
 		aws:                 aws,
 		syncIAMPolicyGrants: syncIAMPolicyGrants,
 	}
+	// Assigning a nil *organizations.Client would leave a non-nil interface
+	// holding a nil pointer, which panics on first call.
+	if aws != nil && aws.orgClient != nil {
+		o.orgClient = aws.orgClient
+	}
+	return o
 }
 
 func userTagsToMap(u iamTypes.User) map[string]interface{} {
@@ -471,7 +708,7 @@ func (o *iamUserResourceType) CreateAccount(
 		return nil, nil, nil, wrapAWSError(fmt.Errorf("baton-aws: iam.CreateUser failed: %w", err))
 	}
 
-	userResource, err := iamUserToResource(ctx, result.User, email)
+	userResource, err := o.iamUserToResource(ctx, result.User, email)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -482,9 +719,16 @@ func (o *iamUserResourceType) CreateAccount(
 	}, nil, nil, nil
 }
 
-func iamUserToResource(ctx context.Context, user *iamTypes.User, email string) (*v2.Resource, error) {
+// iamUserToResource builds the resource for a just-provisioned user. It mirrors
+// the account identity List attaches so a newly created user doesn't show a
+// different display name than the users synced alongside it. Provisioning always
+// targets the connector's own account, so the account is read from the ARN and
+// the connector's own client resolves its name.
+func (o *iamUserResourceType) iamUserToResource(ctx context.Context, user *iamTypes.User, email string) (*v2.Resource, error) {
 	arn := awsSdk.ToString(user.Arn)
-	options := make([]resourceSdk.UserTraitOption, 0)
+	options := []resourceSdk.UserTraitOption{
+		resourceSdk.WithUserLogin(awsSdk.ToString(user.UserName)),
+	}
 	seen := map[string]bool{}
 	if email != "" {
 		options = append(options, resourceSdk.WithEmail(email, true))
@@ -497,12 +741,25 @@ func iamUserToResource(ctx context.Context, user *iamTypes.User, email string) (
 		options = append(options, resourceSdk.WithEmail(e, email == ""))
 		seen[e] = true
 	}
+
+	profile := iamUserProfile(ctx, *user)
+	accountID := accountIDForUser(ctx, nil, arn)
+	if accountID != "" {
+		profile["aws_account_id"] = accountID
+	}
+	// No session store outside a sync; the per-connector sweep still caches the
+	// org account names in memory.
+	accountName := o.accountName(ctx, nil, o.iamClient, accountID)
+	if accountName != "" {
+		profile["aws_account_name"] = accountName
+	}
+
 	return resourceSdk.NewUserResource(
-		awsSdk.ToString(user.UserName),
+		iamUserDisplayName(awsSdk.ToString(user.UserName), accountName, accountID, o.qualifyWithAccount(nil)),
 		resourceTypeIAMUser,
 		arn,
 		options,
-		resourceSdk.WithResourceProfile(iamUserProfile(ctx, *user)),
+		resourceSdk.WithResourceProfile(profile),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: arn}),
 	)
 }
@@ -512,7 +769,7 @@ func (o *iamUserResourceType) findIamUserByUserName(ctx context.Context, usernam
 	if err != nil {
 		return nil, fmt.Errorf("baton-aws: iam.GetUser %q: %w", username, err)
 	}
-	return iamUserToResource(ctx, out.User, email)
+	return o.iamUserToResource(ctx, out.User, email)
 }
 
 func (o *iamUserResourceType) Delete(ctx context.Context, resourceId *v2.ResourceId, parentResourceID *v2.ResourceId) (annotations.Annotations, error) {

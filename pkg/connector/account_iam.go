@@ -65,14 +65,19 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 	}
 
 	rv := make([]*v2.Resource, 0)
+	pageNames := make(map[string]string, len(resp.Accounts))
 	for _, account := range resp.Accounts {
 		childForIam, err := o.parseAssumeRole(ctx, identity, account)
 		if err != nil {
 			return nil, nil, err
 		}
 
+		accountID := awsSdk.ToString(account.Id)
+		accountName := awsSdk.ToString(account.Name)
+		pageNames[accountID] = accountName
+
 		annos := &v2.V1Identifier{
-			Id: awsSdk.ToString(account.Id),
+			Id: accountID,
 		}
 		profile := accountProfile(ctx, account)
 
@@ -85,9 +90,9 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 		}
 
 		userResource, err := resourceSdk.NewAppResource(
-			awsSdk.ToString(account.Name),
+			accountName,
 			resourceTypeAccountIam,
-			awsSdk.ToString(account.Id),
+			accountID,
 			nil,
 			resourceSdk.WithResourceProfile(profile),
 			resourceSdk.WithAnnotation(annos),
@@ -99,6 +104,8 @@ func (o *accountIAMResourceType) List(ctx context.Context, _ *v2.ResourceId, opt
 
 		rv = append(rv, userResource)
 	}
+
+	rememberOrgAccountNames(ctx, opts.Session, pageNames)
 
 	if resp.NextToken != nil {
 		token, err := bag.NextToken(*resp.NextToken)

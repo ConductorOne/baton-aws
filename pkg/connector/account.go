@@ -182,6 +182,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 
 	rv := make([]*v2.Resource, 0, len(resp.Accounts))
 	orgReadDenied := false
+	pageNames := make(map[string]string, len(resp.Accounts))
 	for _, account := range resp.Accounts {
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(account.Id),
@@ -196,6 +197,8 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 			continue
 		}
 		l.Debug("baton-aws: account found", zap.String("name", name), zap.String("account_id", accountId), zap.String("account_status", string(status)))
+
+		pageNames[accountId] = name
 
 		profile := accountProfile(ctx, account)
 
@@ -247,6 +250,7 @@ func (o *accountResourceType) List(ctx context.Context, _ *v2.ResourceId, opts r
 		}
 		rv = append(rv, userResource)
 	}
+	rememberOrgAccountNames(ctx, opts.Session, pageNames)
 	if orgReadDenied {
 		l.Debug("baton-aws: missing organizations:ListParents permission; accounts synced flat (no Root/OU hierarchy). " +
 			"Add organizations:ListParents to enable by-inheritance review across the org tree.")
