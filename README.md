@@ -19,7 +19,7 @@ baton resources
 ## docker
 
 ```
-docker run --rm -v $(pwd):/out -e BATON_GLOBAL_SECRET_ACCESS_KEY=awsSecretAccessKey -e BATON_GLOBAL_ACCESS_KEY_ID=awsAccessKey ghcr.io/conductorone/baton-aws:latest -f "/out/sync.c1z"
+docker run --rm -v $(pwd):/out -e BATON_GLOBAL_SECRET_ACCESS_KEY=awsSecretAccessKey -e BATON_GLOBAL_ACCESS_KEY_ID=awsAccessKey public.ecr.aws/conductorone/baton-aws:latest -f "/out/sync.c1z"
 docker run --rm -v $(pwd):/out ghcr.io/conductorone/baton:latest -f "/out/sync.c1z" resources
 ```
 
