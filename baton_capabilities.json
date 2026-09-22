@@ -461,6 +461,12 @@
                 "permission": "iam:ListGroupsForUser"
               },
               {
+                "permission": "organizations:ListAccounts"
+              },
+              {
+                "permission": "iam:ListAccountAliases"
+              },
+              {
                 "permission": "iam:ListUserTags"
               },
               {
@@ -539,6 +545,12 @@
           },
           {
             "permission": "iam:ListGroupsForUser"
+          },
+          {
+            "permission": "organizations:ListAccounts"
+          },
+          {
+            "permission": "iam:ListAccountAliases"
           },
           {
             "permission": "iam:ListUserTags"
