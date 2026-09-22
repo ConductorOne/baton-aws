@@ -75,6 +75,11 @@ func iamClientWithKeyLookups(listErr error, lookups []keyLookupResult) *iam.Clie
 								return smithymiddleware.InitializeOutput{
 									Result: &iam.ListAccessKeysOutput{AccessKeyMetadata: keys},
 								}, smithymiddleware.Metadata{}, nil
+							case *iam.ListAccountAliasesInput:
+								// The common case: no alias has been set on the account.
+								return smithymiddleware.InitializeOutput{
+									Result: &iam.ListAccountAliasesOutput{},
+								}, smithymiddleware.Metadata{}, nil
 							case *iam.GetAccessKeyLastUsedInput:
 								id := awsSdk.ToString(input.AccessKeyId)
 								if err := errByKey[id]; err != nil {

@@ -170,6 +170,11 @@ var (
 				"iam:ListUserPolicies",
 				"iam:ListAttachedUserPolicies",
 				"iam:ListGroupsForUser",
+				// Resolve the account each user belongs to, so names stay distinct across
+				// accounts. ListAccounts is used when Organizations is enabled, the alias
+				// otherwise. Both fail soft: a denial costs the account's name, not the sync.
+				"organizations:ListAccounts",
+				"iam:ListAccountAliases",
 				// Only called when sync-resource-tags is enabled; ListUsers returns no tags.
 				"iam:ListUserTags",
 				// Provision

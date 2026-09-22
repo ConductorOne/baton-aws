@@ -96,6 +96,17 @@ Each policy resource carries its policy document (the JSON that defines which ac
 
 Syncing policy documents requires the policy read permissions listed in the IAM policies below (`iam:GetPolicy`, `iam:GetPolicyVersion`, and the `iam:Get*Policy` / `iam:List*Policies` actions). If these permissions are missing, the connector logs a warning and syncs the policy resources without their document contents rather than failing the sync — so a policy that appears with no document is usually a missing-permission symptom rather than an empty policy.
 
+## IAM user account identity
+
+An IAM user name is only unique within its own AWS account, so two accounts can each hold an unrelated `admin`. Every IAM user carries the account it belongs to on its profile:
+
+- `aws_account_id` — the 12-digit account ID, taken from the user's ARN.
+- `aws_account_name` — the account's name, when the connector can read one.
+
+When a sync covers more than one account, C1 also qualifies the user's display name with its account, as `admin (Production)`. That happens when Organizations support is enabled — and, if Identity Center is enabled alongside it, when **Cross-account IAM** is also on, since that combination otherwise syncs IAM users from the connector's own account only. Any sync that covers a single account leaves display names unqualified. Newly provisioned IAM users are labeled the same way as synced ones.
+
+The connector reads account names from `organizations:ListAccounts` when Organizations support is enabled, and otherwise from `iam:ListAccountAliases`. Neither is required: an account whose name cannot be read falls back to its ID, as `admin (123456789012)`, and the sync succeeds either way.
+
 ## IAM user last login and access key activity
 
 For an IAM user, **Last Login** is the most recent of password-based AWS sign-in (`PasswordLastUsed`) and access-key use when access-key activity is available. Password sign-in includes the AWS Management Console and can also include other AWS websites, such as AWS Marketplace. The two signals stay separate on the profile so reviewers can tell a console sign-in apart from programmatic key activity.
@@ -344,12 +355,12 @@ Next, you will create an inline policy to define the specific data this role can
 
     **Optional: AWS Organizations Support** Include these permissions if you enable the "Enable support for AWS Organizations" checkbox in the C1 UI.
 
-    * organizations:ListAccounts: Allows the connector to discover all accounts within your AWS Organization.
+    * organizations:ListAccounts: Allows the connector to discover all accounts within your AWS Organization. It also supplies each account's name, which the connector uses to label IAM users (see below).
     * organizations:DescribeOrganization: Provides high-level details about your organization to ensure proper mapping.
 
     **Optional: Descriptive Account Aliases**
 
-    * iam:ListAccountAliases: Include this if you prefer to use human-readable account aliases (for example, "Production-Environment") in the C1 UI instead of 12-digit numeric AWS account IDs.
+    * iam:ListAccountAliases: Include this if you prefer to use human-readable account aliases (for example, "Production-Environment") in the C1 UI instead of 12-digit numeric AWS account IDs. When Organizations is not enabled, this is also where the connector reads the account name it labels IAM users with; granting it to the assumed role in each member account gives those users a name too.
 
     **Optional: IAM Policies as Resources** Include these permissions if you want C1 to sync IAM managed policies and inline policies as resources, along with their policy documents. See [IAM policies as resources](#iam-policies-as-resources) above.
 

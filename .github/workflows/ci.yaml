@@ -47,9 +47,10 @@ jobs:
           connector: ./baton-aws
           account-email: 'testci-userci@test.com'
           account-display-name: 'test-user-ci'
+          account-login: 'test-user-ci'
           account-profile: '{"username": "test-user-ci", "email": "testci-userci@test.com"}'
           account-type: 'iam_user'
-          search-method: 'display_name'
+          search-method: 'login'
       - name: Test Identity Center user provisioning and deprovisioning
         env:
           BATON_CREATE_ACCOUNT_RESOURCE_TYPE: 'sso_user'
@@ -58,6 +59,7 @@ jobs:
           connector: ./baton-aws
           account-email: 'testci-ssoci@test.com'
           account-display-name: 'test-sso-user-ci'
+          account-login: 'test-sso-user-ci'
           account-profile: '{"username": "test-sso-user-ci", "given_name": "Test", "family_name": "SsoCi", "email": "testci-ssoci@test.com"}'
           account-type: 'sso_user'
-          search-method: 'display_name'
+          search-method: 'login'
