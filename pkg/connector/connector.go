@@ -100,6 +100,7 @@ type AWS struct {
 	awsClientFactory          *AWSClientFactory
 	cloudTrailClient          *cloudtrail.Client
 	assumeRoleWithWebIdentity func(context.Context, *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error)
+	getFederationToken        func(context.Context, *sts.GetFederationTokenInput) (*sts.GetFederationTokenOutput, error)
 
 	// willSyncOrganization/willSyncOrganizationalUnit report whether this sync run's
 	// resource-type filter (if any) includes the OptInRequired org/OU hierarchy types.
@@ -426,6 +427,13 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 	webIdentityClient := sts.NewFromConfig(rv.baseConfig)
 	rv.assumeRoleWithWebIdentity = func(ctx context.Context, input *sts.AssumeRoleWithWebIdentityInput) (*sts.AssumeRoleWithWebIdentityOutput, error) {
 		return webIdentityClient.AssumeRoleWithWebIdentity(ctx, input)
+	}
+	rv.getFederationToken = func(ctx context.Context, input *sts.GetFederationTokenInput) (*sts.GetFederationTokenOutput, error) {
+		stsClient, err := rv.getSTSClient(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return stsClient.GetFederationToken(ctx, input)
 	}
 
 	if rv.ssoEnabled && !rv.orgsEnabled {
