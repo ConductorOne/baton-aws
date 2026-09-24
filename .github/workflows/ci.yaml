@@ -21,6 +21,10 @@ jobs:
           go-version-file: go.mod
       - name: Build baton-aws
         run: go build ./cmd/baton-aws
+      # - name: Test STS federation action
+      #   env:
+      #     BATON_AWS: ./baton-aws
+      #   run: ./scripts/test-sts-federation.sh
       - name: Test grant/revoking IAM entitlements
         uses: ConductorOne/github-workflows/actions/sync-test@v4
         with:

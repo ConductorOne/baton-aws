@@ -270,7 +270,10 @@ func (o *ssoUserResourceType) Delete(ctx context.Context, resourceId *v2.Resourc
 func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identityStoreID, userName string) (*v2.Resource, error) {
 	out, err := o.identityStoreClient.ListUsers(ctx, &awsIdentityStore.ListUsersInput{
 		IdentityStoreId: awsSdk.String(identityStoreID),
-		Filters: []awsIdentityStoreTypes.Filter{{
+		// AWS deprecates ListUsers filters in favor of GetUserId, but switching would
+		// require identitystore:GetUserId and identitystore:DescribeUser, which the
+		// documented IAM policies don't grant. Filters still work.
+		Filters: []awsIdentityStoreTypes.Filter{{ //nolint:staticcheck // SA1019: see above.
 			AttributePath:  awsSdk.String("UserName"),
 			AttributeValue: awsSdk.String(userName),
 		}},

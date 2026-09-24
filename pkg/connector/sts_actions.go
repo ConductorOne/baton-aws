@@ -88,7 +88,10 @@ var _ interface {
 } = (*AWS)(nil)
 
 func (c *AWS) GlobalActions(ctx context.Context, registry actions.ActionRegistry) error {
-	return registry.Register(ctx, assumeRoleWithWebIdentitySchema, c.issueSTSWebIdentitySession)
+	if err := registry.Register(ctx, assumeRoleWithWebIdentitySchema, c.issueSTSWebIdentitySession); err != nil {
+		return err
+	}
+	return actions.RegisterWithSecrets(ctx, registry, issueFederationTokenSchema, c.issueSTSFederationToken)
 }
 
 func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Struct) (*structpb.Struct, annotations.Annotations, error) {

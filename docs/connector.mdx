@@ -71,6 +71,34 @@ session will be issued directly or through role chaining; C1 must derive that
 topology from its configured issuance mode and apply the corresponding AWS
 limit.
 
+## AWS STS federation token action
+
+The connector also exposes the global `issue_federation_token` action, which
+calls AWS STS `GetFederationToken` to mint temporary credentials for a named
+federated session. The credentials are returned as encrypted secret data; the
+federated user ARN and ID, the session token size, and the session token
+utilization are returned as ordinary fields.
+
+The action accepts:
+
+- `name`: the federated session name, 2 through 32 characters from
+  `[A-Za-z0-9_+=,.@-]`. It is a label for the session, not a lookup of an
+  existing IAM or Identity Center user;
+- `duration_seconds`: optional, 900 through 129,600 (AWS defaults to 43,200);
+- `policy`: an optional inline session policy, as JSON;
+- `policy_arns`: up to 10 managed policy ARNs from the calling IAM user's own
+  account;
+- `tags`: optional session tags, up to 50 key/value pairs; and
+- `minimum_session_token_size`: optional, 0 through 4,096 bytes.
+
+Two constraints are worth calling out. First, `GetFederationToken` must be
+signed with long-term IAM user keys: a connector running on assumed-role or
+other temporary credentials cannot use this action, and the calling identity
+needs `sts:GetFederationToken`. Second, the issued credentials get no
+permissions at all unless you pass `policy` or `policy_arns` — the session's
+access is the intersection of the IAM user's permissions and the policies
+supplied here.
+
 ## Sparse ACLs: Organizations and permission sets as scoped bindings
 
 When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector also models Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:
