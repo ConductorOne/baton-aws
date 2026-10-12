@@ -119,7 +119,7 @@ type AWS struct {
 }
 
 func (o *AWS) iamProvisioningActive() bool {
-	return o.accountProvisioningTarget == accountProvisioningTargetIAM
+	return o.accountProvisioningTarget == "" || o.accountProvisioningTarget == accountProvisioningTargetIAM
 }
 
 func (o *AWS) ssoProvisioningActive() bool {
@@ -563,10 +563,26 @@ func (c *AWS) shouldSyncCrossAccountIAM() bool {
 	return c.orgsEnabled
 }
 
+func (c *AWS) iamUserSyncer() connectorbuilder.ResourceSyncerV2 {
+	iamUsers := iamUserBuilder(c.iamClient, c.awsClientFactory, c, c.syncIAMPolicyGrants)
+	if c.iamProvisioningActive() {
+		return &provisionableIAMUserType{iamUserResourceType: iamUsers}
+	}
+	return iamUsers
+}
+
+func (c *AWS) ssoUserSyncer() connectorbuilder.ResourceSyncerV2 {
+	ssoUsers := ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance)
+	if c.ssoProvisioningActive() {
+		return &provisionableSSOUserType{ssoUserResourceType: ssoUsers}
+	}
+	return ssoUsers
+}
+
 func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSyncerV2 {
 	l := ctxzap.Extract(ctx)
 	rs := []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(c.iamClient, c.awsClientFactory, c, c.syncIAMPolicyGrants),
+		c.iamUserSyncer(),
 		iamRoleBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants, c.syncResourceTags),
 		iamGroupBuilder(c.iamClient, c.awsClientFactory, c.syncIAMPolicyGrants),
 		iamPolicyBuilder(c.iamClient, c.awsClientFactory, c.syncOnlyAttachedPolicies),
@@ -579,7 +595,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.ssoEnabled {
 		l.Debug("ssoEnabled. creating ssoUserBuilder and ssoGroupBuilder")
 		rs = append(rs,
-			ssoUserBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance, c),
+			c.ssoUserSyncer(),
 			ssoGroupBuilder(c.ssoRegion, c.ssoAdminClient, c.identityStoreClient, c.identityInstance),
 		)
 	}
@@ -630,12 +646,12 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
 	return []connectorbuilder.ResourceSyncerV2{
-		iamUserBuilder(nil, nil, nil, true),
+		&provisionableIAMUserType{iamUserResourceType: iamUserBuilder(nil, nil, nil, true)},
 		iamRoleBuilder(nil, nil, true, true),
 		iamGroupBuilder(nil, nil, true),
 		iamPolicyBuilder(nil, nil, false),
 		inlinePolicyBuilder(nil, nil, nil, nil),
-		ssoUserBuilder("", nil, nil, nil, nil),
+		&provisionableSSOUserType{ssoUserResourceType: ssoUserBuilder("", nil, nil, nil)},
 		ssoGroupBuilder("", nil, nil, nil),
 		accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}, true),
 		permissionSetBuilder(nil, nil, true),

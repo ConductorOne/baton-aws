@@ -20,7 +20,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var _ connectorbuilder.AccountManagerV2 = &ssoUserResourceType{}
+var _ connectorbuilder.AccountManagerV2 = &provisionableSSOUserType{}
+
+// Adds account creation to Identity Center users; ResourceSyncers uses it only when sso_user is the active provisioning target.
+type provisionableSSOUserType struct {
+	*ssoUserResourceType
+}
 
 type ssoUserResourceType struct {
 	resourceType        *v2.ResourceType
@@ -28,7 +33,6 @@ type ssoUserResourceType struct {
 	identityStoreClient client.IdentityStoreClient
 	identityInstance    *awsSsoAdminTypes.InstanceMetadata
 	region              string
-	aws                 *AWS
 }
 
 func (o *ssoUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -134,7 +138,6 @@ func ssoUserBuilder(
 	ssoClient *awsSsoAdmin.Client,
 	identityStoreClient client.IdentityStoreClient,
 	identityInstance *awsSsoAdminTypes.InstanceMetadata,
-	aws *AWS,
 ) *ssoUserResourceType {
 	return &ssoUserResourceType{
 		resourceType:        resourceTypeSSOUser,
@@ -142,11 +145,10 @@ func ssoUserBuilder(
 		identityInstance:    identityInstance,
 		identityStoreClient: identityStoreClient,
 		ssoClient:           ssoClient,
-		aws:                 aws,
 	}
 }
 
-func (o *ssoUserResourceType) CreateAccountCapabilityDetails(_ context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
+func (o *provisionableSSOUserType) CreateAccountCapabilityDetails(_ context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
 	return &v2.CredentialDetailsAccountProvisioning{
 		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
 			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
@@ -155,17 +157,11 @@ func (o *ssoUserResourceType) CreateAccountCapabilityDetails(_ context.Context) 
 	}, nil, nil
 }
 
-func (o *ssoUserResourceType) CreateAccount(
+func (o *provisionableSSOUserType) CreateAccount(
 	ctx context.Context,
 	accountInfo *v2.AccountInfo,
 	_ *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
-	if o.aws != nil && !o.aws.ssoProvisioningActive() {
-		return nil, nil, nil, status.Error(
-			codes.Unimplemented,
-			"baton-aws: Identity Center user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=sso_user",
-		)
-	}
 	identityStoreID := awsSdk.ToString(o.identityInstance.IdentityStoreId)
 	if identityStoreID == "" {
 		return nil, nil, nil, status.Error(codes.FailedPrecondition, "baton-aws: missing identity store id")
@@ -173,7 +169,9 @@ func (o *ssoUserResourceType) CreateAccount(
 
 	profile, err := getSsoUserCreateProfile(accountInfo)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, status.Errorf(codes.InvalidArgument,
+			"baton-aws: invalid account profile for Account Provisioning Target %s: %v; check the account provisioning mappings",
+			accountProvisioningTargetIdentityCenter, err)
 	}
 
 	input := &awsIdentityStore.CreateUserInput{

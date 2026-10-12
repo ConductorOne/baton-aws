@@ -38,7 +38,12 @@ type iamUserResourceType struct {
 	syncIAMPolicyGrants bool
 }
 
-var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
+var _ connectorbuilder.AccountManagerV2 = &provisionableIAMUserType{}
+
+// Adds account creation to IAM users; ResourceSyncers uses it only when IAM is the active provisioning target.
+type provisionableIAMUserType struct {
+	*iamUserResourceType
+}
 
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	if o.syncIAMPolicyGrants {
@@ -647,7 +652,7 @@ func getUserEmails(user iamTypes.User) []string {
 }
 
 // CreateAccountCapabilityDetails returns details about the account provisioning capability.
-func (o *iamUserResourceType) CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
+func (o *provisionableIAMUserType) CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
 	// Only include NO_PASSWORD option since AWS Identity Center handles password reset emails
 	details := &v2.CredentialDetailsAccountProvisioning{
 		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
@@ -658,26 +663,21 @@ func (o *iamUserResourceType) CreateAccountCapabilityDetails(ctx context.Context
 	return details, nil, nil
 }
 
-func (o *iamUserResourceType) CreateAccount(
+func (o *provisionableIAMUserType) CreateAccount(
 	ctx context.Context,
 	accountInfo *v2.AccountInfo,
 	credentialOptions *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
-	if o.aws != nil && !o.aws.iamProvisioningActive() {
-		return nil, nil, nil, status.Error(
-			codes.Unimplemented,
-			"baton-aws: IAM user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=iam_user",
-		)
-	}
-	profile := accountInfo.Profile.AsMap()
+	profile := accountInfo.GetProfile().AsMap()
 
-	// Extract required fields
-	email, ok := profile["email"].(string)
-	if !ok || email == "" {
-		return nil, nil, nil, fmt.Errorf("email is required")
+	email, err := requireStringProfileField(profile, profileKeyEmail)
+	if err != nil {
+		return nil, nil, nil, status.Errorf(codes.InvalidArgument,
+			"baton-aws: invalid account profile for Account Provisioning Target %s: %v; check the account provisioning mappings",
+			accountProvisioningTargetIAM, err)
 	}
 
-	username, ok := profile["username"].(string)
+	username, ok := profile[profileKeyUserName].(string)
 	if !ok || username == "" {
 		username = email
 	}
