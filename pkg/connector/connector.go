@@ -645,6 +645,7 @@ func (d *defaultCapabilitiesBuilder) Validate(_ context.Context) (annotations.An
 }
 
 func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connectorbuilder.ResourceSyncerV2 {
+	// Declares both user types as provisionable; at runtime ResourceSyncers registers only the active provisioning target.
 	return []connectorbuilder.ResourceSyncerV2{
 		&provisionableIAMUserType{iamUserResourceType: iamUserBuilder(nil, nil, nil, true)},
 		iamRoleBuilder(nil, nil, true, true),

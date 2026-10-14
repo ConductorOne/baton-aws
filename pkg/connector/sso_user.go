@@ -169,9 +169,7 @@ func (o *provisionableSSOUserType) CreateAccount(
 
 	profile, err := getSsoUserCreateProfile(accountInfo)
 	if err != nil {
-		return nil, nil, nil, status.Errorf(codes.InvalidArgument,
-			"baton-aws: invalid account profile for Account Provisioning Target %s: %v; check the account provisioning mappings",
-			accountProvisioningTargetIdentityCenter, err)
+		return nil, nil, nil, invalidAccountProfileError(accountProvisioningTargetIdentityCenter, err)
 	}
 
 	input := &awsIdentityStore.CreateUserInput{

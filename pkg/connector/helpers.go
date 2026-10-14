@@ -701,3 +701,9 @@ func requireStringProfileField(pMap map[string]interface{}, key string) (string,
 	}
 	return s, nil
 }
+
+func invalidAccountProfileError(target string, err error) error {
+	return status.Errorf(codes.InvalidArgument,
+		"baton-aws: invalid account profile for Account Provisioning Target %s: %v; check the account provisioning mappings",
+		target, err)
+}

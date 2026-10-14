@@ -20,8 +20,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -672,9 +670,7 @@ func (o *provisionableIAMUserType) CreateAccount(
 
 	email, err := requireStringProfileField(profile, profileKeyEmail)
 	if err != nil {
-		return nil, nil, nil, status.Errorf(codes.InvalidArgument,
-			"baton-aws: invalid account profile for Account Provisioning Target %s: %v; check the account provisioning mappings",
-			accountProvisioningTargetIAM, err)
+		return nil, nil, nil, invalidAccountProfileError(accountProvisioningTargetIAM, err)
 	}
 
 	username, ok := profile[profileKeyUserName].(string)
