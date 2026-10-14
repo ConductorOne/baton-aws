@@ -655,7 +655,7 @@ func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[stri
 
 func getSsoUserCreateProfile(accountInfo *v2.AccountInfo) (*ssoUserCreateProfile, error) {
 	if accountInfo == nil || accountInfo.Profile == nil {
-		return nil, fmt.Errorf("baton-aws: missing account profile")
+		return nil, errors.New("missing account profile")
 	}
 	pMap := accountInfo.Profile.AsMap()
 
@@ -693,11 +693,17 @@ func getSsoUserCreateProfile(accountInfo *v2.AccountInfo) (*ssoUserCreateProfile
 func requireStringProfileField(pMap map[string]interface{}, key string) (string, error) {
 	raw, ok := pMap[key]
 	if !ok {
-		return "", fmt.Errorf("baton-aws: missing %q in account profile", key)
+		return "", fmt.Errorf("missing %q", key)
 	}
 	s, ok := raw.(string)
 	if !ok || s == "" {
-		return "", fmt.Errorf("baton-aws: %q must be a non-empty string", key)
+		return "", fmt.Errorf("%q must be a non-empty string", key)
 	}
 	return s, nil
+}
+
+func invalidAccountProfileError(target string, err error) error {
+	return status.Errorf(codes.InvalidArgument,
+		"baton-aws: cannot create %s account: %v; check the account provisioning mappings",
+		target, err)
 }

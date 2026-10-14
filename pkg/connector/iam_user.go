@@ -20,8 +20,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -38,7 +36,12 @@ type iamUserResourceType struct {
 	syncIAMPolicyGrants bool
 }
 
-var _ connectorbuilder.AccountManagerV2 = &iamUserResourceType{}
+var _ connectorbuilder.AccountManagerV2 = &provisionableIAMUserType{}
+
+// provisionableIAMUserType adds account creation to IAM users. ResourceSyncers registers it only when the Account Provisioning Target is iam_user.
+type provisionableIAMUserType struct {
+	*iamUserResourceType
+}
 
 func (o *iamUserResourceType) ResourceType(_ context.Context) *v2.ResourceType {
 	if o.syncIAMPolicyGrants {
@@ -647,8 +650,8 @@ func getUserEmails(user iamTypes.User) []string {
 }
 
 // CreateAccountCapabilityDetails returns details about the account provisioning capability.
-func (o *iamUserResourceType) CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
-	// Only include NO_PASSWORD option since AWS Identity Center handles password reset emails
+func (o *provisionableIAMUserType) CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
+	// Only NO_PASSWORD: IAM users are created without a console password.
 	details := &v2.CredentialDetailsAccountProvisioning{
 		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
 			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
@@ -658,26 +661,19 @@ func (o *iamUserResourceType) CreateAccountCapabilityDetails(ctx context.Context
 	return details, nil, nil
 }
 
-func (o *iamUserResourceType) CreateAccount(
+func (o *provisionableIAMUserType) CreateAccount(
 	ctx context.Context,
 	accountInfo *v2.AccountInfo,
 	credentialOptions *v2.LocalCredentialOptions,
 ) (connectorbuilder.CreateAccountResponse, []*v2.PlaintextData, annotations.Annotations, error) {
-	if o.aws != nil && !o.aws.iamProvisioningActive() {
-		return nil, nil, nil, status.Error(
-			codes.Unimplemented,
-			"baton-aws: IAM user provisioning is disabled; set BATON_CREATE_ACCOUNT_RESOURCE_TYPE=iam_user",
-		)
-	}
-	profile := accountInfo.Profile.AsMap()
+	profile := accountInfo.GetProfile().AsMap()
 
-	// Extract required fields
-	email, ok := profile["email"].(string)
-	if !ok || email == "" {
-		return nil, nil, nil, fmt.Errorf("email is required")
+	email, err := requireStringProfileField(profile, profileKeyEmail)
+	if err != nil {
+		return nil, nil, nil, invalidAccountProfileError(accountProvisioningTargetIAM, err)
 	}
 
-	username, ok := profile["username"].(string)
+	username, ok := profile[profileKeyUserName].(string)
 	if !ok || username == "" {
 		username = email
 	}

@@ -8,8 +8,8 @@ import (
 
 func TestAccountCreationSchemaDispatch(t *testing.T) {
 	t.Run("default (empty) target falls back to IAM", func(t *testing.T) {
-		a := &AWS{}
-		schema := a.accountCreationSchema()
+		awsConnector := &AWS{}
+		schema := awsConnector.accountCreationSchema()
 		assert.ElementsMatch(t,
 			[]string{profileKeyUserName, profileKeyEmail},
 			keys(schema.FieldMap),
@@ -18,8 +18,8 @@ func TestAccountCreationSchemaDispatch(t *testing.T) {
 	})
 
 	t.Run("iam target produces username+email only", func(t *testing.T) {
-		a := &AWS{accountProvisioningTarget: accountProvisioningTargetIAM}
-		schema := a.accountCreationSchema()
+		awsConnector := &AWS{accountProvisioningTarget: accountProvisioningTargetIAM}
+		schema := awsConnector.accountCreationSchema()
 		assert.ElementsMatch(t,
 			[]string{profileKeyUserName, profileKeyEmail},
 			keys(schema.FieldMap),
@@ -29,8 +29,8 @@ func TestAccountCreationSchemaDispatch(t *testing.T) {
 	})
 
 	t.Run("identity-center target produces full SSO profile", func(t *testing.T) {
-		a := &AWS{accountProvisioningTarget: accountProvisioningTargetIdentityCenter}
-		schema := a.accountCreationSchema()
+		awsConnector := &AWS{ssoEnabled: true, accountProvisioningTarget: accountProvisioningTargetIdentityCenter}
+		schema := awsConnector.accountCreationSchema()
 		assert.ElementsMatch(t,
 			[]string{
 				profileKeyUserName, profileKeyEmail,

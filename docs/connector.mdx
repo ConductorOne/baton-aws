@@ -25,18 +25,83 @@ If you're setting up AWS with C1 for the first time, you're in the right place.
 | Secrets - Access keys | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 | Organization Root / Organizational Unit (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 | Permission Set / Permission Set Assignment (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
-| IAM managed policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
-| Inline policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
+| IAM managed policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\*\*\* |
+| Inline policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\*\*\* |
 
-The AWS connector supports [automatic account provisioning and deprovisioning](/product/admin/account-provisioning) of IAM accounts.
+The AWS connector supports [automatic account provisioning and deprovisioning](/product/admin/account-provisioning) of IAM users and Identity Center users. Each connector instance creates one type, set by **Account Provisioning Target**. See [Account provisioning](#account-provisioning).
 
 \*The connector can provision to accounts via permissions sets only if Identity Center is enabled.
 
 \*\*Sparse ACL resources are opt-in — see [Sparse ACLs: Organizations and permission sets as scoped bindings](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) below.
 
+\*\*\*Requires the optional `IAMPolicyProvisioning` permissions shown in the Identity Center setup policy; add the same statement to the IAM setup policy if you use it. Inline policies support revoke only; permission set inline policies cannot be revoked.
+
 [This connector can sync secrets](/product/admin/inventory) and display them on the **Inventory** page.
 
 [This connector syncs non-human identities](/product/admin/nhi) and displays them on the **Identities overview** dashboard.
+
+## Account provisioning
+
+### Choose the account type
+
+Each connector instance creates one type of account. Set it with **Account Provisioning Target** in the connector settings (`BATON_CREATE_ACCOUNT_RESOURCE_TYPE` for self-hosted connectors).
+
+| Value | Creates |
+| :--- | :--- |
+| `iam_user` (default) | IAM users |
+| `sso_user` | Identity Center users. Requires **Enable support for AWS IAM Identity Center**. |
+
+Permission set assignments only accept Identity Center users and groups as principals. To fulfill requests for permission sets, choose `sso_user`.
+
+### IAM users (`iam_user`)
+
+#### Required fields
+
+| Field | Description |
+| :--- | :--- |
+| `email` | The user's primary work email. |
+
+#### Optional fields
+
+| Field | Description | Default |
+| :--- | :--- | :--- |
+| `username` | The IAM user name. When it differs from `email`, the email is stored as an IAM tag named `email`. | The value of `email` |
+
+The connector creates the user without a console password.
+
+### Identity Center users (`sso_user`)
+
+#### Required fields
+
+| Field | Description |
+| :--- | :--- |
+| `username` | The Identity Center user name (login). |
+| `given_name` | The user's first name. |
+| `family_name` | The user's last name. |
+| `email` | The user's primary work email. |
+
+#### Optional fields
+
+| Field | Description | Default |
+| :--- | :--- | :--- |
+| `display_name` | The user's display name. | `given_name` followed by `family_name` |
+
+<Note>
+Identity Center has no way to disable a user, so deprovisioning deletes the user permanently.
+</Note>
+
+In both cases, if a user with the same user name already exists, the connector reuses it instead of failing.
+
+### Required permissions
+
+The connector role needs permissions to create and delete accounts:
+
+- **Identity Center setup:** the policy in that tab already includes them.
+- **IAM setup:** include the optional `IAMUserAccountProvisioning` statement from that tab's policy.
+
+<Warning>
+If you change **Account Provisioning Target**, update your account provisioning mappings. Identity Center users need `given_name` and `family_name`, which IAM mappings usually don't include. Without them, account creation fails with an error that names the missing field.
+</Warning>
 
 ## AWS STS web identity action
 
@@ -285,7 +350,7 @@ This custom role acts as a bridge, allowing C1 to securely access your child acc
 
 #### Grant permission for data sync
 
-Next, you will create an inline policy to define the specific data this role can gather from the child account. These are read-only permissions that enable C1 to securely sync your IAM data.
+Next, you will create an inline policy to define the specific data this role can gather from the child account. These are read-only permissions that enable C1 to securely sync your IAM data, except the optional `IAMUserAccountProvisioning` statement, which lets C1 create and delete IAM users. Omit it if you don't use account provisioning.
 
 <Steps>
     <Step>
@@ -351,6 +416,34 @@ Next, you will create an inline policy to define the specific data this role can
             "iam:ListAttachedGroupPolicies"
           ],
           "Resource": "*"
+        },
+        {
+          "Sid": "IAMUserAccountProvisioning",
+          "Effect": "Allow",
+          "Action": [
+            "iam:CreateUser",
+            "iam:TagUser",
+            "iam:GetUser",
+            "iam:ListAccessKeys",
+            "iam:ListUserPolicies",
+            "iam:ListAttachedUserPolicies",
+            "iam:ListGroupsForUser",
+            "iam:ListMFADevices",
+            "iam:ListSigningCertificates",
+            "iam:ListSSHPublicKeys",
+            "iam:ListServiceSpecificCredentials",
+            "iam:DeactivateMFADevice",
+            "iam:DeleteAccessKey",
+            "iam:DeleteLoginProfile",
+            "iam:DeleteServiceSpecificCredential",
+            "iam:DeleteSigningCertificate",
+            "iam:DeleteSSHPublicKey",
+            "iam:DeleteUserPolicy",
+            "iam:DetachUserPolicy",
+            "iam:RemoveUserFromGroup",
+            "iam:DeleteUser"
+          ],
+          "Resource": "*"
         }
       ]
     }
@@ -398,6 +491,11 @@ Next, you will create an inline policy to define the specific data this role can
     * iam:ListAttachedUserPolicies, iam:ListAttachedRolePolicies, and iam:ListAttachedGroupPolicies: Allow C1 to see which managed policies are attached to which users, roles, and groups.
 
        If these permissions are omitted, the connector still syncs successfully — policy resources are either skipped or synced without their document contents.
+
+    **Optional: IAM user account provisioning** Include the `IAMUserAccountProvisioning` statement only if you want C1 to create and delete IAM users. See [Account provisioning](#account-provisioning).
+
+    * iam:CreateUser, iam:TagUser, and iam:GetUser: Create the IAM user, store its email as a tag when the user name differs from it, and find an existing user with the same name.
+    * The iam:List…, iam:Delete…, iam:Detach…, iam:DeactivateMFADevice, and iam:RemoveUserFromGroup actions: Remove the user's credentials, policies, and group memberships, which AWS requires before iam:DeleteUser can delete the user.
     </Step>
     <Step>
         Click **Review Policy**.
@@ -639,6 +737,22 @@ The permissions policy below is broken into several sections to align with these
 	      "Resource": "*"
 	    },
 	    {
+	      "Sid": "IAMPolicyProvisioning",
+	      "Effect": "Allow",
+	      "Action": [
+	        "iam:AttachUserPolicy",
+	        "iam:AttachRolePolicy",
+	        "iam:AttachGroupPolicy",
+	        "iam:DetachUserPolicy",
+	        "iam:DetachRolePolicy",
+	        "iam:DetachGroupPolicy",
+	        "iam:DeleteUserPolicy",
+	        "iam:DeleteRolePolicy",
+	        "iam:DeleteGroupPolicy"
+	      ],
+	      "Resource": "*"
+	    },
+	    {
 	      "Effect": "Allow",
 	      "Action": [
 	        "iam:GetSAMLProvider"
@@ -688,6 +802,7 @@ The permissions policy below is broken into several sections to align with these
 	- `sts:AssumeRole`: **This permission is required when AWS Organizations support is enabled and the connector is doing cross-account IAM sync.** That covers two cases: Organizations on with Identity Center off, and Organizations on with Identity Center on plus the "Also sync cross-account IAM" flag turned on. It lets C1 assume the `OrganizationAccountAccessRole` in your child accounts so it can discover and sync resources across your AWS Organization, including member-account access keys when **Sync secrets** is enabled. It can be omitted if AWS Organizations support is disabled, or if Identity Center is on without the cross-account IAM flag.
 	- `iam:GetSAMLProvider`: This is a necessary permission to read the configuration of the SAML provider that AWS IAM Identity Center uses for single sign-on.
 	- The permissions listed in the `"Sid": "IAMListPermissions"` and `"Sid": "AccessToSSOProvisiondRoles"` sections are required only if you want to use C1 to create assignments in the AWS Organization’s management account. In certain cases, you may also need to add `iam:UpdateSAMLProvider` to these sections.
+	- `IAMPolicyProvisioning`: **Optional**, only needed to grant and revoke IAM managed policies and to delete inline policies from C1. These permissions let the role attach any policy to any IAM user, group or role, so include them only if you provision IAM policies.
 	- `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed` let C1 report the most recent access key activity on each IAM user. Enable **Sync secrets** to also sync each key as its own secret resource with per-key activity. When cross-account IAM sync is active, grant both actions to the assumed role in every member account.
 	- `iam:GetLoginProfile` is only needed when **Sync IAM User Console Access** is enabled. It lets C1 report whether an IAM user has a console password.
 	- `organizations:ListTagsForResource`, `iam:ListUserTags` and `iam:ListRoleTags` are only needed when **Sync Resource Tags** is enabled. They let C1 read the tags on each account, IAM user and IAM role. None of the `List*` calls return tags, so these are the only source. If the setting is on and a permission is missing, the sync fails rather than silently omitting tags.
@@ -751,6 +866,9 @@ The permissions policy below is broken into several sections to align with these
     </Step>
     <Step>
     **Optional.** If both Organizations support and Identity Center support are enabled, enable **Sync SSO User Last Login** to report Identity Center sign-ins. The connector role must include `cloudtrail:LookupEvents`.
+    </Step>
+    <Step>
+    **Optional.** Choose **Account Provisioning Target**: `iam_user` (default) creates IAM users; `sso_user` creates Identity Center users and requires **Enable support for AWS IAM Identity Center**. See [Account provisioning](#account-provisioning).
     </Step>
     <Step>
     Click **Save**.
@@ -1153,6 +1271,23 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "iam:ListAttachedUserPolicies",
             "iam:ListAttachedRolePolicies",
             "iam:ListAttachedGroupPolicies"
+          ],
+          "Resource" : "*"
+        },
+        # Optional. Only needed to grant and revoke IAM managed policies and delete inline policies from C1. Omit if you do not provision IAM policies.
+        {
+          "Sid" : "IAMPolicyProvisioning",
+          "Effect" : "Allow",
+          "Action" : [
+            "iam:AttachUserPolicy",
+            "iam:AttachRolePolicy",
+            "iam:AttachGroupPolicy",
+            "iam:DetachUserPolicy",
+            "iam:DetachRolePolicy",
+            "iam:DetachGroupPolicy",
+            "iam:DeleteUserPolicy",
+            "iam:DeleteRolePolicy",
+            "iam:DeleteGroupPolicy"
           ],
           "Resource" : "*"
         },

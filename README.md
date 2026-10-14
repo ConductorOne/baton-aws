@@ -127,7 +127,7 @@ Flags:
       --auth-method string                               ($BATON_AUTH_METHOD)
       --client-id string                                 The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
       --client-secret string                             The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
-      --create-account-resource-type string              Which AWS user type C1 should create when provisioning accounts. 'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users. Only one path can be active at a time per connector instance. ($BATON_CREATE_ACCOUNT_RESOURCE_TYPE) (default "iam_user")
+      --create-account-resource-type string              Which AWS user type C1 should create when provisioning accounts. 'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users and requires the 'Enable support for AWS IAM Identity Center' setting. Each connector instance creates one type of account. Changing it requires updating the account provisioning mappings: Identity Center users also need given_name and family_name. ($BATON_CREATE_ACCOUNT_RESOURCE_TYPE) (default "iam_user")
       --external-id string                               The external id for the aws account ($BATON_EXTERNAL_ID)
       --external-resource-c1z string                     The path to the c1z file to sync external baton resources with ($BATON_EXTERNAL_RESOURCE_C1Z)
       --external-resource-entitlement-id-filter string   The entitlement that external users, groups must have access to sync external baton resources ($BATON_EXTERNAL_RESOURCE_ENTITLEMENT_ID_FILTER)
