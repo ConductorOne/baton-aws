@@ -158,8 +158,8 @@ var (
 		field.WithDisplayName("Account Provisioning Target"),
 		field.WithDescription(
 			"Which AWS user type C1 should create when provisioning accounts. "+
-				"'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users and requires Identity Center support. "+
-				"Only one path can be active at a time per connector instance. "+
+				"'iam_user' (default) creates IAM users; 'sso_user' creates AWS Identity Center (SSO) users and requires Enable support for AWS IAM Identity Center. "+
+				"Each connector instance creates one type of account. "+
 				"Changing it requires updating the account provisioning mappings: Identity Center users also need given_name and family_name.",
 		),
 		field.WithDefaultValue("iam_user"),

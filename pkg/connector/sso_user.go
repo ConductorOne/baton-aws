@@ -22,7 +22,7 @@ import (
 
 var _ connectorbuilder.AccountManagerV2 = &provisionableSSOUserType{}
 
-// Adds account creation to Identity Center users; ResourceSyncers uses it only when sso_user is the active provisioning target.
+// provisionableSSOUserType adds account creation to Identity Center users. ResourceSyncers registers it only when the Account Provisioning Target is sso_user.
 type provisionableSSOUserType struct {
 	*ssoUserResourceType
 }

@@ -51,8 +51,6 @@ Each connector instance creates one type of account. Set it with **Account Provi
 | `iam_user` (default) | IAM users |
 | `sso_user` | Identity Center users. Requires **Enable support for AWS IAM Identity Center**. |
 
-If the setting was never saved, the connector creates IAM users by default.
-
 Permission set assignments only accept Identity Center users and groups as principals. To fulfill requests for permission sets, choose `sso_user`.
 
 ### IAM users (`iam_user`)
@@ -745,8 +743,10 @@ The permissions policy below is broken into several sections to align with these
 	        "iam:AttachUserPolicy",
 	        "iam:AttachRolePolicy",
 	        "iam:AttachGroupPolicy",
+	        "iam:DetachUserPolicy",
 	        "iam:DetachRolePolicy",
 	        "iam:DetachGroupPolicy",
+	        "iam:DeleteUserPolicy",
 	        "iam:DeleteRolePolicy",
 	        "iam:DeleteGroupPolicy"
 	      ],
@@ -868,7 +868,7 @@ The permissions policy below is broken into several sections to align with these
     **Optional.** If both Organizations support and Identity Center support are enabled, enable **Sync SSO User Last Login** to report Identity Center sign-ins. The connector role must include `cloudtrail:LookupEvents`.
     </Step>
     <Step>
-    **Optional.** Choose **Account Provisioning Target**: `iam_user` (default) creates IAM users; `sso_user` creates Identity Center users and requires Identity Center support. See [Account provisioning](#account-provisioning).
+    **Optional.** Choose **Account Provisioning Target**: `iam_user` (default) creates IAM users; `sso_user` creates Identity Center users and requires **Enable support for AWS IAM Identity Center**. See [Account provisioning](#account-provisioning).
     </Step>
     <Step>
     Click **Save**.
@@ -1282,8 +1282,10 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "iam:AttachUserPolicy",
             "iam:AttachRolePolicy",
             "iam:AttachGroupPolicy",
+            "iam:DetachUserPolicy",
             "iam:DetachRolePolicy",
             "iam:DetachGroupPolicy",
+            "iam:DeleteUserPolicy",
             "iam:DeleteRolePolicy",
             "iam:DeleteGroupPolicy"
           ],

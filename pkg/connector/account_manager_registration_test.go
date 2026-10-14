@@ -36,7 +36,7 @@ func TestCreateAccountWithoutResourceTypeRoutesToActiveTarget(t *testing.T) {
 		}
 		err := createAccountThroughServer(t, awsConnector, "")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid account profile for Account Provisioning Target iam_user")
+		require.Contains(t, err.Error(), "cannot create iam_user account")
 		require.Contains(t, err.Error(), `missing "email"`)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
@@ -48,7 +48,7 @@ func TestCreateAccountWithoutResourceTypeRoutesToActiveTarget(t *testing.T) {
 		}
 		err := createAccountThroughServer(t, awsConnector, "")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid account profile for Account Provisioning Target iam_user")
+		require.Contains(t, err.Error(), "cannot create iam_user account")
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 
@@ -66,7 +66,7 @@ func TestCreateAccountWithoutResourceTypeRoutesToActiveTarget(t *testing.T) {
 	t.Run("identity center disabled routes to IAM", func(t *testing.T) {
 		err := createAccountThroughServer(t, &AWS{accountProvisioningTarget: accountProvisioningTargetIAM}, "")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid account profile for Account Provisioning Target iam_user")
+		require.Contains(t, err.Error(), "cannot create iam_user account")
 		require.Contains(t, err.Error(), `missing "email"`)
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
@@ -79,7 +79,7 @@ func TestCreateAccountWithoutResourceTypeRoutesToActiveTarget(t *testing.T) {
 		}
 		err := createAccountThroughServer(t, awsConnector, "")
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "invalid account profile for Account Provisioning Target sso_user")
+		require.Contains(t, err.Error(), "cannot create sso_user account")
 		require.Equal(t, codes.InvalidArgument, status.Code(err))
 	})
 }

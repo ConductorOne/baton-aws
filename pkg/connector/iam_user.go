@@ -38,7 +38,7 @@ type iamUserResourceType struct {
 
 var _ connectorbuilder.AccountManagerV2 = &provisionableIAMUserType{}
 
-// Adds account creation to IAM users; ResourceSyncers uses it only when IAM is the active provisioning target.
+// provisionableIAMUserType adds account creation to IAM users. ResourceSyncers registers it only when the Account Provisioning Target is iam_user.
 type provisionableIAMUserType struct {
 	*iamUserResourceType
 }
@@ -651,7 +651,7 @@ func getUserEmails(user iamTypes.User) []string {
 
 // CreateAccountCapabilityDetails returns details about the account provisioning capability.
 func (o *provisionableIAMUserType) CreateAccountCapabilityDetails(ctx context.Context) (*v2.CredentialDetailsAccountProvisioning, annotations.Annotations, error) {
-	// Only include NO_PASSWORD option since AWS Identity Center handles password reset emails
+	// Only NO_PASSWORD: IAM users are created without a console password.
 	details := &v2.CredentialDetailsAccountProvisioning{
 		SupportedCredentialOptions: []v2.CapabilityDetailCredentialOption{
 			v2.CapabilityDetailCredentialOption_CAPABILITY_DETAIL_CREDENTIAL_OPTION_NO_PASSWORD,
