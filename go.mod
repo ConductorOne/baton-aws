@@ -1,8 +1,6 @@
 module github.com/conductorone/baton-aws
 
-go 1.27.1
-
-toolchain go1.27.2
+go 1.27.2
 
 require (
 	filippo.io/age v1.3.1
@@ -16,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssoadmin v1.27.5
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.0
 	github.com/aws/smithy-go v1.28.1
-	github.com/conductorone/baton-sdk v0.40.0
+	github.com/conductorone/baton-sdk v0.41.0
 	github.com/ennyjfrick/ruleguard-logfatal v0.0.2
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/quasilyte/go-ruleguard/dsl v0.3.23
