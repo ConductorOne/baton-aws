@@ -960,6 +960,54 @@
     },
     {
       "resourceType": {
+        "id": "security-insight",
+        "displayName": "Security Insight",
+        "traits": [
+          "TRAIT_SECURITY_INSIGHT"
+        ],
+        "annotations": [
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.OptInRequired"
+          },
+          {
+            "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
+            "permissions": [
+              {
+                "permission": "access-analyzer:ListAnalyzers"
+              },
+              {
+                "permission": "access-analyzer:ListFindingsV2"
+              },
+              {
+                "permission": "access-analyzer:GetFindingV2"
+              }
+            ]
+          }
+        ]
+      },
+      "capabilities": [
+        "CAPABILITY_SYNC"
+      ],
+      "permissions": {
+        "permissions": [
+          {
+            "permission": "access-analyzer:ListAnalyzers"
+          },
+          {
+            "permission": "access-analyzer:ListFindingsV2"
+          },
+          {
+            "permission": "access-analyzer:GetFindingV2"
+          }
+        ]
+      },
+      "optInRequired": true
+    },
+    {
+      "resourceType": {
         "id": "sso_group",
         "displayName": "SSO Group",
         "traits": [

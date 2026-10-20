@@ -238,3 +238,26 @@ func TestValidateConfigErrorsCarryInvalidArgument(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateConfigAccessAnalyzer(t *testing.T) {
+	base := func() *cfg.Aws {
+		return &cfg.Aws{UseAssume: true, RoleArn: commercialRole, GlobalRegion: "us-east-1", SyncAccessAnalyzerInsights: true}
+	}
+
+	ok := base()
+	ok.AccessAnalyzerAccountId = "210987654321"
+	ok.AccessAnalyzerRegion = "eu-west-1"
+	require.NoError(t, ValidateConfig(ok))
+
+	badAccount := base()
+	badAccount.AccessAnalyzerAccountId = "21098765432"
+	err := ValidateConfig(badAccount)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "access-analyzer-account-id")
+
+	crossPartition := base()
+	crossPartition.AccessAnalyzerRegion = "cn-north-1"
+	err = ValidateConfig(crossPartition)
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.ErrorContains(t, err, "access-analyzer-region")
+}

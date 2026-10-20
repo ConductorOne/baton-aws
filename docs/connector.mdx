@@ -23,6 +23,7 @@ If you're setting up AWS with C1 for the first time, you're in the right place.
 | Identity Center groups | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |
 | Accounts via Permission Sets | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
 | Secrets - Access keys | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
+| IAM Access Analyzer insights\*\*\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 | Organization Root / Organizational Unit (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 | Permission Set / Permission Set Assignment (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
 | IAM managed policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\*\*\* |
@@ -35,6 +36,8 @@ The AWS connector supports [automatic account provisioning and deprovisioning](/
 \*\*Sparse ACL resources are opt-in — see [Sparse ACLs: Organizations and permission sets as scoped bindings](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) below.
 
 \*\*\*Requires the optional `IAMPolicyProvisioning` permissions shown in the Identity Center setup policy; add the same statement to the IAM setup policy if you use it. Inline policies support revoke only; permission set inline policies cannot be revoked.
+
+\*\*\*\*Opt-in — see [IAM Access Analyzer insights](#iam-access-analyzer-insights) below.
 
 [This connector can sync secrets](/product/admin/inventory) and display them on the **Inventory** page.
 
@@ -232,6 +235,43 @@ Two optional settings gate parts of this, and both are off by default:
 IAM user **Last Login** does not depend on either optional setting.
 
 Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and **Sync SSO User Last Login** (`BATON_SYNC_SSO_USER_LAST_LOGIN`), and grant `cloudtrail:LookupEvents` to report Identity Center sign-ins. This setting is also off by default and does not affect IAM user Last Login or access key activity.
+
+## IAM Access Analyzer insights
+
+Enable **Sync IAM Access Analyzer Insights** (`BATON_SYNC_ACCESS_ANALYZER_INSIGHTS`) to show active [IAM Access Analyzer](https://docs.aws.amazon.com/IAM/latest/UserGuide/what-is-access-analyzer.html) findings as security insights on access requests and access reviews. Insights give reviewers context about the access itself — whether a permission set in an account, a role, or an IAM user's credentials have gone unused — not a judgment about the person requesting or holding it.
+
+| Finding | Shown on | Severity | Example |
+| :--- | :--- | :--- | :--- |
+| Unused role (Identity Center) | The permission set assignment for that permission set and account | Medium | All assignees: no activity on PowerUserAccess in 123456789012 in the last 90 days |
+| Unused permissions (Identity Center) | The permission set assignment | Low | All assignees: unused permissions in 3 services on PowerUserAccess in 123456789012 in the last 90 days |
+| Unused console password | The IAM user | Medium | Console password unused for 90+ days |
+| Unused access key | The IAM user | Medium | Access key …4321 unused for 90+ days |
+| Unused permissions | The IAM user or IAM role | Low | Unused permissions in 2 services in the last 90 days |
+| Unused role | The IAM role | Medium | Role unused in the last 90 days |
+| External access | The IAM role | High | Trusted by external principal account …4321 |
+
+The number of days is the analyzer's unused access age.
+
+**"All assignees" means pooled activity.** Identity Center grants a permission set in an account through one shared `AWSReservedSSO_*` role, so Access Analyzer can only report whether *anyone* assigned that permission set used it. These insights never say whether a specific person used the access.
+
+**No insight does not mean unused.** With just-in-time access, the `AWSReservedSSO_*` role may not exist between grants, so Access Analyzer has nothing to report. The connector only emits insights for active findings and never infers non-use from a missing finding.
+
+Identity Center insights require the opt-in Permission Set Assignment resource (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings)). When it is not synced, the connector skips Identity Center findings and logs a warning rather than attaching them to the whole account. Insights on IAM roles appear only for roles the connector syncs.
+
+### Setup
+
+1. Create an unused access analyzer, an external access analyzer, or both, in IAM Access Analyzer. An organization analyzer is used in preference to account analyzers.
+2. Grant the connector role `access-analyzer:ListAnalyzers`, `access-analyzer:ListFindingsV2`, and `access-analyzer:GetFindingV2` in the account that owns the analyzers.
+3. If the analyzers live in a delegated administrator account, set **IAM Access Analyzer Account ID** (`BATON_ACCESS_ANALYZER_ACCOUNT_ID`). The connector assumes the **IAM assume role name** (default `OrganizationAccountAccessRole`) in that account. If the analyzers are not in the Identity Center region, set **IAM Access Analyzer Region** (`BATON_ACCESS_ANALYZER_REGION`).
+
+If no active analyzer exists, the connector syncs no insights and does not fail.
+
+### What this does not do
+
+- It makes no changes in AWS. The connector only lists analyzers and reads findings.
+- It does not generate or apply policy recommendations.
+- It does not store raw finding bodies; only the insight text, severity, and observation time are synced.
+- It does not report per-person usage. Access Analyzer findings describe a role or IAM user, not an individual's activity in a shared role.
 
 ## Gather AWS credentials
 

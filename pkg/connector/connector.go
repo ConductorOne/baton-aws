@@ -13,6 +13,7 @@ import (
 	awsConfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/accessanalyzer"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsIdentityStore "github.com/aws/aws-sdk-go-v2/service/identitystore"
@@ -57,6 +58,9 @@ type Config struct {
 	SyncSecrets                     bool
 	IamAssumeRoleName               string
 	SyncSSOUserLastLogin            bool
+	SyncAccessAnalyzerInsights      bool
+	AccessAnalyzerAccountID         string
+	AccessAnalyzerRegion            string
 	SyncIAMUserConsoleAccess        bool
 	SyncOnlyAttachedPolicies        bool
 	SyncResourceTags                bool
@@ -111,9 +115,18 @@ type AWS struct {
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
 	syncIAMUserConsoleAccess bool
-	syncOnlyAttachedPolicies bool
-	syncIAMPolicyGrants      bool
-	syncResourceTags         bool
+
+	syncAccessAnalyzerInsights bool
+	accessAnalyzerAccountID    string
+	accessAnalyzerRegion       string
+	// syncPermissionSetAssignments reports whether this run syncs permission_set_assignment
+	// resources, the target of insights about Identity Center roles.
+	syncPermissionSetAssignments bool
+	_accessAnalyzerClientMtx     sync.Mutex
+	_accessAnalyzerClient        accessAnalyzerAPI
+	syncOnlyAttachedPolicies     bool
+	syncIAMPolicyGrants          bool
+	syncResourceTags             bool
 
 	accountProvisioningTarget string
 }
@@ -289,6 +302,10 @@ func ValidateConfig(awsc *cfg.Aws) error {
 			return err
 		}
 	}
+	if awsc.SyncAccessAnalyzerInsights && awsc.AccessAnalyzerAccountId != "" && !accountIDPattern.MatchString(awsc.AccessAnalyzerAccountId) {
+		return status.Errorf(codes.InvalidArgument,
+			"baton-aws: access-analyzer-account-id %q is not a 12-digit AWS account id", awsc.AccessAnalyzerAccountId)
+	}
 	return validatePartitionConsistency(awsc, rolePartition)
 }
 
@@ -313,6 +330,14 @@ func validatePartitionConsistency(awsc *cfg.Aws, rolePartition string) error {
 		return status.Errorf(codes.InvalidArgument,
 			"baton-aws: global-region %q is not in the %q partition of role-arn",
 			awsc.GlobalRegion, partition,
+		)
+	}
+
+	if awsc.SyncAccessAnalyzerInsights && awsc.AccessAnalyzerRegion != "" &&
+		partitionForRegion(awsc.AccessAnalyzerRegion) != partition {
+		return status.Errorf(codes.InvalidArgument,
+			"baton-aws: access-analyzer-region %q is not in the %q partition of %s",
+			awsc.AccessAnalyzerRegion, partition, source,
 		)
 	}
 
@@ -345,6 +370,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 	// those grants is invalid/wasteful. A nil opts (e.g. capabilities generation or
 	// callers that don't pass one) is treated the same as "no filter" -> sync everything.
 	syncIAMPolicyGrants := connectorOpts == nil || connectorOpts.WillSyncResourceType("iam_policy")
+	syncPermissionSetAssignments := connectorOpts == nil || connectorOpts.WillSyncResourceType(resourceTypePermissionSetAssignment.Id)
 
 	err := field.Validate(cfg.Config, awsc)
 	if err != nil {
@@ -371,6 +397,9 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		SyncSecrets:                     awsc.SyncSecrets,
 		IamAssumeRoleName:               awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:            awsc.SyncSsoUserLastLogin,
+		SyncAccessAnalyzerInsights:      awsc.SyncAccessAnalyzerInsights,
+		AccessAnalyzerAccountID:         awsc.AccessAnalyzerAccountId,
+		AccessAnalyzerRegion:            awsc.AccessAnalyzerRegion,
 		SyncIAMUserConsoleAccess:        awsc.SyncIamUserConsoleAccess,
 		SyncOnlyAttachedPolicies:        awsc.SyncOnlyAttachedPolicies,
 		SyncResourceTags:                awsc.SyncResourceTags,
@@ -416,6 +445,11 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
 		syncIAMPolicyGrants:      syncIAMPolicyGrants,
 		syncResourceTags:         config.SyncResourceTags,
+
+		syncAccessAnalyzerInsights:   config.SyncAccessAnalyzerInsights,
+		accessAnalyzerAccountID:      config.AccessAnalyzerAccountID,
+		accessAnalyzerRegion:         config.AccessAnalyzerRegion,
+		syncPermissionSetAssignments: syncPermissionSetAssignments,
 
 		accountProvisioningTarget: config.AccountProvisioningTarget,
 
@@ -604,9 +638,10 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c, c.syncSecrets))
 	}
 
+	var acct *accountResourceType
 	if c.orgsEnabled && c.ssoEnabled {
 		l.Debug("orgsEnabled. creating accountBuilder")
-		acct := accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient,
+		acct = accountBuilder(c.orgClient, c.roleARN, c.ssoAdminClient, c.identityInstance, c.ssoRegion, c.identityStoreClient,
 			HierarchySyncFlags{Organization: c.willSyncOrganization, OrganizationalUnit: c.willSyncOrganizationalUnit}, c.syncResourceTags)
 		rs = append(rs,
 			acct,
@@ -625,7 +660,67 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 		l.Debug("syncSecrets. creating secretBuilder")
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
 	}
+
+	if c.syncAccessAnalyzerInsights {
+		l.Debug("syncAccessAnalyzerInsights enabled. creating accessAnalyzerInsightBuilder")
+		rs = append(rs, accessAnalyzerInsightBuilder(c.getAccessAnalyzerClient, acct, acct != nil && c.syncPermissionSetAssignments))
+	}
 	return rs
+}
+
+// getAccessAnalyzerClient returns the client for the configured analyzer account and region,
+// created on first use so a misconfigured analyzer account only affects insight sync.
+func (c *AWS) getAccessAnalyzerClient(ctx context.Context) (accessAnalyzerAPI, error) {
+	c._accessAnalyzerClientMtx.Lock()
+	defer c._accessAnalyzerClientMtx.Unlock()
+	if c._accessAnalyzerClient != nil {
+		return c._accessAnalyzerClient, nil
+	}
+
+	region := c.accessAnalyzerRegion
+	switch {
+	case region != "":
+	case c.ssoEnabled && c.ssoRegion != "":
+		region = c.ssoRegion
+	case c.globalRegion != "":
+		region = c.globalRegion
+	default:
+		region = cfg.RegionDefault
+	}
+
+	callingConfig, err := c.getCallingConfig(ctx, region)
+	if err != nil {
+		return nil, err
+	}
+	if c.accessAnalyzerAccountID != "" {
+		ownAccountID, err := c.callerAccountID(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if c.accessAnalyzerAccountID != ownAccountID {
+			callingConfig, err = c.awsClientFactory.getConfig(ctx, c.accessAnalyzerAccountID)
+			if err != nil {
+				return nil, fmt.Errorf("baton-aws: failed to assume role in access analyzer account: %w", err)
+			}
+		}
+	}
+
+	c._accessAnalyzerClient = accessanalyzer.NewFromConfig(callingConfig, func(o *accessanalyzer.Options) {
+		o.Region = region
+	})
+	return c._accessAnalyzerClient, nil
+}
+
+func (c *AWS) callerAccountID(ctx context.Context) (string, error) {
+	stsSvc, err := c.getSTSClient(ctx)
+	if err != nil {
+		return "", err
+	}
+	identity, err := stsSvc.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", wrapAWSError(fmt.Errorf("baton-aws: sts.GetCallerIdentity failed: %w", err))
+	}
+	return awsSdk.ToString(identity.Account), nil
 }
 
 // DefaultCapabilitiesBuilder returns all resource types unconditionally so that
@@ -661,6 +756,7 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		organizationalUnitBuilder(nil),
 		accountIAMBuilder(nil, nil, nil, true),
 		secretBuilder(nil, nil),
+		accessAnalyzerInsightBuilder(nil, nil, true),
 	}
 }
 
