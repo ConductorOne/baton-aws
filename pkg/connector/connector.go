@@ -587,6 +587,14 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 		c.identityInstance = identityInstance
 	}
 
+	// getCallingConfig's per-region cache is unsynchronized, so the analyzer region's entry is
+	// created here, before sync workers start, rather than on first use during sync.
+	if c.syncAccessAnalyzerInsights {
+		if _, err := c.getCallingConfig(ctx, c.accessAnalyzerClientRegion()); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -663,7 +671,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 
 	if c.syncAccessAnalyzerInsights {
 		l.Debug("syncAccessAnalyzerInsights enabled. creating accessAnalyzerInsightBuilder")
-		rs = append(rs, accessAnalyzerInsightBuilder(c.getAccessAnalyzerClient, acct, acct != nil && c.syncPermissionSetAssignments))
+		rs = append(rs, accessAnalyzerInsightBuilder(c.getAccessAnalyzerClient, acct, acct != nil && c.syncPermissionSetAssignments, c.accessAnalyzerScope()))
 	}
 	return rs
 }
@@ -677,17 +685,7 @@ func (c *AWS) getAccessAnalyzerClient(ctx context.Context) (accessAnalyzerAPI, e
 		return c._accessAnalyzerClient, nil
 	}
 
-	region := c.accessAnalyzerRegion
-	switch {
-	case region != "":
-	case c.ssoEnabled && c.ssoRegion != "":
-		region = c.ssoRegion
-	case c.globalRegion != "":
-		region = c.globalRegion
-	default:
-		region = cfg.RegionDefault
-	}
-
+	region := c.accessAnalyzerClientRegion()
 	callingConfig, err := c.getCallingConfig(ctx, region)
 	if err != nil {
 		return nil, err
@@ -709,6 +707,29 @@ func (c *AWS) getAccessAnalyzerClient(ctx context.Context) (accessAnalyzerAPI, e
 		o.Region = region
 	})
 	return c._accessAnalyzerClient, nil
+}
+
+// accessAnalyzerClientRegion is the configured analyzer region, else the Identity Center region,
+// else the connector's region, else us-east-1.
+func (c *AWS) accessAnalyzerClientRegion() string {
+	switch {
+	case c.accessAnalyzerRegion != "":
+		return c.accessAnalyzerRegion
+	case c.ssoEnabled && c.ssoRegion != "":
+		return c.ssoRegion
+	case c.globalRegion != "":
+		return c.globalRegion
+	default:
+		return cfg.RegionDefault
+	}
+}
+
+func (c *AWS) accessAnalyzerScope() string {
+	scope := "region " + c.accessAnalyzerClientRegion()
+	if c.accessAnalyzerAccountID != "" {
+		scope += ", account " + c.accessAnalyzerAccountID
+	}
+	return scope
 }
 
 func (c *AWS) callerAccountID(ctx context.Context) (string, error) {
@@ -756,7 +777,7 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		organizationalUnitBuilder(nil),
 		accountIAMBuilder(nil, nil, nil, true),
 		secretBuilder(nil, nil),
-		accessAnalyzerInsightBuilder(nil, nil, true),
+		accessAnalyzerInsightBuilder(nil, nil, true, ""),
 	}
 }
 

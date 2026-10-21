@@ -979,10 +979,10 @@
                 "permission": "access-analyzer:ListAnalyzers"
               },
               {
-                "permission": "access-analyzer:ListFindingsV2"
+                "permission": "access-analyzer:ListFindings"
               },
               {
-                "permission": "access-analyzer:GetFindingV2"
+                "permission": "access-analyzer:GetFinding"
               }
             ]
           }
@@ -997,10 +997,10 @@
             "permission": "access-analyzer:ListAnalyzers"
           },
           {
-            "permission": "access-analyzer:ListFindingsV2"
+            "permission": "access-analyzer:ListFindings"
           },
           {
-            "permission": "access-analyzer:GetFindingV2"
+            "permission": "access-analyzer:GetFinding"
           }
         ]
       },

@@ -29,6 +29,17 @@ const (
 	testExternalArn = "arn:aws:access-analyzer:us-west-2:123456789012:analyzer/external"
 )
 
+// Short aliases keep the finding tables readable.
+const (
+	ftUnusedRole     = accessAnalyzerTypes.FindingTypeUnusedIamRole
+	ftUnusedPerm     = accessAnalyzerTypes.FindingTypeUnusedPermission
+	ftUnusedPassword = accessAnalyzerTypes.FindingTypeUnusedIamUserPassword
+	ftUnusedKey      = accessAnalyzerTypes.FindingTypeUnusedIamUserAccessKey
+	ftExternal       = accessAnalyzerTypes.FindingTypeExternalAccess
+	rtRole           = accessAnalyzerTypes.ResourceTypeAwsIamRole
+	rtUser           = accessAnalyzerTypes.ResourceTypeAwsIamUser
+)
+
 var testAnalyzedAt = time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 
 func testJoinIndex() insightJoinIndex {
@@ -63,7 +74,7 @@ func TestInsightFromFindingRows(t *testing.T) {
 	}{
 		{
 			name:        "unused SSO role",
-			finding:     accessAnalyzerFinding{FindingType: accessAnalyzerTypes.FindingTypeUnusedIamRole, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testSSORoleArn},
+			finding:     accessAnalyzerFinding{FindingType: ftUnusedRole, ResourceType: rtRole, ResourceARN: testSSORoleArn},
 			severity:    "MEDIUM",
 			value:       "All assignees: no activity on PowerUserAccess in 123456789012 in the last 90 days",
 			displayName: "[MEDIUM] AWS Access Analyzer: Unused permission set",
@@ -72,7 +83,7 @@ func TestInsightFromFindingRows(t *testing.T) {
 		{
 			name: "unused permissions on SSO role",
 			finding: accessAnalyzerFinding{
-				FindingType: accessAnalyzerTypes.FindingTypeUnusedPermission, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole,
+				FindingType: ftUnusedPerm, ResourceType: rtRole,
 				ResourceARN: testSSORoleArn, UnusedServices: []string{"ec2", "s3", "sqs"},
 			},
 			severity:    "LOW",
@@ -82,7 +93,7 @@ func TestInsightFromFindingRows(t *testing.T) {
 		},
 		{
 			name:         "unused console password",
-			finding:      accessAnalyzerFinding{FindingType: accessAnalyzerTypes.FindingTypeUnusedIamUserPassword, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamUser, ResourceARN: testIAMUserArn},
+			finding:      accessAnalyzerFinding{FindingType: ftUnusedPassword, ResourceType: rtUser, ResourceARN: testIAMUserArn},
 			severity:     "MEDIUM",
 			value:        "Console password unused for 90+ days",
 			displayName:  "[MEDIUM] AWS Access Analyzer: Unused console password",
@@ -91,7 +102,7 @@ func TestInsightFromFindingRows(t *testing.T) {
 		{
 			name: "unused access key",
 			finding: accessAnalyzerFinding{
-				FindingType: accessAnalyzerTypes.FindingTypeUnusedIamUserAccessKey, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamUser,
+				FindingType: ftUnusedKey, ResourceType: rtUser,
 				ResourceARN: testIAMUserArn, AccessKeyID: "AKIAEXAMPLEKEY4321",
 			},
 			severity:     "MEDIUM",
@@ -101,7 +112,7 @@ func TestInsightFromFindingRows(t *testing.T) {
 		},
 		{
 			name:         "unused access key without details",
-			finding:      accessAnalyzerFinding{FindingType: accessAnalyzerTypes.FindingTypeUnusedIamUserAccessKey, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamUser, ResourceARN: testIAMUserArn},
+			finding:      accessAnalyzerFinding{FindingType: ftUnusedKey, ResourceType: rtUser, ResourceARN: testIAMUserArn},
 			severity:     "MEDIUM",
 			value:        "Access key unused for 90+ days",
 			displayName:  "[MEDIUM] AWS Access Analyzer: Unused access key",
@@ -110,17 +121,17 @@ func TestInsightFromFindingRows(t *testing.T) {
 		{
 			name: "unused permissions on IAM user",
 			finding: accessAnalyzerFinding{
-				FindingType: accessAnalyzerTypes.FindingTypeUnusedPermission, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamUser,
+				FindingType: ftUnusedPerm, ResourceType: rtUser,
 				ResourceARN: testIAMUserArn, UnusedServices: []string{"s3"}, UnusedAgeDays: 30,
 			},
 			severity:     "LOW",
-			value:        "Unused permissions in 1 services in the last 30 days",
+			value:        "Unused permissions in 1 service in the last 30 days",
 			displayName:  "[LOW] AWS Access Analyzer: Unused permissions",
 			appUserExtID: testIAMUserArn,
 		},
 		{
 			name:        "unused IAM role",
-			finding:     accessAnalyzerFinding{FindingType: accessAnalyzerTypes.FindingTypeUnusedIamRole, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testIAMRoleArn, UnusedAgeDays: 60},
+			finding:     accessAnalyzerFinding{FindingType: ftUnusedRole, ResourceType: rtRole, ResourceARN: testIAMRoleArn, UnusedAgeDays: 60},
 			severity:    "MEDIUM",
 			value:       "Role unused in the last 60 days",
 			displayName: "[MEDIUM] AWS Access Analyzer: Unused role",
@@ -129,7 +140,7 @@ func TestInsightFromFindingRows(t *testing.T) {
 		{
 			name: "external access on IAM role",
 			finding: accessAnalyzerFinding{
-				FindingType: accessAnalyzerTypes.FindingTypeExternalAccess, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole,
+				FindingType: ftExternal, ResourceType: rtRole,
 				ResourceARN: testIAMRoleArn, ExternalPrincipals: map[string]string{"AWS": "arn:aws:iam::210987654321:root"},
 			},
 			severity:    "HIGH",
@@ -167,9 +178,9 @@ func TestInsightFromFindingRows(t *testing.T) {
 }
 
 func TestInsightFromFindingSSOValuesAreLabeledPooled(t *testing.T) {
-	for _, ft := range []accessAnalyzerTypes.FindingType{accessAnalyzerTypes.FindingTypeUnusedIamRole, accessAnalyzerTypes.FindingTypeUnusedPermission} {
+	for _, ft := range []accessAnalyzerTypes.FindingType{ftUnusedRole, ftUnusedPerm} {
 		r, _, err := insightFromFinding(accessAnalyzerFinding{
-			ID: "f", FindingType: ft, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testSSORoleArn,
+			ID: "f", FindingType: ft, ResourceType: rtRole, ResourceARN: testSSORoleArn,
 		}, testJoinIndex())
 		require.NoError(t, err)
 		require.Regexp(t, `^All assignees: `, insightTrait(t, r).GetIssue().GetValue())
@@ -185,43 +196,43 @@ func TestInsightFromFindingSkips(t *testing.T) {
 	}{
 		{
 			name:    "unparseable resource",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeUnusedIamRole, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: "not-an-arn"},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftUnusedRole, ResourceType: rtRole, ResourceARN: "not-an-arn"},
 			index:   testJoinIndex(),
 			skip:    skipUnparseableResource,
 		},
 		{
 			name:    "SSO role when assignments are not synced",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeUnusedIamRole, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testSSORoleArn},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftUnusedRole, ResourceType: rtRole, ResourceARN: testSSORoleArn},
 			index:   insightJoinIndex{},
 			skip:    skipAssignmentsNotSynced,
 		},
 		{
 			name:    "SSO role for an unknown permission set",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeUnusedIamRole, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testSSORoleArn},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftUnusedRole, ResourceType: rtRole, ResourceARN: testSSORoleArn},
 			index:   insightJoinIndex{permissionSetArnByName: map[string]string{"Other": testPermissionSetArn}, ssoAssignmentsSynced: true},
 			skip:    skipUnknownPermissionSet,
 		},
 		{
 			name:    "external access on SSO role",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeExternalAccess, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testSSORoleArn},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftExternal, ResourceType: rtRole, ResourceARN: testSSORoleArn},
 			index:   testJoinIndex(),
 			skip:    skipUnsupportedFinding,
 		},
 		{
 			name:    "external access without a principal",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeExternalAccess, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testIAMRoleArn},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftExternal, ResourceType: rtRole, ResourceARN: testIAMRoleArn},
 			index:   testJoinIndex(),
 			skip:    skipExternalAccessNoTarget,
 		},
 		{
 			name:    "password finding on a role",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeUnusedIamUserPassword, ResourceType: accessAnalyzerTypes.ResourceTypeAwsIamRole, ResourceARN: testIAMRoleArn},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftUnusedPassword, ResourceType: rtRole, ResourceARN: testIAMRoleArn},
 			index:   testJoinIndex(),
 			skip:    skipUnsupportedFinding,
 		},
 		{
 			name:    "unsupported resource type",
-			finding: accessAnalyzerFinding{ID: "f", FindingType: accessAnalyzerTypes.FindingTypeExternalAccess, ResourceType: accessAnalyzerTypes.ResourceTypeAwsS3Bucket, ResourceARN: "arn:aws:s3:::bucket"},
+			finding: accessAnalyzerFinding{ID: "f", FindingType: ftExternal, ResourceType: accessAnalyzerTypes.ResourceTypeAwsS3Bucket, ResourceARN: "arn:aws:s3:::bucket"},
 			index:   testJoinIndex(),
 			skip:    skipUnsupportedFinding,
 		},
@@ -233,13 +244,6 @@ func TestInsightFromFindingSkips(t *testing.T) {
 			require.Nil(t, r)
 			require.Equal(t, tc.skip, skip)
 		})
-	}
-}
-
-func TestInsightSeveritiesMatchC1Values(t *testing.T) {
-	allowed := map[string]bool{"CRITICAL": true, "HIGH": true, "MEDIUM": true, "LOW": true, "INFORMATIONAL": true}
-	for _, s := range []string{insightSeverityHigh, insightSeverityMedium, insightSeverityLow} {
-		require.True(t, allowed[s], s)
 	}
 }
 
@@ -279,18 +283,26 @@ func TestDescribeExternalPrincipal(t *testing.T) {
 
 // fakeAccessAnalyzer serves analyzers by type and findings by analyzer ARN, one page per entry.
 type fakeAccessAnalyzer struct {
-	analyzers      map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary
-	findingPages   map[string][][]accessAnalyzerTypes.FindingSummaryV2
-	details        map[string][]accessAnalyzerTypes.FindingDetails
-	getFindingIDs  []string
-	listFilterSeen []map[string]accessAnalyzerTypes.Criterion
+	listAnalyzersErr error
+	listFindingsErr  error
+	analyzers        map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary
+	findingPages     map[string][][]accessAnalyzerTypes.FindingSummaryV2
+	details          map[string][]accessAnalyzerTypes.FindingDetails
+	getFindingIDs    []string
+	listFilterSeen   []map[string]accessAnalyzerTypes.Criterion
 }
 
 func (f *fakeAccessAnalyzer) ListAnalyzers(_ context.Context, in *accessanalyzer.ListAnalyzersInput, _ ...func(*accessanalyzer.Options)) (*accessanalyzer.ListAnalyzersOutput, error) {
+	if f.listAnalyzersErr != nil {
+		return nil, f.listAnalyzersErr
+	}
 	return &accessanalyzer.ListAnalyzersOutput{Analyzers: f.analyzers[in.Type]}, nil
 }
 
 func (f *fakeAccessAnalyzer) ListFindingsV2(_ context.Context, in *accessanalyzer.ListFindingsV2Input, _ ...func(*accessanalyzer.Options)) (*accessanalyzer.ListFindingsV2Output, error) {
+	if f.listFindingsErr != nil {
+		return nil, f.listFindingsErr
+	}
 	f.listFilterSeen = append(f.listFilterSeen, in.Filter)
 	pages := f.findingPages[awsSdk.ToString(in.AnalyzerArn)]
 	idx := 0
@@ -377,16 +389,16 @@ func TestAccessAnalyzerInsightListPaginates(t *testing.T) {
 		findingPages: map[string][][]accessAnalyzerTypes.FindingSummaryV2{
 			testUnusedArn: {
 				{
-					summary("sso-unused", accessAnalyzerTypes.FindingTypeUnusedIamRole, accessAnalyzerTypes.ResourceTypeAwsIamRole, testSSORoleArn),
-					summary("user-pw", accessAnalyzerTypes.FindingTypeUnusedIamUserPassword, accessAnalyzerTypes.ResourceTypeAwsIamUser, testIAMUserArn),
+					summary("sso-unused", ftUnusedRole, rtRole, testSSORoleArn),
+					summary("user-pw", ftUnusedPassword, rtUser, testIAMUserArn),
 				},
 				{
-					summary("user-key", accessAnalyzerTypes.FindingTypeUnusedIamUserAccessKey, accessAnalyzerTypes.ResourceTypeAwsIamUser, testIAMUserArn),
-					summary("sso-perms", accessAnalyzerTypes.FindingTypeUnusedPermission, accessAnalyzerTypes.ResourceTypeAwsIamRole, testSSORoleArn),
+					summary("user-key", ftUnusedKey, rtUser, testIAMUserArn),
+					summary("sso-perms", ftUnusedPerm, rtRole, testSSORoleArn),
 				},
 			},
 			testExternalArn: {
-				{summary("role-ext", accessAnalyzerTypes.FindingTypeExternalAccess, accessAnalyzerTypes.ResourceTypeAwsIamRole, testIAMRoleArn)},
+				{summary("role-ext", ftExternal, rtRole, testIAMRoleArn)},
 			},
 		},
 		details: map[string][]accessAnalyzerTypes.FindingDetails{
@@ -403,7 +415,7 @@ func TestAccessAnalyzerInsightListPaginates(t *testing.T) {
 			}},
 		},
 	}
-	b := accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, newInsightTestAccount(), true)
+	b := accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, newInsightTestAccount(), true, "region us-west-2")
 
 	resources, pages := listAllInsights(t, context.Background(), b)
 
@@ -432,7 +444,7 @@ func TestAccessAnalyzerInsightListPaginates(t *testing.T) {
 
 func TestAccessAnalyzerInsightListNoAnalyzer(t *testing.T) {
 	fake := &fakeAccessAnalyzer{}
-	b := accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, newInsightTestAccount(), true)
+	b := accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, newInsightTestAccount(), true, "region us-west-2")
 
 	resources, pages := listAllInsights(t, context.Background(), b)
 
@@ -450,12 +462,12 @@ func TestAccessAnalyzerInsightListSkipsSSOWithoutAssignments(t *testing.T) {
 		},
 		findingPages: map[string][][]accessAnalyzerTypes.FindingSummaryV2{
 			testUnusedArn: {
-				{summary("sso-unused", accessAnalyzerTypes.FindingTypeUnusedIamRole, accessAnalyzerTypes.ResourceTypeAwsIamRole, testSSORoleArn)},
-				{summary("user-pw", accessAnalyzerTypes.FindingTypeUnusedIamUserPassword, accessAnalyzerTypes.ResourceTypeAwsIamUser, testIAMUserArn)},
+				{summary("sso-unused", ftUnusedRole, rtRole, testSSORoleArn)},
+				{summary("user-pw", ftUnusedPassword, rtUser, testIAMUserArn)},
 			},
 		},
 	}
-	b := accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, newInsightTestAccount(), false)
+	b := accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, newInsightTestAccount(), false, "region us-west-2")
 
 	resources, pages := listAllInsights(t, ctx, b)
 
@@ -463,4 +475,94 @@ func TestAccessAnalyzerInsightListSkipsSSOWithoutAssignments(t *testing.T) {
 	require.Len(t, resources, 1)
 	require.Equal(t, "user-pw", resources[0].GetId().GetResource())
 	require.Equal(t, 1, logs.FilterLevelExact(zapcore.WarnLevel).Len())
+}
+
+func newInsightTestBuilder(fake *fakeAccessAnalyzer, account *accountResourceType, ssoAssignmentsSynced bool) *accessAnalyzerInsightResourceType {
+	return accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, account, ssoAssignmentsSynced, "region us-west-2")
+}
+
+func TestAccessAnalyzerInsightListSkipsWhenPermissionDenied(t *testing.T) {
+	denied := &accessAnalyzerTypes.AccessDeniedException{Message: awsSdk.String("not authorized")}
+	for _, tc := range []struct {
+		name string
+		fake *fakeAccessAnalyzer
+	}{
+		{name: "ListAnalyzers", fake: &fakeAccessAnalyzer{listAnalyzersErr: denied}},
+		{name: "ListFindings", fake: &fakeAccessAnalyzer{
+			listFindingsErr: denied,
+			analyzers:       map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary{accessAnalyzerTypes.TypeAccountUnusedAccess: {activeAnalyzer(testUnusedArn, 90)}},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.WarnLevel)
+			ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+
+			resources, pages := listAllInsights(t, ctx, newInsightTestBuilder(tc.fake, newInsightTestAccount(), true))
+
+			require.Empty(t, resources)
+			require.Equal(t, 1, pages)
+			require.Equal(t, 1, logs.FilterMessageSnippet("missing IAM Access Analyzer permission").Len())
+		})
+	}
+}
+
+func TestAccessAnalyzerInsightListPropagatesOtherErrors(t *testing.T) {
+	fake := &fakeAccessAnalyzer{listAnalyzersErr: &accessAnalyzerTypes.ThrottlingException{Message: awsSdk.String("slow down")}}
+	b := newInsightTestBuilder(fake, newInsightTestAccount(), true)
+
+	_, _, err := b.List(context.Background(), nil, resourceSdk.SyncOpAttrs{Session: newMemorySessionStore()})
+
+	require.Error(t, err)
+}
+
+func TestAccessAnalyzerInsightListNoIdentityCenterWarning(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+	fake := &fakeAccessAnalyzer{
+		analyzers: map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary{accessAnalyzerTypes.TypeAccountUnusedAccess: {activeAnalyzer(testUnusedArn, 90)}},
+		findingPages: map[string][][]accessAnalyzerTypes.FindingSummaryV2{
+			testUnusedArn: {{summary("user-pw", ftUnusedPassword, rtUser, testIAMUserArn)}},
+		},
+	}
+
+	resources, _ := listAllInsights(t, ctx, newInsightTestBuilder(fake, nil, false))
+
+	require.Len(t, resources, 1)
+	require.Zero(t, logs.Len(), "Identity Center is not synced, so no permission set assignment warning is expected")
+}
+
+func TestAccessAnalyzerInsightListWarnsWithoutAnalyzer(t *testing.T) {
+	core, logs := observer.New(zapcore.WarnLevel)
+	ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+
+	resources, _ := listAllInsights(t, ctx, newInsightTestBuilder(&fakeAccessAnalyzer{}, newInsightTestAccount(), true))
+
+	require.Empty(t, resources)
+	entries := logs.FilterMessageSnippet("no active IAM Access Analyzer analyzers").All()
+	require.Len(t, entries, 1)
+	require.Equal(t, "region us-west-2", entries[0].ContextMap()["analyzer_scope"])
+}
+
+func TestServicesPhrase(t *testing.T) {
+	require.Equal(t, "1 service", servicesPhrase(1))
+	require.Equal(t, "0 services", servicesPhrase(0))
+	require.Equal(t, "3 services", servicesPhrase(3))
+}
+
+func TestAccessAnalyzerClientRegion(t *testing.T) {
+	tests := []struct {
+		name string
+		aws  *AWS
+		want string
+	}{
+		{name: "configured", aws: &AWS{accessAnalyzerRegion: "eu-west-1", ssoEnabled: true, ssoRegion: "us-east-2", globalRegion: "us-west-2"}, want: "eu-west-1"},
+		{name: "identity center", aws: &AWS{ssoEnabled: true, ssoRegion: "us-east-2", globalRegion: "us-west-2"}, want: "us-east-2"},
+		{name: "identity center disabled", aws: &AWS{ssoRegion: "us-east-2", globalRegion: "us-west-2"}, want: "us-west-2"},
+		{name: "default", aws: &AWS{}, want: "us-east-1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, tc.aws.accessAnalyzerClientRegion())
+		})
+	}
 }

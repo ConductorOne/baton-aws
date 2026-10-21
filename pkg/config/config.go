@@ -137,7 +137,7 @@ var (
 		field.WithDescription(
 			"Sync active IAM Access Analyzer unused-access and external-access findings as security insights on "+
 				"permission set assignments, IAM users, and IAM roles. Read-only; requires access-analyzer:ListAnalyzers, "+
-				"access-analyzer:ListFindingsV2, and access-analyzer:GetFindingV2. Disabled by default.",
+				"access-analyzer:ListFindings, and access-analyzer:GetFinding. Disabled by default.",
 		),
 		field.WithDefaultValue(false),
 	)

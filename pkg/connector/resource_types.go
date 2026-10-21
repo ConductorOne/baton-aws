@@ -310,8 +310,9 @@ var (
 			&v2.OptInRequired{},
 			capabilityPermissions(
 				"access-analyzer:ListAnalyzers",
-				"access-analyzer:ListFindingsV2",
-				"access-analyzer:GetFindingV2",
+				// ListFindingsV2 and GetFindingV2 are authorized by the V1 action names.
+				"access-analyzer:ListFindings",
+				"access-analyzer:GetFinding",
 			),
 		),
 	}
