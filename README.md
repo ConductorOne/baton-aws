@@ -56,6 +56,8 @@ Set `--sync-resource-tags` to publish AWS resource tags on accounts, IAM users, 
 
 Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and `--sync-sso-user-last-login`, and grant `cloudtrail:LookupEvents` to report those sign-ins.
 
+Set `--sync-access-analyzer-insights` to sync active IAM Access Analyzer findings as `security-insight` resources (`TRAIT_SECURITY_INSIGHT`). Unused-access findings on Identity Center (`AWSReservedSSO_*`) roles target the matching `permission_set_assignment` and are labeled "All assignees", because the role is shared by everyone assigned that permission set in the account; they are skipped when `permission_set_assignment` is not synced. Findings on other IAM roles target the `role`; findings on IAM users target the IAM user, matched by ARN. Organization analyzers are preferred over account analyzers. Use `--access-analyzer-account-id` and `--access-analyzer-region` when the analyzers live in a delegated administrator account or another region. The connector only calls `ListAnalyzers`, `ListFindingsV2` and `GetFindingV2`, which IAM authorizes as `access-analyzer:ListAnalyzers`, `access-analyzer:ListFindings` and `access-analyzer:GetFinding`. If one of those permissions is missing, the sync fails: reporting no insights would make ConductorOne delete the insights from earlier syncs.
+
 `baton-aws` also supports account provisioning and deprovisioning for AWS IAM Identity Center (SSO) users via the Identity Store API. See the "Syncing and Provisioning all supported objects" IAM policy below for the required permissions.
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
@@ -124,6 +126,8 @@ Available Commands:
   help               Help about any command
 
 Flags:
+      --access-analyzer-account-id string                Account that owns the analyzers, such as the organization's Access Analyzer delegated administrator. Leave empty to use the connector's account. A different account is reached by assuming the IAM assume role name in it. ($BATON_ACCESS_ANALYZER_ACCOUNT_ID)
+      --access-analyzer-region string                    Region of the analyzers. Leave empty to use the Identity Center region when Identity Center is enabled, otherwise the connector's region or us-east-1. ($BATON_ACCESS_ANALYZER_REGION)
       --auth-method string                               ($BATON_AUTH_METHOD)
       --client-id string                                 The client ID used to authenticate with ConductorOne ($BATON_CLIENT_ID)
       --client-secret string                             The client secret used to authenticate with ConductorOne ($BATON_CLIENT_SECRET)
@@ -159,6 +163,7 @@ Flags:
       --skip-entitlements-and-grants                     This must be set to skip syncing of entitlements and grants ($BATON_SKIP_ENTITLEMENTS_AND_GRANTS)
       --skip-full-sync                                   This must be set to skip a full sync ($BATON_SKIP_FULL_SYNC)
       --storage-engine string                            The storage engine to use when opening the sync c1z file: sqlite or pebble. Defaults to pebble when unset. ($BATON_STORAGE_ENGINE)
+      --sync-access-analyzer-insights                    Sync active IAM Access Analyzer unused-access and external-access findings as security insights on permission set assignments, IAM users, and IAM roles. Read-only; requires access-analyzer:ListAnalyzers, access-analyzer:ListFindings, and access-analyzer:GetFinding. Disabled by default. ($BATON_SYNC_ACCESS_ANALYZER_INSIGHTS)
       --sync-iam-user-console-access                     Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default. ($BATON_SYNC_IAM_USER_CONSOLE_ACCESS)
       --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
       --sync-resource-tags                               Sync AWS resource tags onto accounts, IAM users, and IAM roles as the aws_tags profile field. Tags are not returned by the List APIs, so this costs at least one extra API call per resource. ($BATON_SYNC_RESOURCE_TAGS)
@@ -272,6 +277,17 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
+        "access-analyzer:ListAnalyzers",
+        "access-analyzer:ListFindings",
+        "access-analyzer:GetFinding"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Optional: only needed with --sync-access-analyzer-insights, in the account that owns the analyzers.
+      "Sid": "AccessAnalyzerInsights"
+    },
+    {
+      "Action": [
         "organizations:ListRoots",
         "organizations:ListOrganizationalUnitsForParent"
       ],
@@ -382,6 +398,17 @@ _These policies have comments prefixed with // that need to be removed before us
       "Resource": "*",
       // Optional: only needed with --sync-sso-user-last-login.
       "Sid": "SSOUserLastLogin"
+    },
+    {
+      "Action": [
+        "access-analyzer:ListAnalyzers",
+        "access-analyzer:ListFindings",
+        "access-analyzer:GetFinding"
+      ],
+      "Effect": "Allow",
+      "Resource": "*",
+      // Optional: only needed with --sync-access-analyzer-insights, in the account that owns the analyzers.
+      "Sid": "AccessAnalyzerInsights"
     },
     {
       "Action": [

@@ -225,6 +225,24 @@
       "boolField": {}
     },
     {
+      "name": "sync-access-analyzer-insights",
+      "displayName": "Sync IAM Access Analyzer Insights",
+      "description": "Sync active IAM Access Analyzer unused-access and external-access findings as security insights on permission set assignments, IAM users, and IAM roles. Read-only; requires access-analyzer:ListAnalyzers, access-analyzer:ListFindings, and access-analyzer:GetFinding. Disabled by default.",
+      "boolField": {}
+    },
+    {
+      "name": "access-analyzer-account-id",
+      "displayName": "IAM Access Analyzer Account ID",
+      "description": "Account that owns the analyzers, such as the organization's Access Analyzer delegated administrator. Leave empty to use the connector's account. A different account is reached by assuming the IAM assume role name in it.",
+      "stringField": {}
+    },
+    {
+      "name": "access-analyzer-region",
+      "displayName": "IAM Access Analyzer Region",
+      "description": "Region of the analyzers. Leave empty to use the Identity Center region when Identity Center is enabled, otherwise the connector's region or us-east-1.",
+      "stringField": {}
+    },
+    {
       "name": "sync-iam-user-console-access",
       "displayName": "Sync IAM User Console Access",
       "description": "Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default.",
@@ -265,6 +283,16 @@
       ],
       "secondaryFieldNames": [
         "role-arn"
+      ]
+    },
+    {
+      "kind": "CONSTRAINT_KIND_DEPENDENT_ON",
+      "fieldNames": [
+        "access-analyzer-account-id",
+        "access-analyzer-region"
+      ],
+      "secondaryFieldNames": [
+        "sync-access-analyzer-insights"
       ]
     },
     {

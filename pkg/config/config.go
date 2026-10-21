@@ -131,6 +131,29 @@ var (
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
 	)
+	SyncAccessAnalyzerInsights = field.BoolField(
+		"sync-access-analyzer-insights",
+		field.WithDisplayName("Sync IAM Access Analyzer Insights"),
+		field.WithDescription(
+			"Sync active IAM Access Analyzer unused-access and external-access findings as security insights on "+
+				"permission set assignments, IAM users, and IAM roles. Read-only; requires access-analyzer:ListAnalyzers, "+
+				"access-analyzer:ListFindings, and access-analyzer:GetFinding. Disabled by default.",
+		),
+		field.WithDefaultValue(false),
+	)
+	AccessAnalyzerAccountID = field.StringField(
+		"access-analyzer-account-id",
+		field.WithDisplayName("IAM Access Analyzer Account ID"),
+		field.WithDescription(
+			"Account that owns the analyzers, such as the organization's Access Analyzer delegated administrator. "+
+				"Leave empty to use the connector's account. A different account is reached by assuming the IAM assume role name in it.",
+		),
+	)
+	AccessAnalyzerRegion = field.StringField(
+		"access-analyzer-region",
+		field.WithDisplayName("IAM Access Analyzer Region"),
+		field.WithDescription("Region of the analyzers. Leave empty to use the Identity Center region when Identity Center is enabled, otherwise the connector's region or us-east-1."),
+	)
 	SyncIAMUserConsoleAccess = field.BoolField(
 		"sync-iam-user-console-access",
 		field.WithDisplayName("Sync IAM User Console Access"),
@@ -185,6 +208,9 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		SyncAccessAnalyzerInsights,
+		AccessAnalyzerAccountID,
+		AccessAnalyzerRegion,
 		SyncIAMUserConsoleAccess,
 		SyncOnlyAttachedPolicies,
 		SyncResourceTags,
@@ -197,6 +223,15 @@ var Config = field.NewConfiguration(
 			},
 			[]field.SchemaField{
 				RoleArnField,
+			},
+		),
+		field.FieldsDependentOn(
+			[]field.SchemaField{
+				AccessAnalyzerAccountID,
+				AccessAnalyzerRegion,
+			},
+			[]field.SchemaField{
+				SyncAccessAnalyzerInsights,
 			},
 		),
 		field.FieldsDependentOn(

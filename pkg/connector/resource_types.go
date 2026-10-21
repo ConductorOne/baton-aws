@@ -299,6 +299,23 @@ var (
 		),
 	}
 
+	// resourceTypeSecurityInsight carries IAM Access Analyzer findings as security insights.
+	// Registered only when sync-access-analyzer-insights is enabled.
+	resourceTypeSecurityInsight = &v2.ResourceType{
+		Id:          "security-insight",
+		DisplayName: "Security Insight",
+		Traits:      []v2.ResourceType_Trait{v2.ResourceType_TRAIT_SECURITY_INSIGHT},
+		Annotations: annotations.New(
+			&v2.SkipEntitlementsAndGrants{},
+			capabilityPermissions(
+				"access-analyzer:ListAnalyzers",
+				// ListFindingsV2 and GetFindingV2 are authorized by the V1 action names.
+				"access-analyzer:ListFindings",
+				"access-analyzer:GetFinding",
+			),
+		),
+	}
+
 	resourceTypeIAMPolicy = &v2.ResourceType{
 		Id:          "iam_policy",
 		DisplayName: "IAM Managed Policy",
