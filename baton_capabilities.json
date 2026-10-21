@@ -859,6 +859,12 @@
               },
               {
                 "permission": "organizations:DescribeAccount"
+              },
+              {
+                "permission": "sso:ListPermissionSets"
+              },
+              {
+                "permission": "cloudtrail:LookupEvents"
               }
             ]
           }
@@ -902,6 +908,12 @@
           },
           {
             "permission": "organizations:DescribeAccount"
+          },
+          {
+            "permission": "sso:ListPermissionSets"
+          },
+          {
+            "permission": "cloudtrail:LookupEvents"
           }
         ]
       },

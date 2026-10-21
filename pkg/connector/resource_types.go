@@ -253,6 +253,9 @@ var (
 				"sso:DescribeAccountAssignmentCreationStatus",
 				"sso:DescribeAccountAssignmentDeletionStatus",
 				"organizations:DescribeAccount",
+				// Event feeds. Only called when sync-permission-set-usage or sync-sso-user-last-login is enabled.
+				"sso:ListPermissionSets",
+				"cloudtrail:LookupEvents",
 			),
 		),
 	}

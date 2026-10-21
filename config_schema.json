@@ -225,6 +225,12 @@
       "boolField": {}
     },
     {
+      "name": "sync-permission-set-usage",
+      "displayName": "Sync permission set usage",
+      "description": "Report Identity Center session starts (console and CLI) per permission set assignment from CloudTrail in the Identity Center account and region. Requires cloudtrail:LookupEvents, sso:ListPermissionSets and sso:DescribePermissionSet.",
+      "boolField": {}
+    },
+    {
       "name": "sync-iam-user-console-access",
       "displayName": "Sync IAM User Console Access",
       "description": "Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default.",
@@ -271,6 +277,16 @@
       "kind": "CONSTRAINT_KIND_DEPENDENT_ON",
       "fieldNames": [
         "global-aws-cross-account-iam-enabled"
+      ],
+      "secondaryFieldNames": [
+        "global-aws-orgs-enabled",
+        "global-aws-sso-enabled"
+      ]
+    },
+    {
+      "kind": "CONSTRAINT_KIND_DEPENDENT_ON",
+      "fieldNames": [
+        "sync-permission-set-usage"
       ],
       "secondaryFieldNames": [
         "global-aws-orgs-enabled",
