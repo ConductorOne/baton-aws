@@ -242,15 +242,15 @@ Enable **Sync IAM Access Analyzer Insights** (`BATON_SYNC_ACCESS_ANALYZER_INSIGH
 
 | Finding | Shown on | Severity | Example |
 | :--- | :--- | :--- | :--- |
-| Unused role (Identity Center) | The permission set assignment for that permission set and account | Medium | All assignees: no activity on PowerUserAccess in 123456789012 in the last 90 days |
-| Unused permissions (Identity Center) | The permission set assignment | Low | All assignees: unused permissions in 3 services on PowerUserAccess in 123456789012 in the last 90 days |
+| Unused role (Identity Center) | The permission set assignment for that permission set and account | Medium | All assignees: no activity on PowerUserAccess in Production in the last 90 days |
+| Unused permissions (Identity Center) | The permission set assignment | Low | All assignees: unused permissions in 3 services on PowerUserAccess in Production in the last 90 days |
 | Unused console password | The IAM user | Medium | Console password unused for 90+ days |
 | Unused access key | The IAM user | Medium | Access key …4321 unused for 90+ days |
 | Unused permissions | The IAM user or IAM role | Low | Unused permissions in 2 services in the last 90 days |
 | Unused role | The IAM role | Medium | Role unused in the last 90 days |
 | External access | The IAM role | High | Trusted by external principal account …4321 |
 
-The number of days is the analyzer's unused access age.
+The number of days is the analyzer's unused access age. The account is shown by its AWS Organizations name, or by its ID when the name cannot be read. When a finding lists more services than the connector reads, the count is shown as "at least" that number.
 
 **"All assignees" means pooled activity.** Identity Center grants a permission set in an account through one shared `AWSReservedSSO_*` role, so Access Analyzer can only report whether *anyone* assigned that permission set used it. These insights never say whether a specific person used the access.
 
@@ -264,7 +264,7 @@ Identity Center insights require the opt-in Permission Set Assignment resource (
 2. Grant `access-analyzer:ListAnalyzers`, `access-analyzer:ListFindings` and `access-analyzer:GetFinding` to the role the connector uses in the account that owns the analyzers. These action names also authorize the `ListFindingsV2` and `GetFindingV2` APIs.
 3. If the analyzers live in a delegated administrator account, set **IAM Access Analyzer Account ID** (`BATON_ACCESS_ANALYZER_ACCOUNT_ID`). The connector assumes the **IAM assume role name** (default `OrganizationAccountAccessRole`) in that account, so that role needs the permissions from step 2. Without **IAM Access Analyzer Region** (`BATON_ACCESS_ANALYZER_REGION`), the connector reads analyzers in the Identity Center region when Identity Center is enabled, otherwise in the connector's region or `us-east-1`.
 
-If no active analyzer exists, or a required Access Analyzer permission is missing, the connector logs a warning and syncs no insights; the rest of the sync is unaffected.
+If no active analyzer exists, the connector logs a warning and syncs no insights. If a required Access Analyzer permission is missing, the sync fails rather than reporting no insights, so insights from earlier syncs are not removed.
 
 ### What this does not do
 

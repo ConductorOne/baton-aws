@@ -970,9 +970,6 @@
             "@type": "type.googleapis.com/c1.connector.v2.SkipEntitlementsAndGrants"
           },
           {
-            "@type": "type.googleapis.com/c1.connector.v2.OptInRequired"
-          },
-          {
             "@type": "type.googleapis.com/c1.connector.v2.CapabilityPermissions",
             "permissions": [
               {
@@ -1003,8 +1000,7 @@
             "permission": "access-analyzer:GetFinding"
           }
         ]
-      },
-      "optInRequired": true
+      }
     },
     {
       "resourceType": {

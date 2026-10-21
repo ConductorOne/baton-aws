@@ -2,12 +2,15 @@ package connector
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/accessanalyzer"
 	accessAnalyzerTypes "github.com/aws/aws-sdk-go-v2/service/accessanalyzer/types"
+	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
+	awsOrgsTypes "github.com/aws/aws-sdk-go-v2/service/organizations/types"
 	awsSsoAdmin "github.com/aws/aws-sdk-go-v2/service/ssoadmin"
 	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
@@ -19,6 +22,8 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -285,11 +290,14 @@ func TestDescribeExternalPrincipal(t *testing.T) {
 type fakeAccessAnalyzer struct {
 	listAnalyzersErr error
 	listFindingsErr  error
-	analyzers        map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary
-	findingPages     map[string][][]accessAnalyzerTypes.FindingSummaryV2
-	details          map[string][]accessAnalyzerTypes.FindingDetails
-	getFindingIDs    []string
-	listFilterSeen   []map[string]accessAnalyzerTypes.Criterion
+	getFindingErr    error
+	// endlessDetails makes every GetFindingV2 response report another page.
+	endlessDetails bool
+	analyzers      map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary
+	findingPages   map[string][][]accessAnalyzerTypes.FindingSummaryV2
+	details        map[string][]accessAnalyzerTypes.FindingDetails
+	getFindingIDs  []string
+	listFilterSeen []map[string]accessAnalyzerTypes.Criterion
 }
 
 func (f *fakeAccessAnalyzer) ListAnalyzers(_ context.Context, in *accessanalyzer.ListAnalyzersInput, _ ...func(*accessanalyzer.Options)) (*accessanalyzer.ListAnalyzersOutput, error) {
@@ -321,7 +329,14 @@ func (f *fakeAccessAnalyzer) ListFindingsV2(_ context.Context, in *accessanalyze
 
 func (f *fakeAccessAnalyzer) GetFindingV2(_ context.Context, in *accessanalyzer.GetFindingV2Input, _ ...func(*accessanalyzer.Options)) (*accessanalyzer.GetFindingV2Output, error) {
 	f.getFindingIDs = append(f.getFindingIDs, awsSdk.ToString(in.Id))
-	return &accessanalyzer.GetFindingV2Output{FindingDetails: f.details[awsSdk.ToString(in.Id)]}, nil
+	if f.getFindingErr != nil {
+		return nil, f.getFindingErr
+	}
+	out := &accessanalyzer.GetFindingV2Output{FindingDetails: f.details[awsSdk.ToString(in.Id)]}
+	if f.endlessDetails {
+		out.NextToken = awsSdk.String(fmt.Sprintf("page-%d", len(f.getFindingIDs)))
+	}
+	return out, nil
 }
 
 func activeAnalyzer(arn string, age int32) accessAnalyzerTypes.AnalyzerSummary {
@@ -481,29 +496,79 @@ func newInsightTestBuilder(fake *fakeAccessAnalyzer, account *accountResourceTyp
 	return accessAnalyzerInsightBuilder(func(context.Context) (accessAnalyzerAPI, error) { return fake, nil }, account, ssoAssignmentsSynced, "region us-west-2")
 }
 
-func TestAccessAnalyzerInsightListSkipsWhenPermissionDenied(t *testing.T) {
+// A denied call must fail the sync: an empty insight list would make C1 delete every insight
+// synced before the permission was lost.
+func TestAccessAnalyzerInsightListFailsWhenPermissionDenied(t *testing.T) {
 	denied := &accessAnalyzerTypes.AccessDeniedException{Message: awsSdk.String("not authorized")}
+	withAnalyzer := map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary{
+		accessAnalyzerTypes.TypeAccountUnusedAccess: {activeAnalyzer(testUnusedArn, 90)},
+	}
 	for _, tc := range []struct {
 		name string
 		fake *fakeAccessAnalyzer
 	}{
 		{name: "ListAnalyzers", fake: &fakeAccessAnalyzer{listAnalyzersErr: denied}},
-		{name: "ListFindings", fake: &fakeAccessAnalyzer{
-			listFindingsErr: denied,
-			analyzers:       map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary{accessAnalyzerTypes.TypeAccountUnusedAccess: {activeAnalyzer(testUnusedArn, 90)}},
+		{name: "ListFindings", fake: &fakeAccessAnalyzer{listFindingsErr: denied, analyzers: withAnalyzer}},
+		{name: "GetFinding", fake: &fakeAccessAnalyzer{
+			getFindingErr: denied,
+			analyzers:     withAnalyzer,
+			findingPages: map[string][][]accessAnalyzerTypes.FindingSummaryV2{
+				testUnusedArn: {{summary("sso-perms", ftUnusedPerm, rtRole, testSSORoleArn)}},
+			},
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			core, logs := observer.New(zapcore.WarnLevel)
-			ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+			ss := newMemorySessionStore()
+			require.NoError(t, session.SetJSON(context.Background(), ss, allPermissionSetIDsCacheKey, []string{testPermissionSetArn}))
 
-			resources, pages := listAllInsights(t, ctx, newInsightTestBuilder(tc.fake, newInsightTestAccount(), true))
+			_, _, err := newInsightTestBuilder(tc.fake, newInsightTestAccount(), true).List(context.Background(), nil, resourceSdk.SyncOpAttrs{Session: ss})
 
-			require.Empty(t, resources)
-			require.Equal(t, 1, pages)
-			require.Equal(t, 1, logs.FilterMessageSnippet("missing IAM Access Analyzer permission").Len())
+			require.Equal(t, codes.PermissionDenied, status.Code(err))
 		})
 	}
+}
+
+func TestAccessAnalyzerInsightListUsesAccountName(t *testing.T) {
+	account := newInsightTestAccount()
+	account.orgClient = &fakeOrgs{listAccountsFn: func(*awsOrgs.ListAccountsInput) (*awsOrgs.ListAccountsOutput, error) {
+		return &awsOrgs.ListAccountsOutput{Accounts: []awsOrgsTypes.Account{{Id: awsSdk.String(testAccountID), Name: awsSdk.String("staging")}}}, nil
+	}}
+	fake := &fakeAccessAnalyzer{
+		analyzers: map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary{
+			accessAnalyzerTypes.TypeAccountUnusedAccess: {activeAnalyzer(testUnusedArn, 90)},
+		},
+		findingPages: map[string][][]accessAnalyzerTypes.FindingSummaryV2{
+			testUnusedArn: {{summary("sso-unused", ftUnusedRole, rtRole, testSSORoleArn)}},
+		},
+	}
+
+	resources, _ := listAllInsights(t, context.Background(), newInsightTestBuilder(fake, account, true))
+
+	require.Len(t, resources, 1)
+	require.Equal(t, "All assignees: no activity on PowerUserAccess in staging in the last 90 days", insightTrait(t, resources[0]).GetIssue().GetValue())
+}
+
+func TestAccessAnalyzerInsightListTruncatedDetails(t *testing.T) {
+	fake := &fakeAccessAnalyzer{
+		endlessDetails: true,
+		analyzers: map[accessAnalyzerTypes.Type][]accessAnalyzerTypes.AnalyzerSummary{
+			accessAnalyzerTypes.TypeAccountUnusedAccess: {activeAnalyzer(testUnusedArn, 90)},
+		},
+		findingPages: map[string][][]accessAnalyzerTypes.FindingSummaryV2{
+			testUnusedArn: {{summary("role-perms", ftUnusedPerm, rtRole, testIAMRoleArn)}},
+		},
+		details: map[string][]accessAnalyzerTypes.FindingDetails{
+			"role-perms": {&accessAnalyzerTypes.FindingDetailsMemberUnusedPermissionDetails{
+				Value: accessAnalyzerTypes.UnusedPermissionDetails{ServiceNamespace: awsSdk.String("s3")},
+			}},
+		},
+	}
+
+	resources, _ := listAllInsights(t, context.Background(), newInsightTestBuilder(fake, newInsightTestAccount(), true))
+
+	require.Len(t, resources, 1)
+	require.Equal(t, "Unused permissions in at least 1 service in the last 90 days", insightTrait(t, resources[0]).GetIssue().GetValue())
+	require.Len(t, fake.getFindingIDs, accessAnalyzerMaxDetailPages)
 }
 
 func TestAccessAnalyzerInsightListPropagatesOtherErrors(t *testing.T) {
@@ -544,9 +609,10 @@ func TestAccessAnalyzerInsightListWarnsWithoutAnalyzer(t *testing.T) {
 }
 
 func TestServicesPhrase(t *testing.T) {
-	require.Equal(t, "1 service", servicesPhrase(1))
-	require.Equal(t, "0 services", servicesPhrase(0))
-	require.Equal(t, "3 services", servicesPhrase(3))
+	require.Equal(t, "1 service", servicesPhrase(accessAnalyzerFinding{UnusedServices: []string{"s3"}}))
+	require.Equal(t, "0 services", servicesPhrase(accessAnalyzerFinding{}))
+	require.Equal(t, "3 services", servicesPhrase(accessAnalyzerFinding{UnusedServices: []string{"ec2", "s3", "sqs"}}))
+	require.Equal(t, "at least 3 services", servicesPhrase(accessAnalyzerFinding{UnusedServices: []string{"ec2", "s3", "sqs"}, UnusedServicesTruncated: true}))
 }
 
 func TestAccessAnalyzerClientRegion(t *testing.T) {

@@ -17,8 +17,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/types/sessions"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 )
 
 const (
@@ -86,10 +84,12 @@ type accessAnalyzerFinding struct {
 	AnalyzedAt    time.Time
 	UnusedAgeDays int32
 
-	UnusedServices     []string
-	AccessKeyID        string
-	ExternalPrincipals map[string]string
-	ExternalIsPublic   bool
+	UnusedServices []string
+	// UnusedServicesTruncated reports that detail pages were capped, so UnusedServices is a lower bound.
+	UnusedServicesTruncated bool
+	AccessKeyID             string
+	ExternalPrincipals      map[string]string
+	ExternalIsPublic        bool
 }
 
 // insightJoinIndex is what a finding is joined against to find its C1 target.
@@ -98,6 +98,8 @@ type insightJoinIndex struct {
 	permissionSetArnByName map[string]string
 	// ssoAssignmentsSynced reports whether permission_set_assignment resources exist this sync.
 	ssoAssignmentsSynced bool
+	// accountNameByID holds Organizations account names for display; a missing name falls back to the id.
+	accountNameByID map[string]string
 }
 
 type accessAnalyzerInsightResourceType struct {
@@ -107,6 +109,7 @@ type accessAnalyzerInsightResourceType struct {
 	ssoAssignmentsSynced bool
 	// analyzerScope names where analyzers are read from, for logs (for example "region us-east-2").
 	analyzerScope string
+	orgAccounts   orgAccountNameCache
 }
 
 func (o *accessAnalyzerInsightResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -129,7 +132,7 @@ func (o *accessAnalyzerInsightResourceType) List(ctx context.Context, _ *v2.Reso
 	if opts.PageToken.Token == "" {
 		state.Analyzers, err = selectAccessAnalyzers(ctx, client)
 		if err != nil {
-			return nil, nil, o.skipIfDenied(ctx, err)
+			return nil, nil, err
 		}
 		if len(state.Analyzers) == 0 {
 			l.Warn("baton-aws: no active IAM Access Analyzer analyzers found; no access analyzer insights will be synced",
@@ -158,12 +161,12 @@ func (o *accessAnalyzerInsightResourceType) List(ctx context.Context, _ *v2.Reso
 	}
 	resp, err := client.ListFindingsV2(ctx, input)
 	if err != nil {
-		return nil, nil, o.skipIfDenied(ctx, wrapAWSError(fmt.Errorf("baton-aws: accessanalyzer.ListFindingsV2 failed: %w", err)))
+		return nil, nil, wrapAWSError(fmt.Errorf("baton-aws: accessanalyzer.ListFindingsV2 failed: %w", err))
 	}
 
 	index := insightJoinIndex{ssoAssignmentsSynced: o.ssoAssignmentsSynced}
 	if pageHasSSORoleFinding(resp.Findings) {
-		if index, err = o.joinIndex(ctx, opts.Session); err != nil {
+		if index, err = o.joinIndex(ctx, opts.Session, resp.Findings); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -174,7 +177,7 @@ func (o *accessAnalyzerInsightResourceType) List(ctx context.Context, _ *v2.Reso
 		finding := findingFromSummary(summary, analyzer.UnusedAgeDays)
 		if findingNeedsDetails(finding.FindingType) {
 			if err := fetchFindingDetails(ctx, client, analyzer.Arn, &finding); err != nil {
-				return nil, nil, o.skipIfDenied(ctx, err)
+				return nil, nil, err
 			}
 		}
 		resource, skipReason, err := insightFromFinding(finding, index)
@@ -219,20 +222,6 @@ func (o *accessAnalyzerInsightResourceType) Grants(_ context.Context, _ *v2.Reso
 	return nil, nil, nil
 }
 
-// skipIfDenied turns a missing Access Analyzer permission into an empty insight sync with a
-// warning, so an opted-in feature cannot fail the rest of the AWS sync. Other errors are returned.
-func (o *accessAnalyzerInsightResourceType) skipIfDenied(ctx context.Context, err error) error {
-	if status.Code(err) != codes.PermissionDenied {
-		return err
-	}
-	ctxzap.Extract(ctx).Warn("baton-aws: missing IAM Access Analyzer permission; no access analyzer insights will be synced. "+
-		"Grant access-analyzer:ListAnalyzers, access-analyzer:ListFindings and access-analyzer:GetFinding.",
-		zap.String("analyzer_scope", o.analyzerScope),
-		zap.Error(err),
-	)
-	return nil
-}
-
 func pageHasSSORoleFinding(findings []accessAnalyzerTypes.FindingSummaryV2) bool {
 	for _, f := range findings {
 		if f.ResourceType != accessAnalyzerTypes.ResourceTypeAwsIamRole {
@@ -249,7 +238,11 @@ func pageHasSSORoleFinding(findings []accessAnalyzerTypes.FindingSummaryV2) bool
 
 // joinIndex builds the permission set name → ARN index from the permission sets the account
 // builder already fetches, sharing its session cache.
-func (o *accessAnalyzerInsightResourceType) joinIndex(ctx context.Context, ss sessions.SessionStore) (insightJoinIndex, error) {
+func (o *accessAnalyzerInsightResourceType) joinIndex(
+	ctx context.Context,
+	ss sessions.SessionStore,
+	findings []accessAnalyzerTypes.FindingSummaryV2,
+) (insightJoinIndex, error) {
 	index := insightJoinIndex{ssoAssignmentsSynced: o.ssoAssignmentsSynced}
 	if o.account == nil || !o.ssoAssignmentsSynced {
 		return index, nil
@@ -273,7 +266,33 @@ func (o *accessAnalyzerInsightResourceType) joinIndex(ctx context.Context, ss se
 		return index, err
 	}
 	index.permissionSetArnByName = byName
+	index.accountNameByID = o.accountNames(ctx, ss, findings)
 	return index, nil
+}
+
+// accountNames resolves display names for the accounts that own the page's findings. A name is
+// decoration, so a failed lookup leaves the account out and the insight shows its id.
+func (o *accessAnalyzerInsightResourceType) accountNames(
+	ctx context.Context,
+	ss sessions.SessionStore,
+	findings []accessAnalyzerTypes.FindingSummaryV2,
+) map[string]string {
+	rv := map[string]string{}
+	for _, f := range findings {
+		id := awsSdk.ToString(f.ResourceOwnerAccount)
+		if id == "" {
+			continue
+		}
+		if _, done := rv[id]; done {
+			continue
+		}
+		name, found := getCachedAccountName(ctx, ss, id)
+		if !found && o.account.orgClient != nil {
+			name, _ = o.orgAccounts.lookup(ctx, o.account.orgClient, ss, id)
+		}
+		rv[id] = name
+	}
+	return rv
 }
 
 // selectAccessAnalyzers returns the active analyzers to read. An organization analyzer covers
@@ -376,11 +395,8 @@ func fetchFindingDetails(ctx context.Context, client accessAnalyzerAPI, analyzer
 		}
 		details = append(details, resp.FindingDetails...)
 	}
-	if paginator.HasMorePages() {
-		ctxzap.Extract(ctx).Debug("baton-aws: access analyzer finding details truncated; unused service count is a lower bound",
-			zap.Int("max_detail_pages", accessAnalyzerMaxDetailPages))
-	}
 	applyFindingDetails(finding, details)
+	finding.UnusedServicesTruncated = paginator.HasMorePages()
 	return nil
 }
 
@@ -507,14 +523,18 @@ func ssoRoleInsightContent(f accessAnalyzerFinding, psName string, account strin
 		ResourceType: resourceTypePermissionSetAssignment.Id,
 		Resource:     permissionSetAssignmentObjectID(psArn, account),
 	})}
+	accountDisplay := account
+	if name := index.accountNameByID[account]; name != "" {
+		accountDisplay = name
+	}
 	switch f.FindingType {
 	case accessAnalyzerTypes.FindingTypeUnusedIamRole:
 		c.severity, c.label = insightSeverityMedium, "Unused permission set"
-		c.value = fmt.Sprintf("All assignees: no activity on %s in %s in the last %d days", psName, account, age)
+		c.value = fmt.Sprintf("All assignees: no activity on %s in %s in the last %d days", psName, accountDisplay, age)
 	case accessAnalyzerTypes.FindingTypeUnusedPermission:
 		c.severity, c.label = insightSeverityLow, labelUnusedPermissions
 		c.value = fmt.Sprintf("All assignees: unused permissions in %s on %s in %s in the last %d days",
-			servicesPhrase(len(f.UnusedServices)), psName, account, age)
+			servicesPhrase(f), psName, accountDisplay, age)
 	default:
 		return insightContent{skip: skipUnsupportedFinding}
 	}
@@ -532,7 +552,7 @@ func roleInsightContent(f accessAnalyzerFinding, age int32) insightContent {
 		c.value = fmt.Sprintf("Role unused in the last %d days", age)
 	case accessAnalyzerTypes.FindingTypeUnusedPermission:
 		c.severity, c.label = insightSeverityLow, labelUnusedPermissions
-		c.value = fmt.Sprintf("Unused permissions in %s in the last %d days", servicesPhrase(len(f.UnusedServices)), age)
+		c.value = fmt.Sprintf("Unused permissions in %s in the last %d days", servicesPhrase(f), age)
 	case accessAnalyzerTypes.FindingTypeExternalAccess:
 		principal := describeExternalPrincipal(f.ExternalPrincipals, f.ExternalIsPublic)
 		if principal == "" {
@@ -562,7 +582,7 @@ func userInsightContent(f accessAnalyzerFinding, age int32) insightContent {
 		}
 	case accessAnalyzerTypes.FindingTypeUnusedPermission:
 		c.severity, c.label = insightSeverityLow, labelUnusedPermissions
-		c.value = fmt.Sprintf("Unused permissions in %s in the last %d days", servicesPhrase(len(f.UnusedServices)), age)
+		c.value = fmt.Sprintf("Unused permissions in %s in the last %d days", servicesPhrase(f), age)
 	default:
 		return insightContent{skip: skipUnsupportedFinding}
 	}
@@ -575,11 +595,15 @@ func parseFindingResource(resource string) (arn.ARN, bool) {
 	return parsed, err == nil
 }
 
-func servicesPhrase(n int) string {
-	if n == 1 {
-		return "1 service"
+func servicesPhrase(f accessAnalyzerFinding) string {
+	phrase := fmt.Sprintf("%d services", len(f.UnusedServices))
+	if len(f.UnusedServices) == 1 {
+		phrase = "1 service"
 	}
-	return fmt.Sprintf("%d services", n)
+	if f.UnusedServicesTruncated {
+		return "at least " + phrase
+	}
+	return phrase
 }
 
 // describeExternalPrincipal renders an external access principal for display. Account ids are
