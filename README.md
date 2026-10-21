@@ -56,6 +56,8 @@ Set `--sync-resource-tags` to publish AWS resource tags on accounts, IAM users, 
 
 Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and `--sync-sso-user-last-login`, and grant `cloudtrail:LookupEvents` to report those sign-ins.
 
+Set `--sync-permission-set-usage` to report which permission set each Identity Center user starts a session with, and in which account. A second event feed (`aws_permission_set_usage`) reads `Federate` (console) and `GetRoleCredentials` (CLI and SDK) events from CloudTrail event history in the Identity Center account and region, and emits one usage event per session start on the matching `permission_set_assignment`. Session starts for every account in the organization are logged there, so no member-account access is needed. The feed reads up to 90 days back, CloudTrail's event history limit. Events whose permission set no longer exists are skipped. It needs Organizations and Identity Center support plus `cloudtrail:LookupEvents`, `sso:ListPermissionSets` and `sso:DescribePermissionSet`, and is independent of `--sync-sso-user-last-login`. ConductorOne stores this usage per permission set assignment; request and review tasks currently show only app-level usage.
+
 `baton-aws` also supports account provisioning and deprovisioning for AWS IAM Identity Center (SSO) users via the Identity Store API. See the "Syncing and Provisioning all supported objects" IAM policy below for the required permissions.
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
@@ -161,6 +163,7 @@ Flags:
       --storage-engine string                            The storage engine to use when opening the sync c1z file: sqlite or pebble. Defaults to pebble when unset. ($BATON_STORAGE_ENGINE)
       --sync-iam-user-console-access                     Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default. ($BATON_SYNC_IAM_USER_CONSOLE_ACCESS)
       --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
+      --sync-permission-set-usage                        Report Identity Center session starts (console and CLI) per permission set assignment from CloudTrail in the Identity Center account and region. Requires cloudtrail:LookupEvents, sso:ListPermissionSets and sso:DescribePermissionSet. ($BATON_SYNC_PERMISSION_SET_USAGE)
       --sync-resource-tags                               Sync AWS resource tags onto accounts, IAM users, and IAM roles as the aws_tags profile field. Tags are not returned by the List APIs, so this costs at least one extra API call per resource. ($BATON_SYNC_RESOURCE_TAGS)
       --sync-resource-types strings                      The resource type IDs to sync ($BATON_SYNC_RESOURCE_TYPES)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
@@ -267,7 +270,7 @@ _These policies have comments prefixed with // that need to be removed before us
       ],
       "Effect": "Allow",
       "Resource": "*",
-      // Optional: only needed with --sync-sso-user-last-login.
+      // Optional: only needed with --sync-sso-user-last-login or --sync-permission-set-usage.
       "Sid": "SSOUserLastLogin"
     },
     {
@@ -380,7 +383,7 @@ _These policies have comments prefixed with // that need to be removed before us
       ],
       "Effect": "Allow",
       "Resource": "*",
-      // Optional: only needed with --sync-sso-user-last-login.
+      // Optional: only needed with --sync-sso-user-last-login or --sync-permission-set-usage.
       "Sid": "SSOUserLastLogin"
     },
     {
