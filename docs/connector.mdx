@@ -254,6 +254,8 @@ Identity Center logs these events centrally for every account in the organizatio
 
 Requirements: Organizations support, Identity Center support, and `cloudtrail:LookupEvents`, `sso:ListPermissionSets` and `sso:DescribePermissionSet` on the connector role. This setting is off by default and independent of **Sync SSO User Last Login**.
 
+Usage is recorded against the opt-in Permission Set Assignment resource (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings)), so it applies to the Permission Set Assignment entitlements. It is not attributed to the account-level permission set entitlements: those share the account resource, so a session could not be credited to one permission set.
+
 ## Gather AWS credentials
 
 Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
