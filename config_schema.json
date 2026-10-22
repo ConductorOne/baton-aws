@@ -226,7 +226,7 @@
     },
     {
       "name": "sync-permission-set-usage",
-      "displayName": "Sync permission set usage",
+      "displayName": "Sync Permission Set Usage",
       "description": "Report Identity Center session starts (console and CLI) per permission set assignment from CloudTrail in the Identity Center account and region. Requires cloudtrail:LookupEvents, sso:ListPermissionSets and sso:DescribePermissionSet.",
       "boolField": {}
     },

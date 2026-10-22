@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -28,6 +29,11 @@ const (
 	// cloudTrailEventHistoryLimit is how far back CloudTrail event history (LookupEvents) reaches.
 	cloudTrailEventHistoryLimit = 90 * 24 * time.Hour
 	cloudTrailLookupPageSize    = 50
+	// cloudTrailDeliveryLag keeps each window this far behind now. Events reach CloudTrail event
+	// history minutes after they happen, and a window never revisits time it has already read.
+	cloudTrailDeliveryLag = 15 * time.Minute
+	// permissionSetIndexTTL bounds how long the permission set name → ARN map is reused across pages.
+	permissionSetIndexTTL = time.Hour
 )
 
 // permissionSetUsageEventNames are the Identity Center session starts: Federate for the console,
@@ -61,14 +67,12 @@ type permissionSetUsageEventFeed struct {
 	now         func() time.Time
 
 	mu sync.Mutex
-	// psArnByName is reloaded at the start of each cycle and at most once more per cycle, on the
-	// first unknown permission set name.
+	// psArnByName is loaded when first needed and reused until permissionSetIndexTTL passes.
 	psArnByName map[string]string
-	loadedFor   string
-	retriedFor  string
+	loadedAt    time.Time
 }
 
-// permissionSetUsageCursor walks every event name across one fixed [Start, End) window, then
+// permissionSetUsageCursor walks every event name across one fixed [Start, End] window, then
 // starts the next window where this one ended.
 type permissionSetUsageCursor struct {
 	NameIndex int    `json:"name,omitempty"`
@@ -125,6 +129,14 @@ func (f *permissionSetUsageEventFeed) ListEvents(
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	if cursor.End == "" {
+		// Less than cloudTrailDeliveryLag has passed since the last window ended.
+		token, err := cursor.marshal()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, &pagination.StreamState{Cursor: token, HasMore: false}, nil, nil
+	}
 	start, err := time.Parse(time.RFC3339, cursor.Start)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("baton-aws: invalid permission set usage cursor start: %w", err)
@@ -132,10 +144,6 @@ func (f *permissionSetUsageEventFeed) ListEvents(
 	end, err := time.Parse(time.RFC3339, cursor.End)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("baton-aws: invalid permission set usage cursor end: %w", err)
-	}
-
-	if err := f.loadPermissionSets(ctx, cursor.End, false); err != nil {
-		return nil, nil, nil, err
 	}
 
 	input := &cloudtrail.LookupEventsInput{
@@ -151,6 +159,17 @@ func (f *permissionSetUsageEventFeed) ListEvents(
 		input.NextToken = awsSdk.String(cursor.NextToken)
 	}
 	resp, err := f.cloudTrail.LookupEvents(ctx, input)
+	var invalidToken *cloudtrailTypes.InvalidNextTokenException
+	if errors.As(err, &invalidToken) && cursor.NextToken != "" {
+		// A saved page token can expire while the feed is idle. Re-read the window from its first
+		// event name; C1 keeps the latest usage time, so re-reading is harmless.
+		ctxzap.Extract(ctx).Info("baton-aws: CloudTrail page token expired, re-reading the permission set usage window")
+		token, err := permissionSetUsageCursor{Start: cursor.Start, End: cursor.End}.marshal()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		return nil, &pagination.StreamState{Cursor: token, HasMore: true}, nil, nil
+	}
 	if err != nil {
 		return nil, nil, nil, wrapAWSError(fmt.Errorf("baton-aws: cloudtrail.LookupEvents failed: %w", err))
 	}
@@ -158,7 +177,7 @@ func (f *permissionSetUsageEventFeed) ListEvents(
 	events := make([]*v2.Event, 0, len(resp.Events))
 	skipped := map[string]int{}
 	for _, e := range resp.Events {
-		event, skip, err := f.usageEvent(ctx, e, cursor.End)
+		event, skip, err := f.usageEvent(ctx, e, end)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -193,8 +212,10 @@ func (f *permissionSetUsageEventFeed) ListEvents(
 	return events, &pagination.StreamState{Cursor: token, HasMore: next.End != ""}, nil, nil
 }
 
-// cursorFor decodes the stream token. A new cycle starts at the end of the previous one, or at
-// startAt on the first run, never earlier than CloudTrail's history limit, and ends now.
+// cursorFor decodes the stream token. A new window starts at the end of the previous one, or at
+// startAt on the first run, never earlier than CloudTrail's history limit, and ends
+// cloudTrailDeliveryLag before now. When that end is not after the start, the returned cursor
+// has no End and there is nothing to read yet.
 func (f *permissionSetUsageEventFeed) cursorFor(startAt *timestamppb.Timestamp, pToken *pagination.StreamToken) (*permissionSetUsageCursor, error) {
 	cursor := &permissionSetUsageCursor{}
 	if pToken != nil && pToken.Cursor != "" {
@@ -228,10 +249,11 @@ func (f *permissionSetUsageEventFeed) cursorFor(startAt *timestamppb.Timestamp, 
 	if start.Before(earliest) {
 		start = earliest
 	}
-	return &permissionSetUsageCursor{
-		Start: start.UTC().Format(time.RFC3339),
-		End:   now.Format(time.RFC3339),
-	}, nil
+	next := &permissionSetUsageCursor{Start: start.UTC().Format(time.RFC3339)}
+	if end := now.Add(-cloudTrailDeliveryLag); end.After(start) {
+		next.End = end.Format(time.RFC3339)
+	}
+	return next, nil
 }
 
 func (c permissionSetUsageCursor) marshal() (string, error) {
@@ -244,27 +266,28 @@ func (c permissionSetUsageCursor) marshal() (string, error) {
 
 // usageEvent maps a session start to a usage event on the permission set assignment, or returns a
 // skip reason. It never guesses a target it cannot resolve.
-func (f *permissionSetUsageEventFeed) usageEvent(ctx context.Context, e cloudtrailTypes.Event, cycle string) (*v2.Event, string, error) {
+func (f *permissionSetUsageEventFeed) usageEvent(ctx context.Context, e cloudtrailTypes.Event, windowEnd time.Time) (*v2.Event, string, error) {
 	ct, ok := parseUsageCloudTrailEvent(e)
 	if !ok {
 		return nil, usageSkipUnparseable, nil
 	}
-	if ct.UserIdentity.Type != "IdentityCenterUser" {
+	// AWS documents both types for authenticated Identity Center users; onBehalfOf identifies them.
+	if t := ct.UserIdentity.Type; t != "IdentityCenterUser" && t != "Unknown" {
 		return nil, usageSkipNotIdentityCenter, nil
 	}
 	behalf := ct.UserIdentity.OnBehalfOf
 	if behalf == nil || behalf.UserID == "" {
 		return nil, usageSkipNoUser, nil
 	}
-	identityStoreID := behalf.IdentityStoreArn[strings.LastIndex(behalf.IdentityStoreArn, "/")+1:]
-	if identityStoreID == "" {
+	_, identityStoreID, ok := strings.Cut(behalf.IdentityStoreArn, ":identitystore/")
+	if !ok || identityStoreID == "" || strings.Contains(identityStoreID, "/") {
 		return nil, usageSkipNoUser, nil
 	}
 	details, ok := parseUsageServiceEventDetails(ct.ServiceEventDetails)
 	if !ok || details.RoleName == "" || !usageAccountIDPattern.MatchString(details.AccountID) {
 		return nil, usageSkipNoAssignment, nil
 	}
-	psArn, err := f.permissionSetArn(ctx, details.RoleName, cycle)
+	psArn, err := f.permissionSetArn(ctx, details.RoleName, windowEnd)
 	if err != nil {
 		return nil, "", err
 	}
@@ -322,36 +345,30 @@ func parseUsageServiceEventDetails(raw json.RawMessage) (usageServiceEventDetail
 	return details, json.Unmarshal(raw, &details) == nil
 }
 
-func (f *permissionSetUsageEventFeed) permissionSetArn(ctx context.Context, name string, cycle string) (string, error) {
+// permissionSetArn resolves a permission set name. Names are fixed when a permission set is created,
+// so a name missing from a map loaded after windowEnd belongs to a deleted permission set; a map
+// loaded earlier may predate the permission set and is reloaded.
+func (f *permissionSetUsageEventFeed) permissionSetArn(ctx context.Context, name string, windowEnd time.Time) (string, error) {
 	f.mu.Lock()
-	psArn, ok := f.psArnByName[name]
-	retry := !ok && f.retriedFor != cycle
+	byName, loadedAt := f.psArnByName, f.loadedAt
 	f.mu.Unlock()
-	if ok || !retry {
-		return psArn, nil
+
+	if byName != nil && f.now().Sub(loadedAt) < permissionSetIndexTTL {
+		if psArn, ok := byName[name]; ok || !loadedAt.Before(windowEnd) {
+			return psArn, nil
+		}
 	}
-	if err := f.loadPermissionSets(ctx, cycle, true); err != nil {
+	byName, err := f.listPermissionSets(ctx)
+	if err != nil {
 		return "", err
 	}
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.psArnByName[name], nil
+	f.psArnByName, f.loadedAt = byName, f.now()
+	f.mu.Unlock()
+	return byName[name], nil
 }
 
-// loadPermissionSets builds the permission set name → ARN map once per cycle, or again when retry
-// is set and this cycle has not retried yet.
-func (f *permissionSetUsageEventFeed) loadPermissionSets(ctx context.Context, cycle string, retry bool) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if retry {
-		if f.retriedFor == cycle {
-			return nil
-		}
-		f.retriedFor = cycle
-	} else if f.loadedFor == cycle {
-		return nil
-	}
-
+func (f *permissionSetUsageEventFeed) listPermissionSets(ctx context.Context) (map[string]string, error) {
 	byName := map[string]string{}
 	paginator := awsSsoAdmin.NewListPermissionSetsPaginator(f.ssoAdmin, &awsSsoAdmin.ListPermissionSetsInput{
 		InstanceArn: awsSdk.String(f.instanceArn),
@@ -359,7 +376,7 @@ func (f *permissionSetUsageEventFeed) loadPermissionSets(ctx context.Context, cy
 	for paginator.HasMorePages() {
 		page, err := paginator.NextPage(ctx)
 		if err != nil {
-			return wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSets failed: %w", err))
+			return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.ListPermissionSets failed: %w", err))
 		}
 		for _, psArn := range page.PermissionSets {
 			resp, err := f.ssoAdmin.DescribePermissionSet(ctx, &awsSsoAdmin.DescribePermissionSetInput{
@@ -367,7 +384,7 @@ func (f *permissionSetUsageEventFeed) loadPermissionSets(ctx context.Context, cy
 				PermissionSetArn: awsSdk.String(psArn),
 			})
 			if err != nil {
-				return wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.DescribePermissionSet failed: %w", err))
+				return nil, wrapAWSError(fmt.Errorf("baton-aws: ssoadmin.DescribePermissionSet failed: %w", err))
 			}
 			if resp.PermissionSet == nil {
 				continue
@@ -377,7 +394,5 @@ func (f *permissionSetUsageEventFeed) loadPermissionSets(ctx context.Context, cy
 			}
 		}
 	}
-	f.psArnByName = byName
-	f.loadedFor = cycle
-	return nil
+	return byName, nil
 }

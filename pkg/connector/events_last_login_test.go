@@ -11,8 +11,10 @@ import (
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudtrail"
+	awsSsoAdminTypes "github.com/aws/aws-sdk-go-v2/service/ssoadmin/types"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -34,17 +36,23 @@ type stubCloudTrail struct {
 
 func (s *stubCloudTrail) client(t *testing.T) *cloudtrail.Client {
 	t.Helper()
+	// The handler runs on the server's goroutine, where require's FailNow is not allowed.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		require.NoError(t, err)
 		var req map[string]any
-		require.NoError(t, json.Unmarshal(body, &req))
+		body, err := io.ReadAll(r.Body)
+		if !assert.NoError(t, err) || !assert.NoError(t, json.Unmarshal(body, &req)) {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		s.requests = append(s.requests, req)
-		require.NotEmpty(t, s.responses, "unexpected LookupEvents call")
+		if !assert.NotEmpty(t, s.responses, "unexpected LookupEvents call") {
+			http.Error(w, "unexpected call", http.StatusInternalServerError)
+			return
+		}
 		resp := s.responses[0]
 		s.responses = s.responses[1:]
 		w.Header().Set("Content-Type", "application/x-amz-json-1.1")
-		require.NoError(t, json.NewEncoder(w).Encode(resp))
+		assert.NoError(t, json.NewEncoder(w).Encode(resp))
 	}))
 	t.Cleanup(srv.Close)
 	return cloudtrail.New(cloudtrail.Options{
@@ -112,7 +120,7 @@ func TestSSOLoginEventFeedEmitsAccountUsage(t *testing.T) {
 
 	require.Len(t, stub.requests, 1)
 	require.Equal(t, []any{map[string]any{"AttributeKey": "EventSource", "AttributeValue": "sso.amazonaws.com"}}, stub.requests[0]["LookupAttributes"])
-	require.InDelta(t, float64(start.AsTime().Unix()), stub.requests[0]["StartTime"], 0)
+	require.Equal(t, float64(start.AsTime().Unix()), stub.requests[0]["StartTime"])
 
 	// The next window starts at the latest event seen.
 	next, err := unmarshalEventFeedPageToken(&pagination.StreamToken{Cursor: state.Cursor}, nil)
@@ -136,4 +144,32 @@ func TestSSOLoginEventFeedPaginates(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, state.HasMore)
 	require.Equal(t, "page-2", stub.requests[1]["NextToken"])
+}
+
+func TestEventFeedsRegistersEnabledFeeds(t *testing.T) {
+	cloudTrailClient := cloudtrail.New(cloudtrail.Options{Region: "us-east-2"})
+	instance := &awsSsoAdminTypes.InstanceMetadata{InstanceArn: awsSdk.String(behaviorInstanceArn)}
+	for _, tc := range []struct {
+		name string
+		aws  *AWS
+		want []string
+	}{
+		{name: "no CloudTrail client", aws: &AWS{syncSSOUserLastLogin: true, syncPermissionSetUsage: true, identityInstance: instance}},
+		{name: "last login only", aws: &AWS{cloudTrailClient: cloudTrailClient, syncSSOUserLastLogin: true}, want: []string{"aws_last_login_event_feed"}},
+		{name: "usage only", aws: &AWS{cloudTrailClient: cloudTrailClient, syncPermissionSetUsage: true, identityInstance: instance}, want: []string{permissionSetUsageFeedID}},
+		{
+			name: "both",
+			aws:  &AWS{cloudTrailClient: cloudTrailClient, syncSSOUserLastLogin: true, syncPermissionSetUsage: true, identityInstance: instance},
+			want: []string{"aws_last_login_event_feed", permissionSetUsageFeedID},
+		},
+		{name: "usage without an Identity Center instance", aws: &AWS{cloudTrailClient: cloudTrailClient, syncPermissionSetUsage: true}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, feed := range tc.aws.EventFeeds(context.Background()) {
+				got = append(got, feed.EventFeedMetadata(context.Background()).GetId())
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
 }

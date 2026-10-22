@@ -190,6 +190,11 @@ func TestPermissionSetUsageEventSkips(t *testing.T) {
 				m["userIdentity"].(map[string]any)["onBehalfOf"].(map[string]any)["identityStoreArn"] = ""
 			})
 		}},
+		{name: "malformed identity store ARN", reason: usageSkipNoUser, event: func(t *testing.T) cloudtrailTypes.Event {
+			return usageCTEvent(t, "e", func(m map[string]any) {
+				m["userIdentity"].(map[string]any)["onBehalfOf"].(map[string]any)["identityStoreArn"] = "d-1234567890"
+			})
+		}},
 		{name: "no role name", reason: usageSkipNoAssignment, event: func(t *testing.T) cloudtrailTypes.Event {
 			return usageCTEvent(t, "e", func(m map[string]any) {
 				m["serviceEventDetails"] = map[string]any{"account_id": testMemberAccountID}
@@ -206,15 +211,24 @@ func TestPermissionSetUsageEventSkips(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			feed := newUsageTestFeed(&fakeCloudTrailLookup{}, &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}})
-			cycle := usageTestNow.Format(time.RFC3339)
-			require.NoError(t, feed.loadPermissionSets(context.Background(), cycle, false))
 
-			event, reason, err := feed.usageEvent(context.Background(), tc.event(t), cycle)
+			event, reason, err := feed.usageEvent(context.Background(), tc.event(t), usageTestNow.Add(-cloudTrailDeliveryLag))
 			require.NoError(t, err)
 			require.Nil(t, event)
 			require.Equal(t, tc.reason, reason)
 		})
 	}
+}
+
+// AWS documents type Unknown, as well as IdentityCenterUser, on authenticated Identity Center events.
+func TestPermissionSetUsageAcceptsUnknownUserType(t *testing.T) {
+	feed := newUsageTestFeed(&fakeCloudTrailLookup{}, &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}})
+	event := usageCTEvent(t, "e", func(m map[string]any) { m["userIdentity"].(map[string]any)["type"] = "Unknown" })
+
+	got, reason, err := feed.usageEvent(context.Background(), event, usageTestNow.Add(-cloudTrailDeliveryLag))
+	require.NoError(t, err)
+	require.Empty(t, reason)
+	require.Equal(t, permissionSetAssignmentObjectID(testPermissionSetArn, testMemberAccountID), got.GetUsageEvent().GetTargetResource().GetId().GetResource())
 }
 
 func TestPermissionSetUsageServiceEventDetailsAsString(t *testing.T) {
@@ -223,25 +237,81 @@ func TestPermissionSetUsageServiceEventDetailsAsString(t *testing.T) {
 	require.Equal(t, usageServiceEventDetails{RoleName: "Billing", AccountID: testMemberAccountID}, details)
 }
 
-func TestPermissionSetUsageUnknownNameRefreshesOncePerCycle(t *testing.T) {
-	unknown := func(m map[string]any) {
-		m["serviceEventDetails"] = map[string]any{"role_name": "Renamed", "account_id": testMemberAccountID}
-	}
-	ct := &fakeCloudTrailLookup{pages: map[string][]*cloudtrail.LookupEventsOutput{
-		"Federate": {{Events: []cloudtrailTypes.Event{usageCTEvent(t, "e1", unknown), usageCTEvent(t, "e2", unknown)}}},
-	}}
+func usageEventFor(t *testing.T, id, permissionSet string) cloudtrailTypes.Event {
+	t.Helper()
+	return usageCTEvent(t, id, func(m map[string]any) {
+		m["serviceEventDetails"] = map[string]any{"role_name": permissionSet, "account_id": testMemberAccountID}
+	})
+}
+
+func TestPermissionSetUsagePermissionSetMap(t *testing.T) {
+	const newPermissionSetArn = "arn:aws:sso:::permissionSet/ssoins-1234567890abcdef/ps-0000000000000002"
 	ps := &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}}
+	ct := &fakeCloudTrailLookup{pages: map[string][]*cloudtrail.LookupEventsOutput{
+		"Federate": {
+			{Events: []cloudtrailTypes.Event{usageEventFor(t, "known", "PowerUserAccess")}},
+			{Events: []cloudtrailTypes.Event{
+				usageEventFor(t, "created", "NewPermissionSet"),
+				usageEventFor(t, "deleted", "Deleted"),
+			}},
+		},
+		"GetRoleCredentials": {
+			{},
+			{Events: []cloudtrailTypes.Event{usageEventFor(t, "deleted-again", "Deleted")}},
+		},
+	}}
 	feed := newUsageTestFeed(ct, ps)
 
-	events, state, _, err := feed.ListEvents(context.Background(), nil, nil)
+	// A window with no events does not load the map.
+	_, _, _, err := newUsageTestFeed(&fakeCloudTrailLookup{}, ps).ListEvents(context.Background(), nil, nil)
 	require.NoError(t, err)
-	require.Empty(t, events)
-	require.Equal(t, 2, ps.lists, "one load for the cycle, one refresh for the unknown name")
+	require.Zero(t, ps.lists)
 
-	// The rest of the cycle does not refresh again.
-	_, _, _, err = feed.ListEvents(context.Background(), nil, &pagination.StreamToken{Cursor: state.Cursor})
-	require.NoError(t, err)
+	ids, token := drainUsageWindow(t, feed, nil)
+	require.Equal(t, []string{"known"}, ids)
+	require.Equal(t, 1, ps.lists)
+
+	// The next window reuses the map, which predates a permission set created since. Its unknown name
+	// reloads the map once; the reloaded map postdates the window, so a deleted name does not reload
+	// it again.
+	ps.byArn[newPermissionSetArn] = "NewPermissionSet"
+	feed.now = func() time.Time { return usageTestNow.Add(30 * time.Minute) }
+	ids, _ = drainUsageWindow(t, feed, token)
+	require.Equal(t, []string{"created"}, ids)
 	require.Equal(t, 2, ps.lists)
+}
+
+// drainUsageWindow reads one window to the end, returning the emitted event IDs and the next cursor.
+func drainUsageWindow(t *testing.T, feed *permissionSetUsageEventFeed, token *pagination.StreamToken) ([]string, *pagination.StreamToken) {
+	t.Helper()
+	var ids []string
+	for i := 0; i < 10; i++ {
+		events, state, _, err := feed.ListEvents(context.Background(), nil, token)
+		require.NoError(t, err)
+		for _, e := range events {
+			ids = append(ids, e.GetId())
+		}
+		token = &pagination.StreamToken{Cursor: state.Cursor}
+		if !state.HasMore {
+			return ids, token
+		}
+	}
+	require.Fail(t, "window did not finish")
+	return nil, nil
+}
+
+func TestPermissionSetUsagePermissionSetMapExpires(t *testing.T) {
+	ps := &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}}
+	feed := newUsageTestFeed(&fakeCloudTrailLookup{}, ps)
+	windowEnd := usageTestNow.Add(-cloudTrailDeliveryLag)
+
+	for _, at := range []time.Duration{0, 30 * time.Minute, permissionSetIndexTTL} {
+		feed.now = func() time.Time { return usageTestNow.Add(at) }
+		psArn, err := feed.permissionSetArn(context.Background(), "PowerUserAccess", windowEnd)
+		require.NoError(t, err)
+		require.Equal(t, testPermissionSetArn, psArn)
+	}
+	require.Equal(t, 2, ps.lists, "reused within the TTL, reloaded once it passes")
 }
 
 func TestPermissionSetUsageCursor(t *testing.T) {
@@ -270,24 +340,33 @@ func TestPermissionSetUsageCursor(t *testing.T) {
 	}
 
 	require.Equal(t, []string{"f1", "f2", "g1"}, ids)
-	window := []string{usageTestNow.Add(-24 * time.Hour).Format(time.RFC3339), usageTestNow.Format(time.RFC3339)}
+	// The window ends cloudTrailDeliveryLag before now, so late-arriving events are read next time.
+	windowEnd := usageTestNow.Add(-cloudTrailDeliveryLag)
+	window := []string{usageTestNow.Add(-24 * time.Hour).Format(time.RFC3339), windowEnd.Format(time.RFC3339)}
 	require.Equal(t, permissionSetUsageCursor{NameIndex: 0, NextToken: "f-page-2", Start: window[0], End: window[1]}, cursors[0])
 	require.Equal(t, permissionSetUsageCursor{NameIndex: 1, Start: window[0], End: window[1]}, cursors[1])
-	// A finished cycle starts the next one where this one ended.
+	// A finished window starts the next one where this one ended.
 	require.Equal(t, permissionSetUsageCursor{Start: window[1]}, cursors[2])
 
 	require.Equal(t, "f-page-2", awsSdk.ToString(ct.requests[1].NextToken))
 	for _, req := range ct.requests {
 		require.Equal(t, usageTestNow.Add(-24*time.Hour), awsSdk.ToTime(req.StartTime))
-		require.Equal(t, usageTestNow, awsSdk.ToTime(req.EndTime))
+		require.Equal(t, windowEnd, awsSdk.ToTime(req.EndTime))
 	}
 
-	// The next cycle runs from the previous end to the new now.
-	feed.now = func() time.Time { return usageTestNow.Add(time.Hour) }
+	// Within cloudTrailDeliveryLag of the last window's end there is nothing to read yet.
 	_, state, _, err := feed.ListEvents(context.Background(), startAt, token)
 	require.NoError(t, err)
-	require.Equal(t, usageTestNow, awsSdk.ToTime(ct.requests[3].StartTime))
-	require.Equal(t, usageTestNow.Add(time.Hour), awsSdk.ToTime(ct.requests[3].EndTime))
+	require.Len(t, ct.requests, 3)
+	require.False(t, state.HasMore)
+	require.Equal(t, permissionSetUsageCursor{Start: window[1]}, decodeUsageCursor(t, state))
+
+	// The next window runs from the previous end to the new now, less the lag.
+	feed.now = func() time.Time { return usageTestNow.Add(time.Hour) }
+	_, state, _, err = feed.ListEvents(context.Background(), startAt, token)
+	require.NoError(t, err)
+	require.Equal(t, windowEnd, awsSdk.ToTime(ct.requests[3].StartTime))
+	require.Equal(t, usageTestNow.Add(time.Hour-cloudTrailDeliveryLag), awsSdk.ToTime(ct.requests[3].EndTime))
 	require.True(t, state.HasMore)
 }
 
@@ -310,6 +389,23 @@ func TestPermissionSetUsageCursorResumesMidCycle(t *testing.T) {
 	require.Equal(t, usageTestNow.Add(-3*time.Hour), awsSdk.ToTime(req.StartTime))
 	require.Equal(t, usageTestNow.Add(-time.Hour), awsSdk.ToTime(req.EndTime))
 	require.False(t, state.HasMore)
+}
+
+func TestPermissionSetUsageExpiredPageTokenRestartsWindow(t *testing.T) {
+	ct := &fakeCloudTrailLookup{err: &cloudtrailTypes.InvalidNextTokenException{Message: awsSdk.String("token expired")}}
+	feed := newUsageTestFeed(ct, &usagePermissionSets{})
+	cursor := permissionSetUsageCursor{
+		NameIndex: 1,
+		NextToken: "stale",
+		Start:     usageTestNow.Add(-3 * time.Hour).Format(time.RFC3339),
+		End:       usageTestNow.Add(-time.Hour).Format(time.RFC3339),
+	}
+
+	events, state, _, err := feed.ListEvents(context.Background(), nil, usageCursorToken(t, cursor))
+	require.NoError(t, err)
+	require.Empty(t, events)
+	require.True(t, state.HasMore)
+	require.Equal(t, permissionSetUsageCursor{Start: cursor.Start, End: cursor.End}, decodeUsageCursor(t, state))
 }
 
 func TestPermissionSetUsageCursorClampsToHistoryLimit(t *testing.T) {
@@ -342,7 +438,10 @@ func TestPermissionSetUsageErrors(t *testing.T) {
 	})
 	t.Run("DescribePermissionSet", func(t *testing.T) {
 		ps := &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}, describeErr: errors.New("throttled")}
-		feed := newUsageTestFeed(&fakeCloudTrailLookup{}, ps)
+		ct := &fakeCloudTrailLookup{pages: map[string][]*cloudtrail.LookupEventsOutput{
+			"Federate": {{Events: []cloudtrailTypes.Event{usageCTEvent(t, "e1", nil)}}},
+		}}
+		feed := newUsageTestFeed(ct, ps)
 
 		_, _, _, err := feed.ListEvents(context.Background(), nil, nil)
 		require.ErrorContains(t, err, "ssoadmin.DescribePermissionSet failed")
@@ -351,6 +450,6 @@ func TestPermissionSetUsageErrors(t *testing.T) {
 		feed := newUsageTestFeed(&fakeCloudTrailLookup{}, &usagePermissionSets{})
 
 		_, _, _, err := feed.ListEvents(context.Background(), nil, usageCursorToken(t, permissionSetUsageCursor{NameIndex: 7}))
-		require.Error(t, err)
+		require.ErrorContains(t, err, "event index")
 	})
 }

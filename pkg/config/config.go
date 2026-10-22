@@ -133,7 +133,7 @@ var (
 	)
 	SyncPermissionSetUsage = field.BoolField(
 		"sync-permission-set-usage",
-		field.WithDisplayName("Sync permission set usage"),
+		field.WithDisplayName("Sync Permission Set Usage"),
 		field.WithDescription(
 			"Report Identity Center session starts (console and CLI) per permission set assignment from CloudTrail "+
 				"in the Identity Center account and region. Requires cloudtrail:LookupEvents, sso:ListPermissionSets and sso:DescribePermissionSet.",
