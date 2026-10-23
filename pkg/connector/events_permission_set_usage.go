@@ -203,12 +203,20 @@ func (f *permissionSetUsageEventFeed) ListEvents(
 		return nil, nil, nil, err
 	}
 
-	ctxzap.Extract(ctx).Debug("baton-aws: processed permission set usage events",
+	fields := []zap.Field{
 		zap.String("event_name", permissionSetUsageEventNames[cursor.NameIndex]),
 		zap.Int("events_fetched", len(resp.Events)),
 		zap.Int("usage_events_emitted", len(events)),
 		zap.Any("events_skipped_by_reason", skipped),
-	)
+	}
+	l := ctxzap.Extract(ctx)
+	if skipped[usageSkipUnparseable]+skipped[usageSkipNoUser]+skipped[usageSkipNoAssignment] > 0 {
+		// These mean a session start did not have the shape the feed expects, so its usage is lost.
+		// Deleted permission sets and non-Identity Center callers are expected and stay at debug.
+		l.Info("baton-aws: skipped permission set usage events with an unexpected shape", fields...)
+	} else {
+		l.Debug("baton-aws: processed permission set usage events", fields...)
+	}
 	return events, &pagination.StreamState{Cursor: token, HasMore: next.End != ""}, nil, nil
 }
 

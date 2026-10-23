@@ -16,7 +16,11 @@ import (
 	"github.com/aws/smithy-go"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -221,6 +225,33 @@ func TestPermissionSetUsageEventSkips(t *testing.T) {
 }
 
 // AWS documents type Unknown, as well as IdentityCenterUser, on authenticated Identity Center events.
+func TestPermissionSetUsageLogsUnexpectedShapesAtInfo(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		event  func(t *testing.T) cloudtrailTypes.Event
+		atInfo bool
+	}{
+		{name: "missing account", atInfo: true, event: func(t *testing.T) cloudtrailTypes.Event {
+			return usageCTEvent(t, "e", func(m map[string]any) { m["serviceEventDetails"] = map[string]any{"role_name": "PowerUserAccess"} })
+		}},
+		{name: "deleted permission set", event: func(t *testing.T) cloudtrailTypes.Event {
+			return usageEventFor(t, "e", "Deleted")
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			core, logs := observer.New(zapcore.InfoLevel)
+			ctx := ctxzap.ToContext(context.Background(), zap.New(core))
+			ct := &fakeCloudTrailLookup{pages: map[string][]*cloudtrail.LookupEventsOutput{"Federate": {{Events: []cloudtrailTypes.Event{tc.event(t)}}}}}
+			feed := newUsageTestFeed(ct, &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}})
+
+			_, _, _, err := feed.ListEvents(ctx, nil, nil)
+			require.NoError(t, err)
+
+			require.Equal(t, tc.atInfo, logs.FilterMessageSnippet("unexpected shape").Len() == 1)
+		})
+	}
+}
+
 func TestPermissionSetUsageAcceptsUnknownUserType(t *testing.T) {
 	feed := newUsageTestFeed(&fakeCloudTrailLookup{}, &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}})
 	event := usageCTEvent(t, "e", func(m map[string]any) { m["userIdentity"].(map[string]any)["type"] = "Unknown" })
@@ -435,6 +466,22 @@ func TestPermissionSetUsageErrors(t *testing.T) {
 
 		_, _, _, err := feed.ListEvents(context.Background(), nil, nil)
 		require.Equal(t, codes.PermissionDenied, status.Code(err))
+	})
+	t.Run("LookupEvents throttled", func(t *testing.T) {
+		throttled := &smithy.GenericAPIError{Code: "ThrottlingException", Message: "Rate exceeded"}
+		ct := &fakeCloudTrailLookup{err: throttled}
+		feed := newUsageTestFeed(ct, &usagePermissionSets{})
+		cursor := permissionSetUsageCursor{
+			NameIndex: 1,
+			NextToken: "g-page-2",
+			Start:     usageTestNow.Add(-3 * time.Hour).Format(time.RFC3339),
+			End:       usageTestNow.Add(-time.Hour).Format(time.RFC3339),
+		}
+
+		_, state, _, err := feed.ListEvents(context.Background(), nil, usageCursorToken(t, cursor))
+		// Retryable, and no new cursor: the caller retries the same page.
+		require.Equal(t, codes.Unavailable, status.Code(err))
+		require.Nil(t, state)
 	})
 	t.Run("DescribePermissionSet", func(t *testing.T) {
 		ps := &usagePermissionSets{byArn: map[string]string{testPermissionSetArn: "PowerUserAccess"}, describeErr: errors.New("throttled")}
