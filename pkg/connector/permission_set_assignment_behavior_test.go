@@ -24,6 +24,7 @@ import (
 // pluggable func; nil funcs return an empty, successful response. Create/Delete inputs are
 // recorded so tests can assert the connector calls AWS with the right scope/role/principal.
 type fakeSSOAdmin struct {
+	listPermissionSetsFn                     func(*awsSsoAdmin.ListPermissionSetsInput) (*awsSsoAdmin.ListPermissionSetsOutput, error)
 	listPermissionSetsProvisionedToAccountFn func(*awsSsoAdmin.ListPermissionSetsProvisionedToAccountInput) (*awsSsoAdmin.ListPermissionSetsProvisionedToAccountOutput, error)
 	describePermissionSetFn                  func(*awsSsoAdmin.DescribePermissionSetInput) (*awsSsoAdmin.DescribePermissionSetOutput, error)
 	listManagedPoliciesInPermissionSetFn     func(*awsSsoAdmin.ListManagedPoliciesInPermissionSetInput) (*awsSsoAdmin.ListManagedPoliciesInPermissionSetOutput, error)
@@ -39,7 +40,10 @@ type fakeSSOAdmin struct {
 	deleteInputs []*awsSsoAdmin.DeleteAccountAssignmentInput
 }
 
-func (f *fakeSSOAdmin) ListPermissionSets(_ context.Context, _ *awsSsoAdmin.ListPermissionSetsInput, _ ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.ListPermissionSetsOutput, error) {
+func (f *fakeSSOAdmin) ListPermissionSets(_ context.Context, in *awsSsoAdmin.ListPermissionSetsInput, _ ...func(*awsSsoAdmin.Options)) (*awsSsoAdmin.ListPermissionSetsOutput, error) {
+	if f.listPermissionSetsFn != nil {
+		return f.listPermissionSetsFn(in)
+	}
 	return &awsSsoAdmin.ListPermissionSetsOutput{}, nil
 }
 
