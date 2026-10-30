@@ -142,6 +142,8 @@ var (
 				// Read
 				"identitystore:ListUsers",
 				"sso:ListInstances",
+				// Only called when sync-sso-user-last-login is enabled; the SSO user last-login event feed reads CloudTrail (pkg/connector/events_last_login.go).
+				"cloudtrail:LookupEvents",
 				// Provision
 				"identitystore:CreateUser",
 				"identitystore:DeleteUser",
