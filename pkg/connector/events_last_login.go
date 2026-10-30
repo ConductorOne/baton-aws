@@ -86,6 +86,42 @@ type cloudTrailEvent struct {
 	EventID     string `json:"eventID"`
 	AWSRegion   string `json:"awsRegion"`
 	EventSource string `json:"eventSource"`
+	// Raw serviceEventDetails blob; carries the member account the sign-in targeted.
+	ServiceEventDetails json.RawMessage `json:"serviceEventDetails"`
+}
+
+// memberAccountID extracts the member account a sign-in targeted from the
+// serviceEventDetails blob. CloudTrail delivers it as a JSON object in some
+// events and as a JSON-encoded string in others, so both shapes are parsed.
+// Returns "" when no 12-digit account id can be recovered.
+func memberAccountID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	type serviceEventDetailsAccount struct {
+		AccountID string `json:"account_id"`
+	}
+	var details serviceEventDetailsAccount
+	if err := json.Unmarshal(raw, &details); err != nil {
+		// Shape 2: the blob itself is a JSON-encoded string containing the object.
+		var encoded string
+		if err := json.Unmarshal(raw, &encoded); err != nil {
+			return ""
+		}
+		if err := json.Unmarshal([]byte(encoded), &details); err != nil {
+			return ""
+		}
+	}
+	accountID := details.AccountID
+	if len(accountID) != 12 {
+		return ""
+	}
+	for _, c := range accountID {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return accountID
 }
 
 func (f *ssoLoginEventFeed) EventFeedMetadata(ctx context.Context) *v2.EventFeedMetadata {
@@ -162,8 +198,8 @@ func (f *ssoLoginEventFeed) ListEvents(
 			continue
 		}
 
-		// Only process login-related events (Federate or Authenticate)
-		if ctEvent.EventName != "Federate" && ctEvent.EventName != "Authenticate" {
+		// Only process login-related events (Federate, Authenticate, or GetRoleCredentials)
+		if ctEvent.EventName != "Federate" && ctEvent.EventName != "Authenticate" && ctEvent.EventName != "GetRoleCredentials" {
 			continue
 		}
 
@@ -205,8 +241,14 @@ func (f *ssoLoginEventFeed) ListEvents(
 		// Create the user ARN for the resource ID
 		userARN := ssoUserToARN(f.region, identityStoreID, userID)
 
-		// Get the account ID from the event (the account the user logged into)
-		accountID := ctEvent.UserIdentity.AccountID
+		// Get the account ID the sign-in targeted, from serviceEventDetails when
+		// available; otherwise fall back to the emitting (management) account.
+		accountID := memberAccountID(ctEvent.ServiceEventDetails)
+		if accountID == "" {
+			// No member-account signal (absent, malformed, or not a 12-digit id):
+			// fall back to the emitting (management) account — today's behavior.
+			accountID = ctEvent.UserIdentity.AccountID
+		}
 
 		// Create a v2.Event for this login event
 		v2Event := &v2.Event{
