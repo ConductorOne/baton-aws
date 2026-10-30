@@ -96,12 +96,11 @@ func (f ctEventFixture) cloudTrailEvent(t *testing.T) cloudtrailTypes.Event {
 	eventTime, err := time.Parse(time.RFC3339, testEventTime)
 	require.NoError(t, err)
 	return cloudtrailTypes.Event{
-		EventID:         awsSdk.String("event-" + f.name),
+		EventId:         awsSdk.String("event-" + f.name),
 		EventTime:       awsSdk.Time(eventTime),
 		CloudTrailEvent: awsSdk.String(string(data)),
 		EventName:       awsSdk.String(f.name),
 		EventSource:     awsSdk.String("sso.amazonaws.com"),
-		AwsRegion:       awsSdk.String("us-east-1"),
 	}
 }
 
@@ -154,7 +153,7 @@ func TestListEvents_FederateTargetsMemberAccount(t *testing.T) {
 // AC2 criterion 2: GetRoleCredentials events are accepted, and the string-encoded
 // serviceEventDetails shape parses to the member account too.
 func TestListEvents_GetRoleCredentialsTargetsMemberAccount(t *testing.T) {
-	page := memberSignalFixture(t, "GetRoleCredentials", `"\"{\\\"account_id\\\":\\\"264901105608\\\",\\\"role_name\\\":\\\"ReadOnly\\\"}\""`)
+	page := memberSignalFixture(t, "GetRoleCredentials", `"{\"account_id\":\"264901105608\",\"role_name\":\"ReadOnly\"}"`)
 	events, _ := runListEvents(t, cloudTrailClientWithEvents([]cloudtrail.LookupEventsOutput{page}), nil)
 	require.Len(t, events, 1)
 	assertMemberTargeting(t, events[0])
