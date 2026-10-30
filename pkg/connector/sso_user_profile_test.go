@@ -99,3 +99,14 @@ func TestSSOUserProfile_SyncPath(t *testing.T) {
 		},
 	}, profile["external_ids"])
 }
+
+// TestProfileKeyConstants_AreStable pins the profile-key constants to their
+// on-wire strings. The table tests above assert via the constants, so without
+// these pins a refactor that revalues a constant would keep the suite green
+// while silently changing the external profile contract.
+func TestProfileKeyConstants_AreStable(t *testing.T) {
+	require.Equal(t, "aws_user_name", profileKeyAwsUserName)
+	require.Equal(t, "aws_display_name", profileKeyAwsDisplayName)
+	require.Equal(t, "aws_user_id", profileKeyAwsUserID)
+	require.Equal(t, "aws_user_type", profileKeyAwsUserType)
+}
