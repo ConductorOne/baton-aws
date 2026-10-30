@@ -645,16 +645,17 @@ const (
 // CloudTrail role-session name), NOT the display name. aws_display_name
 // carries the display name and is ALWAYS present (possibly ""), so key
 // presence is stable across users. Profile keys are never removed and
-// value types are never changed (BUGBOT "User Profile Changes").
-func ssoUserIdentityProfile(userName, displayName, userID string, externalIds []awsIdentityStoreTypes.ExternalId) map[string]interface{} {
+// value types are never changed: adding or removing profile keys or changing
+// their value types mid-stream would break existing resource profiles.
+func ssoUserIdentityProfile(userName, displayName, userID string, externalIDs []awsIdentityStoreTypes.ExternalId) map[string]interface{} {
 	profile := make(map[string]interface{})
 	profile[profileKeyAwsUserType] = ssoType
 	profile[profileKeyAwsUserName] = userName
 	profile[profileKeyAwsDisplayName] = displayName
 	profile[profileKeyAwsUserID] = userID
-	if len(externalIds) >= 1 {
+	if len(externalIDs) >= 1 {
 		lv := []interface{}{}
-		for _, ext := range externalIds {
+		for _, ext := range externalIDs {
 			lv = append(lv, map[string]interface{}{
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),

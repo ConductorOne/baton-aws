@@ -15,35 +15,35 @@ func TestSSOUserIdentityProfile_Semantics(t *testing.T) {
 		userName    string
 		displayName string
 		userID      string
-		externalIds []awsIdentityStoreTypes.ExternalId
+		externalIDs []awsIdentityStoreTypes.ExternalId
 	}{
 		{
 			name:        "username differs from display name (CXH-3206 repro)",
 			userName:    "marcus.whitaker",
 			displayName: "Marcus Whitaker",
 			userID:      "u-1",
-			externalIds: nil,
+			externalIDs: nil,
 		},
 		{
 			name:        "equal name and display",
 			userName:    "alex",
 			displayName: "alex",
 			userID:      "u-2",
-			externalIds: nil,
+			externalIDs: nil,
 		},
 		{
 			name:        "empty display name key still present",
 			userName:    "no.display",
 			displayName: "",
 			userID:      "u-3",
-			externalIds: nil,
+			externalIDs: nil,
 		},
 		{
 			name:        "external ids emitted with id/issuer shape",
 			userName:    "marcus.whitaker",
 			displayName: "Marcus Whitaker",
 			userID:      "u-4",
-			externalIds: []awsIdentityStoreTypes.ExternalId{
+			externalIDs: []awsIdentityStoreTypes.ExternalId{
 				{Id: awsSdk.String("x"), Issuer: awsSdk.String("y")},
 			},
 		},
@@ -51,14 +51,14 @@ func TestSSOUserIdentityProfile_Semantics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			profile := ssoUserIdentityProfile(tt.userName, tt.displayName, tt.userID, tt.externalIds)
+			profile := ssoUserIdentityProfile(tt.userName, tt.displayName, tt.userID, tt.externalIDs)
 
 			require.Equal(t, tt.userName, profile[profileKeyAwsUserName], "aws_user_name must hold the username, not the display name")
 			require.Equal(t, tt.displayName, profile[profileKeyAwsDisplayName], "aws_display_name must hold the display name")
 			require.Equal(t, tt.userID, profile[profileKeyAwsUserID])
 			require.Equal(t, ssoType, profile[profileKeyAwsUserType])
 
-			if len(tt.externalIds) >= 1 {
+			if len(tt.externalIDs) >= 1 {
 				require.Contains(t, profile, "external_ids")
 				require.Equal(t, []interface{}{
 					map[string]interface{}{

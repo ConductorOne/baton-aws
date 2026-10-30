@@ -218,7 +218,7 @@ func (o *provisionableSSOUserType) CreateAccount(
 			profile.UserName,
 			profile.DisplayName,
 			awsSdk.ToString(out.UserId),
-			nil, // D2/I3: do not add external_ids on the create path in this diff
+			nil, // external_ids not available from CreateUser output
 		)),
 		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
@@ -302,7 +302,7 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 			awsSdk.ToString(existing.UserName),
 			awsSdk.ToString(existing.DisplayName),
 			awsSdk.ToString(existing.UserId),
-			nil, // D2/I3
+			nil, // external_ids not available from ListUsers lookup output
 		)),
 		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
