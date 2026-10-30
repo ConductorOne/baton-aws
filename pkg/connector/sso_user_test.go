@@ -184,11 +184,13 @@ func TestCreateAccount_Profile_HoldsUsername(t *testing.T) {
 
 func TestCreateAccount_AlreadyExists_Profile_HoldsUsername(t *testing.T) {
 	ctx := context.Background()
+	var capturedListUsers *awsIdentityStore.ListUsersInput
 	stub := &stubIdentityStoreClient{
 		createUserFn: func(*awsIdentityStore.CreateUserInput) (*awsIdentityStore.CreateUserOutput, error) {
 			return nil, &awsIdentityStoreTypes.ConflictException{}
 		},
-		listUsersFn: func(*awsIdentityStore.ListUsersInput) (*awsIdentityStore.ListUsersOutput, error) {
+		listUsersFn: func(params *awsIdentityStore.ListUsersInput) (*awsIdentityStore.ListUsersOutput, error) {
+			capturedListUsers = params
 			return &awsIdentityStore.ListUsersOutput{
 				Users: []awsIdentityStoreTypes.User{{
 					UserName:    awsSdk.String("marcus.whitaker"),
@@ -213,4 +215,10 @@ func TestCreateAccount_AlreadyExists_Profile_HoldsUsername(t *testing.T) {
 	require.Equal(t, "u-1", profile[profileKeyAwsUserID])
 	require.Equal(t, ssoType, profile[profileKeyAwsUserType])
 	require.NotContains(t, profile, "external_ids", "lookup path must not emit external_ids in this diff (D2/I3)")
+
+	require.NotNil(t, capturedListUsers, "already-exists lookup must call ListUsers")
+	filters := capturedListUsers.Filters
+	require.Len(t, filters, 1, "already-exists lookup must filter on exactly one attribute")
+	require.Equal(t, "UserName", awsSdk.ToString(filters[0].AttributePath), "lookup must filter on UserName, not DisplayName")
+	require.Equal(t, "marcus.whitaker", awsSdk.ToString(filters[0].AttributeValue), "lookup must filter on the account username")
 }

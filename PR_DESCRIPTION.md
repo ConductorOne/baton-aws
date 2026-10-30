@@ -6,7 +6,7 @@ In-repo survey of `aws_user_name` consumers (grep over the repo, including CEL/p
 
 ## Migration note
 
-The value semantics of `aws_user_name` change on the next sync for existing tenants: it now holds the Identity Center **username** (the CloudTrail role-session name) instead of the display name. Correlate C1 app users to CloudTrail sessions on the NEW username value; if your automation consumed the display name, switch to the new `aws_display_name` key. Only Identity Center users carry `aws_user_name` (IAM-user profiles never emitted it).
+The value semantics of `aws_user_name` change on the next sync for existing tenants: it now holds the Identity Center **username** (the CloudTrail role-session name) instead of the display name. Correlate C1 app users to CloudTrail sessions on the NEW username value; if your automation consumed the display name, switch to the new `aws_display_name` key. `aws_display_name` appears on a resource only after that resource's next sync; until then pre-existing resources carry only the old key set. Only Identity Center users carry `aws_user_name` (IAM-user profiles never emitted it).
 
 ## Breaking-change disclosure (BP2/BP4)
 
