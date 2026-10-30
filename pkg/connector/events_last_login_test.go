@@ -220,6 +220,9 @@ func TestListEvents_NilClientReturnsHasMoreFalse(t *testing.T) {
 
 func TestListEvents_PageTokenRoundTrip(t *testing.T) {
 	const nextToken = "tok-page-2"
+	// Explicit startAt before testEventTime so the fixture events are newer than
+	// the window and LatestEventSeen tracking is exercised deterministically.
+	startAt := timestamppb.New(time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC))
 	page1 := cloudtrail.LookupEventsOutput{
 		Events: []cloudtrailTypes.Event{
 			ctEventFixture{name: "Federate", accountID: managementAccount, userID: testUserID, identityStoreArn: identityStoreArn}.cloudTrailEvent(t),
@@ -233,8 +236,7 @@ func TestListEvents_PageTokenRoundTrip(t *testing.T) {
 	}
 	client := cloudTrailClientWithEvents([]cloudtrail.LookupEventsOutput{page1, page2})
 
-	events1, state1, _, err := newSSOLoginEventFeed(client, "us-east-1").ListEvents(
-		context.Background(), timestamppb.New(time.Now().Add(-2*time.Hour)), nil)
+	events1, state1, _, err := newSSOLoginEventFeed(client, "us-east-1").ListEvents(context.Background(), startAt, nil)
 	require.NoError(t, err)
 	require.Len(t, events1, 1)
 	require.True(t, state1.HasMore)
@@ -253,4 +255,14 @@ func TestListEvents_PageTokenRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, events2, 1)
 	require.False(t, state2.HasMore)
+
+	// Final page: NextPageToken resets and StartAt carries the tracked
+	// LatestEventSeen (page 1's event time; page 2's equal-time event does not
+	// move it further).
+	data2, err := base64.StdEncoding.DecodeString(state2.Cursor)
+	require.NoError(t, err)
+	var finalToken eventFeedPageToken
+	require.NoError(t, json.Unmarshal(data2, &finalToken))
+	require.Empty(t, finalToken.NextPageToken)
+	require.Equal(t, testEventTime, finalToken.StartAt)
 }

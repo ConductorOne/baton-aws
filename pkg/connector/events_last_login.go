@@ -247,6 +247,8 @@ func (f *ssoLoginEventFeed) ListEvents(
 		if accountID == "" {
 			// No member-account signal (absent, malformed, or not a 12-digit id):
 			// fall back to the emitting (management) account — today's behavior.
+			l.Debug("baton-aws: no member-account id in serviceEventDetails; falling back to emitting account",
+				zap.String("event_id", awsSdk.ToString(event.EventId)))
 			accountID = ctEvent.UserIdentity.AccountID
 		}
 
