@@ -214,11 +214,12 @@ func (o *provisionableSSOUserType) CreateAccount(
 			resourceSdk.WithEmail(profile.Email, true),
 			resourceSdk.WithUserLogin(profile.UserName),
 		},
-		resourceSdk.WithResourceProfile(map[string]interface{}{
-			"aws_user_type": ssoType,
-			"aws_user_name": profile.DisplayName,
-			"aws_user_id":   awsSdk.ToString(out.UserId),
-		}),
+		resourceSdk.WithResourceProfile(ssoUserIdentityProfile(
+			profile.UserName,
+			profile.DisplayName,
+			awsSdk.ToString(out.UserId),
+			nil, // D2/I3: do not add external_ids on the create path in this diff
+		)),
 		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
 	)
@@ -288,7 +289,6 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 			break
 		}
 	}
-	displayName := awsSdk.ToString(existing.DisplayName)
 	userARN := ssoUserToARN(o.region, identityStoreID, awsSdk.ToString(existing.UserId))
 	return resourceSdk.NewUserResource(
 		awsSdk.ToString(existing.UserName),
@@ -298,11 +298,12 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 			resourceSdk.WithEmail(email, true),
 			resourceSdk.WithUserLogin(awsSdk.ToString(existing.UserName)),
 		},
-		resourceSdk.WithResourceProfile(map[string]interface{}{
-			"aws_user_type": ssoType,
-			"aws_user_name": displayName,
-			"aws_user_id":   awsSdk.ToString(existing.UserId),
-		}),
+		resourceSdk.WithResourceProfile(ssoUserIdentityProfile(
+			awsSdk.ToString(existing.UserName),
+			awsSdk.ToString(existing.DisplayName),
+			awsSdk.ToString(existing.UserId),
+			nil, // D2/I3
+		)),
 		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
 	)

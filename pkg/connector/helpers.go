@@ -633,24 +633,45 @@ func getSsoUserEmail(user awsIdentityStoreTypes.User) string {
 	return email
 }
 
-func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
-	profile := make(map[string]interface{})
-	profile["aws_user_type"] = ssoType
-	profile["aws_user_name"] = awsSdk.ToString(user.DisplayName)
-	profile["aws_user_id"] = awsSdk.ToString(user.UserId)
+const (
+	profileKeyAwsUserName    = "aws_user_name"
+	profileKeyAwsDisplayName = "aws_display_name"
+	profileKeyAwsUserID      = "aws_user_id"
+	profileKeyAwsUserType    = "aws_user_type"
+)
 
-	if len(user.ExternalIds) >= 1 {
+// ssoUserIdentityProfile is the single writer of the Identity Center user
+// profile keys. aws_user_name holds the Identity Center USERNAME (the
+// CloudTrail role-session name), NOT the display name. aws_display_name
+// carries the display name and is ALWAYS present (possibly ""), so key
+// presence is stable across users. Profile keys are never removed and
+// value types are never changed (BUGBOT "User Profile Changes").
+func ssoUserIdentityProfile(userName, displayName, userID string, externalIds []awsIdentityStoreTypes.ExternalId) map[string]interface{} {
+	profile := make(map[string]interface{})
+	profile[profileKeyAwsUserType] = ssoType
+	profile[profileKeyAwsUserName] = userName
+	profile[profileKeyAwsDisplayName] = displayName
+	profile[profileKeyAwsUserID] = userID
+	if len(externalIds) >= 1 {
 		lv := []interface{}{}
-		for _, ext := range user.ExternalIds {
-			attr := map[string]interface{}{
+		for _, ext := range externalIds {
+			lv = append(lv, map[string]interface{}{
 				"id":     awsSdk.ToString(ext.Id),
 				"issuer": awsSdk.ToString(ext.Issuer),
-			}
-			lv = append(lv, attr)
+			})
 		}
 		profile["external_ids"] = lv
 	}
 	return profile
+}
+
+func ssoUserProfile(_ context.Context, user awsIdentityStoreTypes.User) map[string]interface{} {
+	return ssoUserIdentityProfile(
+		awsSdk.ToString(user.UserName),
+		awsSdk.ToString(user.DisplayName),
+		awsSdk.ToString(user.UserId),
+		user.ExternalIds,
+	)
 }
 
 func getSsoUserCreateProfile(accountInfo *v2.AccountInfo) (*ssoUserCreateProfile, error) {

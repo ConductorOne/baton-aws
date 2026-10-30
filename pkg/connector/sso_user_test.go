@@ -12,6 +12,7 @@ import (
 	"github.com/conductorone/baton-aws/test"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 const testIdentityStoreID = "d-90679d1878"
@@ -24,6 +25,8 @@ type stubIdentityStoreClient struct {
 	*test.MockedIdentityStoreClient
 	deleteUserFn  func(*awsIdentityStore.DeleteUserInput) (*awsIdentityStore.DeleteUserOutput, error)
 	capturedInput *awsIdentityStore.DeleteUserInput
+	createUserFn  func(*awsIdentityStore.CreateUserInput) (*awsIdentityStore.CreateUserOutput, error)
+	listUsersFn   func(*awsIdentityStore.ListUsersInput) (*awsIdentityStore.ListUsersOutput, error)
 }
 
 func (c *stubIdentityStoreClient) DeleteUser(
@@ -35,6 +38,22 @@ func (c *stubIdentityStoreClient) DeleteUser(
 	return c.deleteUserFn(params)
 }
 
+func (c *stubIdentityStoreClient) CreateUser(
+	_ context.Context,
+	params *awsIdentityStore.CreateUserInput,
+	_ ...func(*awsIdentityStore.Options),
+) (*awsIdentityStore.CreateUserOutput, error) {
+	return c.createUserFn(params)
+}
+
+func (c *stubIdentityStoreClient) ListUsers(
+	_ context.Context,
+	params *awsIdentityStore.ListUsersInput,
+	_ ...func(*awsIdentityStore.Options),
+) (*awsIdentityStore.ListUsersOutput, error) {
+	return c.listUsersFn(params)
+}
+
 func newSSOUserDeleter(stub *stubIdentityStoreClient) *ssoUserResourceType {
 	return &ssoUserResourceType{
 		resourceType:        resourceTypeSSOUser,
@@ -42,6 +61,15 @@ func newSSOUserDeleter(stub *stubIdentityStoreClient) *ssoUserResourceType {
 		identityInstance:    &awsSsoAdminTypes.InstanceMetadata{IdentityStoreId: awsSdk.String(testIdentityStoreID)},
 		identityStoreClient: stub,
 	}
+}
+
+func newSSOUserProvisioner(stub *stubIdentityStoreClient) *provisionableSSOUserType {
+	return &provisionableSSOUserType{&ssoUserResourceType{
+		resourceType:        resourceTypeSSOUser,
+		region:              "us-east-1",
+		identityInstance:    &awsSsoAdminTypes.InstanceMetadata{IdentityStoreId: awsSdk.String(testIdentityStoreID)},
+		identityStoreClient: stub,
+	}}
 }
 
 func ssoUserResourceID() *v2.ResourceId {
@@ -113,4 +141,76 @@ func TestSSOUserDelete_AddressPreserved(t *testing.T) {
 	require.NotNil(t, stub.capturedInput)
 	require.Equal(t, expectedUserID, awsSdk.ToString(stub.capturedInput.UserId), "UserId passed to DeleteUser must equal the id parsed from the ARN")
 	require.Equal(t, testIdentityStoreID, awsSdk.ToString(stub.capturedInput.IdentityStoreId), "IdentityStoreId must equal the configured identity store id")
+}
+
+func ssoUserTestAccountInfo(t *testing.T) *v2.AccountInfo {
+	t.Helper()
+	profile, err := structpb.NewStruct(map[string]interface{}{
+		profileKeyUserName:    "marcus.whitaker",
+		profileKeyGivenName:   "Marcus",
+		profileKeyFamilyName:  "Whitaker",
+		profileKeyEmail:       "marcus.whitaker@example.com",
+		profileKeyDisplayName: "Marcus Whitaker",
+	})
+	require.NoError(t, err)
+	return v2.AccountInfo_builder{
+		Profile: profile,
+	}.Build()
+}
+
+func TestCreateAccount_Profile_HoldsUsername(t *testing.T) {
+	ctx := context.Background()
+	stub := &stubIdentityStoreClient{
+		createUserFn: func(*awsIdentityStore.CreateUserInput) (*awsIdentityStore.CreateUserOutput, error) {
+			return &awsIdentityStore.CreateUserOutput{UserId: awsSdk.String("u-1")}, nil
+		},
+	}
+	o := newSSOUserProvisioner(stub)
+
+	resp, _, _, err := o.CreateAccount(ctx, ssoUserTestAccountInfo(t), nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp, "CreateAccount must return a response")
+	success, ok := resp.(*v2.CreateAccountResponse_SuccessResult)
+	require.True(t, ok, "CreateAccount must return a SuccessResult on create success")
+	require.NotNil(t, success.GetResource(), "SuccessResult must carry the created resource")
+
+	profile := success.GetResource().GetProfile().AsMap()
+	require.Equal(t, "marcus.whitaker", profile[profileKeyAwsUserName], "aws_user_name must hold the username, not the display name")
+	require.Equal(t, "Marcus Whitaker", profile[profileKeyAwsDisplayName], "aws_display_name must hold the display name")
+	require.Equal(t, "u-1", profile[profileKeyAwsUserID])
+	require.Equal(t, ssoType, profile[profileKeyAwsUserType])
+	require.NotContains(t, profile, "external_ids", "create path must not emit external_ids in this diff (D2/I3)")
+}
+
+func TestCreateAccount_AlreadyExists_Profile_HoldsUsername(t *testing.T) {
+	ctx := context.Background()
+	stub := &stubIdentityStoreClient{
+		createUserFn: func(*awsIdentityStore.CreateUserInput) (*awsIdentityStore.CreateUserOutput, error) {
+			return nil, &awsIdentityStoreTypes.ConflictException{}
+		},
+		listUsersFn: func(*awsIdentityStore.ListUsersInput) (*awsIdentityStore.ListUsersOutput, error) {
+			return &awsIdentityStore.ListUsersOutput{
+				Users: []awsIdentityStoreTypes.User{{
+					UserName:    awsSdk.String("marcus.whitaker"),
+					DisplayName: awsSdk.String("Marcus Whitaker"),
+					UserId:      awsSdk.String("u-1"),
+				}},
+			}, nil
+		},
+	}
+	o := newSSOUserProvisioner(stub)
+
+	resp, _, _, err := o.CreateAccount(ctx, ssoUserTestAccountInfo(t), nil)
+	require.NoError(t, err)
+	require.NotNil(t, resp, "CreateAccount must return a response")
+	alreadyExists, ok := resp.(*v2.CreateAccountResponse_AlreadyExistsResult)
+	require.True(t, ok, "CreateAccount must return an AlreadyExistsResult on ConflictException")
+	require.NotNil(t, alreadyExists.GetResource(), "AlreadyExistsResult must carry the looked-up resource")
+
+	profile := alreadyExists.GetResource().GetProfile().AsMap()
+	require.Equal(t, "marcus.whitaker", profile[profileKeyAwsUserName], "aws_user_name must hold the username, not the display name")
+	require.Equal(t, "Marcus Whitaker", profile[profileKeyAwsDisplayName], "aws_display_name must hold the display name")
+	require.Equal(t, "u-1", profile[profileKeyAwsUserID])
+	require.Equal(t, ssoType, profile[profileKeyAwsUserType])
+	require.NotContains(t, profile, "external_ids", "lookup path must not emit external_ids in this diff (D2/I3)")
 }
