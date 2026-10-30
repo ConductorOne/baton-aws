@@ -67,6 +67,7 @@ type ctEventFixture struct {
 	userID              string
 	identityStoreArn    string
 	serviceEventDetails string // raw JSON for the serviceEventDetails field; may be ""
+	requestParameters   string // raw JSON for the requestParameters field; may be ""
 }
 
 func (f ctEventFixture) cloudTrailEvent(t *testing.T) cloudtrailTypes.Event {
@@ -90,6 +91,9 @@ func (f ctEventFixture) cloudTrailEvent(t *testing.T) cloudtrailTypes.Event {
 	}
 	if f.serviceEventDetails != "" {
 		body["serviceEventDetails"] = json.RawMessage(f.serviceEventDetails)
+	}
+	if f.requestParameters != "" {
+		body["requestParameters"] = json.RawMessage(f.requestParameters)
 	}
 	data, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -182,8 +186,70 @@ func TestListEvents_AcceptedEventNameSet(t *testing.T) {
 	require.Equal(t, []string{memberAccount, memberAccount, memberAccount}, targets)
 }
 
-// AC3 criterion 3: no member-account signal falls back to the management
-// account (UserIdentity.AccountID) and the event is still emitted.
+// AC2 criterion 2 (requestParameters shape): a GetRoleCredentials event whose
+// requestParameters carries accountId (the shape CLI/SDK credential fetches
+// produce; serviceEventDetails absent) targets the member account, not the
+// management account in userIdentity.
+func TestListEvents_GetRoleCredentialsRequestParametersTargetsMemberAccount(t *testing.T) {
+	page := fixtureEvent(t, ctEventFixture{
+		name:              "GetRoleCredentials",
+		accountID:         managementAccount,
+		userID:            testUserID,
+		identityStoreArn:  identityStoreArn,
+		requestParameters: `{"accountId":"264901105608","roleName":"ReadOnly"}`,
+	})
+	events, _ := runListEvents(t, cloudTrailClientWithEvents([]cloudtrail.LookupEventsOutput{page}), nil)
+	require.Len(t, events, 1)
+	assertMemberTargeting(t, events[0])
+}
+
+// requestParameters.accountId is a validated secondary source: invalid values
+// are rejected and the event falls back to the management account.
+func TestListEvents_RequestParametersInvalidValuesFallBack(t *testing.T) {
+	subtests := []struct {
+		name              string
+		requestParameters string
+	}{
+		{"not_object", `"some-string"`},
+		{"short_id", `{"accountId":"12345"}`},
+		{"non_digits", `{"accountId":"26490110AB08"}`},
+		{"wrong_key", `{"account_id":"264901105608"}`},
+	}
+	for _, st := range subtests {
+		t.Run(st.name, func(t *testing.T) {
+			page := fixtureEvent(t, ctEventFixture{
+				name:              "GetRoleCredentials",
+				accountID:         managementAccount,
+				userID:            testUserID,
+				identityStoreArn:  identityStoreArn,
+				requestParameters: st.requestParameters,
+			})
+			events, _ := runListEvents(t, cloudTrailClientWithEvents([]cloudtrail.LookupEventsOutput{page}), nil)
+			require.Len(t, events, 1)
+			require.Equal(t, managementAccount, events[0].GetUsageEvent().GetTargetResource().GetId().GetResource())
+		})
+	}
+}
+
+// serviceEventDetails stays primary: when both sources carry an account id,
+// serviceEventDetails wins.
+func TestListEvents_ServiceEventDetailsTakesPrecedence(t *testing.T) {
+	page := fixtureEvent(t, ctEventFixture{
+		name:                "GetRoleCredentials",
+		accountID:           managementAccount,
+		userID:              testUserID,
+		identityStoreArn:    identityStoreArn,
+		serviceEventDetails: `{"account_id":"264901105608"}`,
+		requestParameters:   `{"accountId":"325765012345"}`,
+	})
+	events, _ := runListEvents(t, cloudTrailClientWithEvents([]cloudtrail.LookupEventsOutput{page}), nil)
+	require.Len(t, events, 1)
+	assertMemberTargeting(t, events[0])
+}
+
+// AC3 criterion 3: neither source carries a member-account signal — the event
+// falls back to the management account (UserIdentity.AccountID) and is still
+// emitted. requestParameters is absent in all of these, so both sources are empty.
 func TestListEvents_NoSignalFallsBackToManagementAccount(t *testing.T) {
 	subtests := []struct {
 		name                string

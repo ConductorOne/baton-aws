@@ -88,6 +88,9 @@ type cloudTrailEvent struct {
 	EventSource string `json:"eventSource"`
 	// Raw serviceEventDetails blob; carries the member account the sign-in targeted.
 	ServiceEventDetails json.RawMessage `json:"serviceEventDetails"`
+	// Raw requestParameters blob; for GetRoleCredentials, CloudTrail logs the
+	// requested account here under the camelCase key "accountId".
+	RequestParameters json.RawMessage `json:"requestParameters"`
 }
 
 // memberAccountID extracts the member account a sign-in targeted from the
@@ -113,6 +116,35 @@ func memberAccountID(raw json.RawMessage) string {
 		}
 	}
 	accountID := details.AccountID
+	if len(accountID) != 12 {
+		return ""
+	}
+	for _, c := range accountID {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return accountID
+}
+
+// requestParametersAccountID extracts the target account from a
+// requestParameters blob. Unlike serviceEventDetails (snake_case "account_id"),
+// CloudTrail logs SSO request parameters under the camelCase key "accountId"
+// — e.g. GetRoleCredentials takes accountId and roleName as request
+// parameters, so CLI/SDK credential fetches carry the member account here.
+// Returns "" when no 12-digit account id can be recovered.
+func requestParametersAccountID(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	type requestParametersAccount struct {
+		AccountID string `json:"accountId"`
+	}
+	var params requestParametersAccount
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return ""
+	}
+	accountID := params.AccountID
 	if len(accountID) != 12 {
 		return ""
 	}
@@ -241,13 +273,19 @@ func (f *ssoLoginEventFeed) ListEvents(
 		// Create the user ARN for the resource ID
 		userARN := ssoUserToARN(f.region, identityStoreID, userID)
 
-		// Get the account ID the sign-in targeted, from serviceEventDetails when
-		// available; otherwise fall back to the emitting (management) account.
+		// Get the account ID the sign-in targeted: prefer the member-account
+		// signal in serviceEventDetails, then requestParameters.accountId
+		// (GetRoleCredentials shape); otherwise fall back to the emitting
+		// (management) account.
 		accountID := memberAccountID(ctEvent.ServiceEventDetails)
 		if accountID == "" {
-			// No member-account signal (absent, malformed, or not a 12-digit id):
-			// fall back to the emitting (management) account — today's behavior.
-			l.Debug("baton-aws: no member-account id in serviceEventDetails; falling back to emitting account",
+			accountID = requestParametersAccountID(ctEvent.RequestParameters)
+		}
+		if accountID == "" {
+			// No member-account signal in either source (absent, malformed, or
+			// not a 12-digit id): fall back to the emitting (management)
+			// account — today's behavior.
+			l.Debug("baton-aws: no member-account id in serviceEventDetails or requestParameters; falling back to emitting account",
 				zap.String("event_id", awsSdk.ToString(event.EventId)))
 			accountID = ctEvent.UserIdentity.AccountID
 		}
