@@ -214,7 +214,7 @@ func TestCreateAccount_AlreadyExists_Profile_HoldsUsername(t *testing.T) {
 	require.Equal(t, "Marcus Whitaker", profile[profileKeyAwsDisplayName], "aws_display_name must hold the display name")
 	require.Equal(t, "u-1", profile[profileKeyAwsUserID])
 	require.Equal(t, ssoType, profile[profileKeyAwsUserType])
-	require.NotContains(t, profile, "external_ids", "lookup path must not emit external_ids: external_ids not available from ListUsers lookup output")
+	require.NotContains(t, profile, "external_ids", "lookup path must not emit external_ids: deliberately omitted to keep this path's key set unchanged (converging is a planned follow-up)")
 
 	require.NotNil(t, capturedListUsers, "already-exists lookup must call ListUsers")
 	filters := capturedListUsers.Filters //nolint:staticcheck // SA1019: ListUsersInput.Filters is deprecated but remains the documented filter mechanism; see sso_user.go.

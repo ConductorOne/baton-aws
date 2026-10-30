@@ -302,7 +302,7 @@ func (o *ssoUserResourceType) findSsoUserByUserName(ctx context.Context, identit
 			awsSdk.ToString(existing.UserName),
 			awsSdk.ToString(existing.DisplayName),
 			awsSdk.ToString(existing.UserId),
-			nil, // external_ids not available from ListUsers lookup output
+			nil, // external_ids deliberately omitted to keep this path's key set unchanged (converging is a planned follow-up)
 		)),
 		resourceSdk.WithResourceStatus(v2.Status_RESOURCE_STATUS_ENABLED, ""),
 		resourceSdk.WithAnnotation(&v2.V1Identifier{Id: userARN}),
