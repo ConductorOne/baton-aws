@@ -1069,13 +1069,18 @@ The connector's **Settings** area in C1 is built for the cloud-hosted connector,
 | C1 setting | Environment variable | In China |
 |---|---|---|
 | **Role ARN** | `BATON_ROLE_ARN` | Use an `arn:aws-cn:` role ARN. Required for Options B and C; leave unset for Option A. |
-| **External ID** | `BATON_EXTERNAL_ID` | Optional. Only used when the connector assumes a role (Option B), and it must match the trust policy if you set one. C1 generates a value for you, but you do not need to use it. |
+| **External ID** | `BATON_EXTERNAL_ID` | Optional. Only sent when the connector assumes a role (Option B, or the Option C bootstrap-role variant), and it must match the trust policy if you set one. C1 generates a value for you, but you do not need to use it. |
 | **Enable support for AWS Organizations** | `BATON_GLOBAL_AWS_ORGS_ENABLED` | Same as commercial. Create the role in the management account and see [child-account roles](#aws-organizations-child-account-roles). |
 | **Enable support for AWS IAM Identity Center** | `BATON_GLOBAL_AWS_SSO_ENABLED` | Confirm Identity Center is available in your China account first. |
 | **Region for AWS IAM Identity Center** | `BATON_GLOBAL_AWS_SSO_REGION` | Choose `cn-north-1` or `cn-northwest-1`. The default is `us-east-1`, which the connector rejects at startup in a China deployment. |
 | **Also sync cross-account IAM when Identity Center is enabled** | `BATON_GLOBAL_AWS_CROSS_ACCOUNT_IAM_ENABLED` | Same as commercial. Needs the child-account roles. |
 | **IAM assume role name (child IAM accounts)** | `BATON_IAM_ASSUME_ROLE_NAME` | Defaults to `OrganizationAccountAccessRole`. Child roles must have this name. |
-| **Sync Secrets**, **Sync IAM User Console Access**, **Sync Resource Tags**, **Sync SSO User Last Login**, **Sync Only Attached Policies**, **Account Provisioning Target** | See the [self-hosted configuration](#step-2-create-kubernetes-configuration-files) | Same as commercial. Each needs the matching permission in the `arn:aws-cn:` permissions policy. |
+| **Sync Secrets** | `BATON_SYNC_SECRETS` | Same as commercial. |
+| **Sync IAM User Console Access** | `BATON_SYNC_IAM_USER_CONSOLE_ACCESS` | Same as commercial. Needs `iam:GetLoginProfile` in the `arn:aws-cn:` permissions policy. |
+| **Sync Resource Tags** | `BATON_SYNC_RESOURCE_TAGS` | Same as commercial. Needs the tag permissions in the `arn:aws-cn:` permissions policy. |
+| **Sync SSO User Last Login** | `BATON_SYNC_SSO_USER_LAST_LOGIN` | Same as commercial. Needs `cloudtrail:LookupEvents`. |
+| **Sync Only Attached Policies** | `BATON_SYNC_ONLY_ATTACHED_POLICIES` | Same as commercial. No extra permission. |
+| **Account Provisioning Target** | `BATON_CREATE_ACCOUNT_RESOURCE_TYPE` | Same as commercial. No extra permission. |
 
 Some settings have no field in the C1 UI and exist only as environment variables. They are the ones that select the China partition and credentials: `BATON_GLOBAL_REGION` (set to `cn-north-1` or `cn-northwest-1`), `BATON_GLOBAL_ACCESS_KEY_ID`, `BATON_GLOBAL_SECRET_ACCESS_KEY` and `BATON_USE_ASSUME`. `BATON_GLOBAL_ROLE_ARN` is also environment-only and must stay unset.
 
