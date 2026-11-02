@@ -237,6 +237,10 @@ Identity Center user Last Login uses a separate CloudTrail event feed. Enable Or
 
 Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
 
+<Note>
+**AWS China (`aws-cn`) accounts:** the trust policies and `arn:aws:` resource ARNs on this page are for the commercial partition and cannot be used in China. IAM in an `aws-cn` account rejects the C1 principal below with `MalformedPolicyDocument: Invalid principal in policy`. See [AWS China IAM setup](#aws-china-iam-setup) for the China-partition configuration.
+</Note>
+
 <Warning>
 **Important**
 
@@ -1048,6 +1052,137 @@ Two things to confirm against your own account before rolling out:
   `sso.amazonaws.com` event source. Event sources are partition-independent, so this is expected
   to work unchanged — but verify events are actually returned, since a mismatch surfaces as an
   empty last-login result rather than an error.
+
+#### AWS China IAM setup
+
+The commercial-partition setup earlier on this page does not work in `aws-cn`:
+
+- **There is no C1-hosted trust relationship to build.** C1's binding account is in the commercial partition and `sts:AssumeRole` cannot cross partitions, so the `arn:aws:iam::765656841499:role/ConductorOneService` principal can never be trusted from an `aws-cn` account. IAM rejects the trust policy at save time with `MalformedPolicyDocument: Invalid principal in policy`. If you are configuring the C1-hosted connector against a China account, no trust policy will work; deploy the connector in your own environment.
+- **Every ARN must use the `aws-cn` partition.** Trust policy principals and permissions policy `Resource` values both need `arn:aws-cn:`. A permissions policy with a wrong-partition resource ARN can save cleanly and then silently match nothing, so an Organizations sync fails with access-denied errors that look like a permissions problem rather than a partition problem.
+
+Pick the option that matches how your connector authenticates. Start with Option A if you only need to prove connectivity.
+
+##### Permissions policy
+
+Use the permissions policy from the **Grant permission for data sync** step of the IAM setup or Identity Center setup above, with the partition changed in every `Resource` ARN. The resource-scoped statements become:
+
+```json
+"Resource": "arn:aws-cn:iam::*:role/aws-reserved/sso.amazonaws.com/*"
+"Resource": "arn:aws-cn:iam::*:saml-provider/AWSSSO_*_DO_NOT_DELETE"
+"Resource": "arn:aws-cn:iam::*:role/OrganizationAccountAccessRole"
+```
+
+If you use a custom `BATON_IAM_ASSUME_ROLE_NAME`, use that role name in the last ARN instead. Attach the policy to the identity the connector ends up running as: the IAM user in Option A, or the connector role in Options B and C. The same changes apply to the Terraform copies of these policies.
+
+##### Option A: static access keys (no trust policy)
+
+Create an IAM user in your China account, attach the permissions policy above, and create an access key. No trust policy and no role are involved.
+
+```yaml expandable
+  BATON_GLOBAL_ACCESS_KEY_ID: <access key id>
+  BATON_GLOBAL_SECRET_ACCESS_KEY: <secret access key>
+  BATON_GLOBAL_REGION: cn-north-1
+```
+
+##### Option B: keys or an instance profile that assume a connector role
+
+This keeps the role model used elsewhere in these docs. Create a role named for example `BatonAWSConnector`, attach the permissions policy to it, and give it this trust policy. The principal is an identity inside your own `aws-cn` account, such as the IAM user from Option A or the instance role the connector runs as:
+
+```json expandable
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BatonSelfHostedAssume",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws-cn:iam::<ACCOUNT_ID>:user/baton-aws"
+      },
+      "Action": "sts:AssumeRole",
+      "Condition": {
+        "StringEquals": { "sts:ExternalId": "<ANY_SHARED_VALUE>" }
+      }
+    }
+  ]
+}
+```
+
+The `sts:ExternalId` condition is optional here. It protects against a confused deputy across a third party, and there is no third party when the connector runs in your own environment. If you keep it, `BATON_EXTERNAL_ID` must match. In single-hop mode the connector does not enforce the 32-64 character external ID length rule, so any matching value works.
+
+```yaml expandable
+  BATON_USE_ASSUME: "true"
+  BATON_ROLE_ARN: arn:aws-cn:iam::<ACCOUNT_ID>:role/BatonAWSConnector
+  BATON_EXTERNAL_ID: <same value as the trust policy; omit if you removed the condition>
+  BATON_GLOBAL_REGION: cn-north-1
+  # Leave BATON_GLOBAL_ROLE_ARN unset. Setting it selects the two-hop, C1-hosted path.
+```
+
+##### Option C: IRSA on a China EKS cluster
+
+Use a web identity trust policy, not the cross-account one. There is no `sts:ExternalId` condition on this shape.
+
+```json expandable
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws-cn:iam::<ACCOUNT_ID>:oidc-provider/<ISSUER_HOST>/id/<ID>"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "<ISSUER_HOST>/id/<ID>:sub": "system:serviceaccount:<NAMESPACE>:<SERVICE_ACCOUNT>",
+          "<ISSUER_HOST>/id/<ID>:aud": "<AUDIENCE>"
+        }
+      }
+    }
+  ]
+}
+```
+
+Read the issuer host from your own cluster rather than copying commercial-partition values:
+
+```bash
+aws eks describe-cluster --name <cluster> --region cn-north-1 --query cluster.identity.oidc.issuer
+```
+
+Do not assume the audience. Check the `ClientIDList` of the IAM OIDC provider in your China account and use that value for `:aud`; it may differ from the commercial `sts.amazonaws.com`.
+
+```yaml expandable
+  BATON_USE_ASSUME: "true"
+  BATON_ROLE_ARN: arn:aws-cn:iam::<ACCOUNT_ID>:role/BatonAWSConnector
+  BATON_GLOBAL_REGION: cn-north-1
+  # Leave BATON_GLOBAL_ROLE_ARN unset.
+```
+
+##### AWS Organizations: child-account roles
+
+When AWS Organizations support is enabled, the connector assumes a role in each child account. Create it in every child account with this trust policy, using the management account's connector role as the principal:
+
+```json expandable
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BatonCrossAccount",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws-cn:iam::<MANAGEMENT_ACCOUNT_ID>:role/BatonAWSConnector"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Two requirements that are easy to miss:
+
+- **The role name must be `OrganizationAccountAccessRole`**, unless you set `BATON_IAM_ASSUME_ROLE_NAME` to a different name.
+- **Do not add an `sts:ExternalId` condition.** The connector does not send an external ID on the child-account hop, only a session name and duration. Copying the external ID condition from the commercial trust policy onto the child roles makes every child account fail with `AccessDenied` partway through a sync.
+
+The connector builds the child-account role ARN in its own partition, so this works unchanged in `aws-cn`.
 
 See the connector's README or run `--help` to see all available configuration flags and environment variables.
 
