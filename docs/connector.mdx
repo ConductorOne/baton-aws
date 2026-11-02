@@ -1151,11 +1151,12 @@ aws eks describe-cluster --name <cluster> --region cn-north-1 --query cluster.id
 Do not assume the audience. Check the `ClientIDList` of the IAM OIDC provider in your China account and use that value for `:aud`; it may differ from the commercial `sts.amazonaws.com`.
 
 ```yaml expandable
-  BATON_USE_ASSUME: "true"
   BATON_ROLE_ARN: arn:aws-cn:iam::<ACCOUNT_ID>:role/BatonAWSConnector
   BATON_GLOBAL_REGION: cn-north-1
-  # Leave BATON_GLOBAL_ROLE_ARN unset.
+  # Leave BATON_USE_ASSUME and BATON_GLOBAL_ROLE_ARN unset.
 ```
+
+Do not set `BATON_USE_ASSUME` here. IRSA already supplies credentials for `BatonAWSConnector` through the default credential chain. With `BATON_USE_ASSUME` set, the connector would call `sts:AssumeRole` into that same role, which IAM denies unless the trust policy explicitly allows the role to assume itself. `BATON_ROLE_ARN` is still set so the connector can determine its partition and account.
 
 ##### AWS Organizations: child-account roles
 
@@ -1176,6 +1177,8 @@ When AWS Organizations support is enabled, the connector assumes a role in each 
   ]
 }
 ```
+
+The principal above fits Options B and C, where the connector runs as `BatonAWSConnector`. With Option A (static keys), the child-account `AssumeRole` call is signed by the IAM user, so use that user as the principal instead: `arn:aws-cn:iam::<MANAGEMENT_ACCOUNT_ID>:user/<USER_NAME>`.
 
 Two requirements that are easy to miss:
 
