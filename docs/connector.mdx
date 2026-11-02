@@ -1223,6 +1223,15 @@ Two requirements that are easy to miss:
 
 The connector builds the child-account role ARN in its own partition, so this works unchanged in `aws-cn`.
 
+##### Other China-specific things to check
+
+- **Region value.** IAM and Organizations use a single endpoint per partition, which the AWS SDK resolves to `iam.cn-north-1.amazonaws.com.cn` and `organizations.cn-northwest-1.amazonaws.com.cn` whichever China region you choose. Either `cn-north-1` or `cn-northwest-1` works for `BATON_GLOBAL_REGION`; it only has to start with `cn-` (lowercase). Set it in every shape, including role-based ones: with a role ARN and no region, the startup check has nothing to compare and the SDK falls back to whatever region the environment provides.
+- **Identity Center region.** The Identity Center, identity store and CloudTrail last-login clients are only created when both Organizations and Identity Center support are enabled, but the startup partition check runs whenever Identity Center is enabled. Set `BATON_GLOBAL_AWS_SSO_REGION` to a China region in either case.
+- **AWS managed policies.** AWS-managed policies appear as `arn:aws-cn:iam::aws:policy/...` in China. The connector treats them as global objects, the same as in the commercial partition, so no configuration is needed.
+- **Container image.** The sample Deployment pulls `public.ecr.aws/conductorone/baton-aws`. Confirm your China cluster can reach that registry, and mirror the image into a registry it can reach if not.
+- **Network access.** The connector needs outbound access to C1 and to the `*.amazonaws.com.cn` endpoints for IAM, STS and Organizations. Confirm your China network and egress rules allow both.
+- **STS actions.** The `assume_role_with_web_identity` and `issue_federation_token` actions have not been exercised against `aws-cn`. Web identity additionally needs AWS China STS to be able to reach C1's OIDC issuer, and `GetFederationToken` needs long-term IAM user keys (Option A).
+
 See the connector's README or run `--help` to see all available configuration flags and environment variables.
 
 #### Deployment configuration
