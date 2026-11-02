@@ -238,7 +238,7 @@ Identity Center user Last Login uses a separate CloudTrail event feed. Enable Or
 Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
 
 <Note>
-**AWS China (`aws-cn`) accounts:** the trust policies and `arn:aws:` resource ARNs on this page are for the commercial partition and cannot be used in China. IAM in an `aws-cn` account rejects the C1 principal below with `MalformedPolicyDocument: Invalid principal in policy`. See [AWS China IAM setup](#aws-china-iam-setup) for the China-partition configuration.
+**AWS China (`aws-cn`) accounts:** the trust policies and `arn:aws:` resource ARNs on this page are for the commercial partition and cannot be used in China. IAM in an `aws-cn` account cannot resolve the C1 principal below, and creating the role typically fails with a `MalformedPolicyDocument` error such as `Invalid principal in policy`. See [AWS China IAM setup](#aws-china-iam-setup) for the China-partition configuration.
 </Note>
 
 <Warning>
@@ -1000,12 +1000,12 @@ ConductorOne binding account in the commercial partition into your role — can 
 that already live in the China partition:
 
 - **Static China-partition access keys**, via `BATON_GLOBAL_ACCESS_KEY_ID` / `BATON_GLOBAL_SECRET_ACCESS_KEY`, or
-- **IRSA** inside a China-region EKS cluster, with `BATON_ROLE_ARN` set and `BATON_GLOBAL_ROLE_ARN` left unset (single-hop assume role).
+- **IRSA** inside a China-region EKS cluster, with `BATON_ROLE_ARN` set and `BATON_GLOBAL_ROLE_ARN` left unset. Whether you also set `BATON_USE_ASSUME` depends on whether the IRSA role is the connector role itself or a bootstrap role; see [Option C](#option-c-irsa-on-a-china-eks-cluster).
 
 Set the regions to China regions so endpoints resolve to `*.amazonaws.com.cn` and credentials are
 signed for the right partition:
 
-IRSA (single-hop assume role):
+IRSA where the IRSA role is the connector role (see [Option C](#option-c-irsa-on-a-china-eks-cluster) for the bootstrap-role variant that sets `BATON_USE_ASSUME`):
 
 ```yaml expandable
   BATON_ROLE_ARN: arn:aws-cn:iam::<account id>:role/<role name>
@@ -1057,7 +1057,7 @@ Two things to confirm against your own account before rolling out:
 
 The commercial-partition setup earlier on this page does not work in `aws-cn`:
 
-- **There is no C1-hosted trust relationship to build.** C1's binding account is in the commercial partition and `sts:AssumeRole` cannot cross partitions, so the `arn:aws:iam::765656841499:role/ConductorOneService` principal can never be trusted from an `aws-cn` account. IAM rejects the trust policy at save time with `MalformedPolicyDocument: Invalid principal in policy`. If you are configuring the C1-hosted connector against a China account, no trust policy will work; deploy the connector in your own environment.
+- **There is no C1-hosted trust relationship to build.** C1's binding account is in the commercial partition and `sts:AssumeRole` cannot cross partitions, so the `arn:aws:iam::765656841499:role/ConductorOneService` principal can never be trusted from an `aws-cn` account. IAM cannot resolve that principal, so creating the role typically fails with a `MalformedPolicyDocument` error such as `Invalid principal in policy`. If you are configuring the C1-hosted connector against a China account, no trust policy will work; deploy the connector in your own environment.
 - **Every ARN must use the `aws-cn` partition.** Trust policy principals and permissions policy `Resource` values both need `arn:aws-cn:`. A permissions policy with a wrong-partition resource ARN can save cleanly and then silently match nothing, so an Organizations sync fails with access-denied errors that look like a permissions problem rather than a partition problem.
 
 Pick the option that matches how your connector authenticates. Start with Option A if you only need to prove connectivity.
@@ -1082,6 +1082,8 @@ Create an IAM user in your China account, attach the permissions policy above, a
   BATON_GLOBAL_ACCESS_KEY_ID: <access key id>
   BATON_GLOBAL_SECRET_ACCESS_KEY: <secret access key>
   BATON_GLOBAL_REGION: cn-north-1
+  # Only when Identity Center support is enabled
+  BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
 ```
 
 ##### Option B: keys or an instance profile that assume a connector role
@@ -1107,15 +1109,26 @@ This keeps the role model used elsewhere in these docs. Create a role named for 
 }
 ```
 
+If the connector runs on an EC2 instance or other compute with an instance profile, use that instance role as the principal instead: `arn:aws-cn:iam::<ACCOUNT_ID>:role/<INSTANCE_ROLE_NAME>`.
+
 The `sts:ExternalId` condition is optional here. It protects against a confused deputy across a third party, and there is no third party when the connector runs in your own environment. If you keep it, `BATON_EXTERNAL_ID` must match. In single-hop mode the connector does not enforce the 32-64 character external ID length rule, so any matching value works.
 
 ```yaml expandable
+  # Credentials of the IAM user named in the trust policy.
+  # Omit both keys if the connector runs with an instance profile; the ambient
+  # credentials are then used to assume the role.
+  BATON_GLOBAL_ACCESS_KEY_ID: <access key id>
+  BATON_GLOBAL_SECRET_ACCESS_KEY: <secret access key>
   BATON_USE_ASSUME: "true"
   BATON_ROLE_ARN: arn:aws-cn:iam::<ACCOUNT_ID>:role/BatonAWSConnector
   BATON_EXTERNAL_ID: <same value as the trust policy; omit if you removed the condition>
   BATON_GLOBAL_REGION: cn-north-1
+  # Only when Identity Center support is enabled
+  BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
   # Leave BATON_GLOBAL_ROLE_ARN unset. Setting it selects the two-hop, C1-hosted path.
 ```
+
+Without the access keys, the connector falls back to the ambient AWS credential chain. If you followed this option with an IAM user, the assume-role call then fails without any hint that the keys are missing.
 
 ##### Option C: IRSA on a China EKS cluster
 
@@ -1153,14 +1166,18 @@ Do not assume the audience. Check the `ClientIDList` of the IAM OIDC provider in
 ```yaml expandable
   BATON_ROLE_ARN: arn:aws-cn:iam::<ACCOUNT_ID>:role/BatonAWSConnector
   BATON_GLOBAL_REGION: cn-north-1
+  # Only when Identity Center support is enabled
+  BATON_GLOBAL_AWS_SSO_REGION: cn-north-1
   # Leave BATON_USE_ASSUME and BATON_GLOBAL_ROLE_ARN unset.
 ```
 
-Do not set `BATON_USE_ASSUME` here. IRSA already supplies credentials for `BatonAWSConnector` through the default credential chain. With `BATON_USE_ASSUME` set, the connector would call `sts:AssumeRole` into that same role, which IAM denies unless the trust policy explicitly allows the role to assume itself. `BATON_ROLE_ARN` is still set so the connector can determine its partition and account.
+This assumes the role bound to the service account is the connector role itself. Do not set `BATON_USE_ASSUME` in that case. IRSA already supplies credentials for `BatonAWSConnector` through the default credential chain. With `BATON_USE_ASSUME` set, the connector would call `sts:AssumeRole` into that same role, which IAM denies unless the trust policy explicitly allows the role to assume itself. `BATON_ROLE_ARN` is still set so the connector can determine its partition and account.
+
+If instead IRSA gives the pod a separate bootstrap role that assumes a distinct connector role, set `BATON_USE_ASSUME: "true"` and point `BATON_ROLE_ARN` at the connector role. That role's trust policy must then trust the bootstrap role (`"AWS": "arn:aws-cn:iam::<ACCOUNT_ID>:role/<BOOTSTRAP_ROLE>"`, action `sts:AssumeRole`) rather than the OIDC provider, and the bootstrap role needs permission to call `sts:AssumeRole` on it.
 
 ##### AWS Organizations: child-account roles
 
-When AWS Organizations support is enabled, the connector assumes a role in each child account. Create it in every child account with this trust policy, using the management account's connector role as the principal:
+When AWS Organizations support is enabled, the connector assumes a role in each child account. Create it in each child account where it does not already exist, with this trust policy, using the management account's connector role as the principal. AWS Organizations creates `OrganizationAccountAccessRole` automatically in accounts created through Organizations and it already trusts the management account, so for those accounts there is nothing to create. You need to create it for invited accounts, or when you use a custom `BATON_IAM_ASSUME_ROLE_NAME`:
 
 ```json expandable
 {
@@ -1179,6 +1196,8 @@ When AWS Organizations support is enabled, the connector assumes a role in each 
 ```
 
 The principal above fits Options B and C, where the connector runs as `BatonAWSConnector`. With Option A (static keys), the child-account `AssumeRole` call is signed by the IAM user, so use that user as the principal instead: `arn:aws-cn:iam::<MANAGEMENT_ACCOUNT_ID>:user/<USER_NAME>`.
+
+A role you create yourself also needs the permissions the connector uses in that account: attach the same permissions policy described above. Without it the role can be assumed but cannot read anything. The role AWS creates automatically carries `AdministratorAccess`, so it already works.
 
 Two requirements that are easy to miss:
 
