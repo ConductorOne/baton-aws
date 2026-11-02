@@ -238,7 +238,7 @@ Identity Center user Last Login uses a separate CloudTrail event feed. Enable Or
 Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
 
 <Note>
-**AWS China (`aws-cn`) accounts:** the trust policies and `arn:aws:` resource ARNs on this page are for the commercial partition and cannot be used in China. IAM in an `aws-cn` account cannot resolve the C1 principal below, and creating the role typically fails with a `MalformedPolicyDocument` error such as `Invalid principal in policy`. See [AWS China IAM setup](#aws-china-iam-setup) for the China-partition configuration.
+**AWS China (`aws-cn`) accounts:** the trust policies and `arn:aws:` resource ARNs on this page are for the commercial partition and cannot be used in China. IAM in an `aws-cn` account cannot resolve the C1 principal below, and creating the role typically fails with a `MalformedPolicyDocument` error such as `Invalid principal in policy`. China is supported only with the self-hosted connector. See the **Self-hosted** tab under [Configure the AWS connector](#configure-the-aws-connector) and [AWS China IAM setup](#aws-china-iam-setup).
 </Note>
 
 <Warning>
@@ -839,6 +839,10 @@ The permissions policy below is broken into several sections to align with these
 <Tab title="Cloud-hosted">
 **Follow these instructions to use a built-in, no-code connector hosted by C1.**
 
+<Note>
+The cloud-hosted connector does not support AWS China (`aws-cn`) accounts. It reaches your account from a C1 account in the commercial partition, and `sts:AssumeRole` cannot cross partitions. Use the **Self-hosted** tab and the [AWS China IAM setup](#aws-china-iam-setup) instead.
+</Note>
+
 <Steps>
     <Step>
     Return to the AWS v2 connector setup page in C1.
@@ -886,6 +890,10 @@ The permissions policy below is broken into several sections to align with these
 </Tab>
 <Tab title="Self-hosted">
 **Follow these instructions to use the Amazon Web Services connector, hosted and run in your own environment.**
+
+<Note>
+**AWS China (`aws-cn`) accounts** must use this self-hosted option. Do Step 1 below to create the connector in C1 and get a Client ID and Secret. Skip the C1-provided External ID and C1 trust role from [Gather AWS credentials](#gather-aws-credentials), and follow [AWS China (aws-cn) partition](#aws-china-aws-cn-partition) and [AWS China IAM setup](#aws-china-iam-setup) in Step 2 instead.
+</Note>
 
 When running in service mode on Kubernetes, a self-hosted connector maintains an ongoing connection with C1, automatically syncing and uploading data at regular intervals. This data is immediately available in the C1 UI for access reviews and access requests.
 
@@ -1289,6 +1297,10 @@ spec:
 ## Configure the AWS connector using Terraform
 
 **Use the following Terraform script to integrate your AWS instance with C1.**
+
+<Note>
+This script creates the cloud-hosted trust relationship with C1's commercial-partition account, so it does not work for AWS China (`aws-cn`) accounts. For China, use the **Self-hosted** tab and the [AWS China IAM setup](#aws-china-iam-setup).
+</Note>
 
 ### Step 1: Get C1-provided External ID for AWS IAM Role
 
