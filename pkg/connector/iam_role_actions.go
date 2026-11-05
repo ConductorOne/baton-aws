@@ -14,10 +14,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws/arn"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	iamTypes "github.com/aws/aws-sdk-go-v2/service/iam/types"
+	"github.com/aws/smithy-go"
 	configv1 "github.com/conductorone/baton-sdk/pb/c1/config/v1"
 	v2 "github.com/conductorone/baton-sdk/pb/c1/connector/v2"
 	"github.com/conductorone/baton-sdk/pkg/actions"
 	"github.com/conductorone/baton-sdk/pkg/annotations"
+	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
@@ -38,14 +41,22 @@ const (
 	defaultDynamicRolePath = "/c1/"
 	minRoleSessionSeconds  = 3600
 	maxRoleSessionSeconds  = 43200
-	// IAM limits: 10 managed policies per role by default (quota is adjustable, AWS rejects
-	// beyond the account quota), 50 tags, 10240 chars for an inline policy.
+	// Local sanity caps; AWS enforces the real per-account quotas (default 10 managed policies,
+	// adjustable), 50 tags, 10240 chars for an inline policy.
 	maxRoleManagedPolicies = 20
 	maxRoleTags            = 48 // 50 minus the two reserved baton tags
 	maxRoleInlinePolicies  = 10
-	maxRoleInlineChars     = 10240
-	maxTrustPolicyChars    = 4096
+	// IAM counts all inline policies on a role together against 10,240 characters.
+	maxRoleInlineChars = 10240
+	// IAM is eventually consistent: a role just created can briefly be NoSuchEntity.
+	iamConsistencyRetries = 6
+
+	// The default IAM quota is 2048; raised quotas allow up to 4096.
+	maxTrustPolicyChars = 4096
 )
+
+// iamConsistencyBackoff is a var so tests can shorten it.
+var iamConsistencyBackoff = 500 * time.Millisecond
 
 var (
 	iamRoleNamePattern       = regexp.MustCompile(`^[\w+=,.@-]{1,64}$`)
@@ -117,7 +128,7 @@ func (c *AWS) iamClientForAccount(ctx context.Context, accountID string) (*iam.C
 	}
 	client, err := c.awsClientFactory.GetIAMClient(ctx, accountID)
 	if err != nil {
-		return nil, status.Errorf(codes.PermissionDenied, "baton-aws: cannot assume into account %s: %v", accountID, err)
+		return nil, wrapAWSError(fmt.Errorf("baton-aws: cannot assume into account %s: %w", accountID, err))
 	}
 	return client, nil
 }
@@ -138,6 +149,9 @@ func parseCreateRoleArgs(args *structpb.Struct, now time.Time) (*createRoleReque
 	req.accountID, _ = actions.GetStringArg(args, "account_id")
 	req.accountID = strings.TrimSpace(req.accountID)
 
+	if err := requireTypes(args); err != nil {
+		return nil, err
+	}
 	name, _ := actions.GetStringArg(args, "role_name")
 	if !iamRoleNamePattern.MatchString(name) {
 		return nil, bad("role_name must be 1-64 characters from letters, digits and +=,.@_-")
@@ -145,8 +159,11 @@ func parseCreateRoleArgs(args *structpb.Struct, now time.Time) (*createRoleReque
 	req.roleName = name
 
 	trust, _ := actions.GetStringArg(args, "trust_policy_json")
-	if strings.TrimSpace(trust) == "" || len(trust) > maxTrustPolicyChars || !json.Valid([]byte(trust)) {
-		return nil, bad("trust_policy_json must be valid JSON of at most %d characters", maxTrustPolicyChars)
+	if len(trust) > maxTrustPolicyChars {
+		return nil, bad("trust_policy_json must be at most %d characters", maxTrustPolicyChars)
+	}
+	if err := validateTrustPolicy(trust); err != nil {
+		return nil, err
 	}
 	req.trustPolicy = trust
 
@@ -167,8 +184,8 @@ func parseCreateRoleArgs(args *structpb.Struct, now time.Time) (*createRoleReque
 		req.maxSession = int32(d)
 	}
 	if b, ok := actions.GetStringArg(args, "permissions_boundary_arn"); ok && strings.TrimSpace(b) != "" {
-		if _, err := arn.Parse(b); err != nil {
-			return nil, bad("permissions_boundary_arn is not a valid ARN")
+		if err := validatePolicyARN(b); err != nil {
+			return nil, bad("permissions_boundary_arn: %v", err)
 		}
 		req.boundary = b
 	}
@@ -177,8 +194,8 @@ func parseCreateRoleArgs(args *structpb.Struct, now time.Time) (*createRoleReque
 		seen := map[string]bool{}
 		for _, item := range list {
 			s := strings.TrimSpace(item)
-			if _, err := arn.Parse(s); err != nil {
-				return nil, bad("managed_policy_arns contains an invalid ARN: %q", s)
+			if err := validatePolicyARN(s); err != nil {
+				return nil, bad("managed_policy_arns: %v", err)
 			}
 			if !seen[s] {
 				seen[s] = true
@@ -195,12 +212,14 @@ func parseCreateRoleArgs(args *structpb.Struct, now time.Time) (*createRoleReque
 			return nil, bad("at most %d inline policies are supported", maxRoleInlinePolicies)
 		}
 		req.inlinePolicies = map[string]string{}
+		total := 0
 		for n, doc := range m {
 			if !iamInlinePolicyNameRegex.MatchString(n) {
 				return nil, bad("inline policy name %q is invalid", n)
 			}
-			if len(doc) > maxRoleInlineChars || !json.Valid([]byte(doc)) {
-				return nil, bad("inline policy %q must be valid JSON of at most %d characters", n, maxRoleInlineChars)
+			total += len(strings.Join(strings.Fields(doc), ""))
+			if total > maxRoleInlineChars || !json.Valid([]byte(doc)) {
+				return nil, bad("inline policies must be valid JSON and total at most %d non-whitespace characters", maxRoleInlineChars)
 			}
 			req.inlinePolicies[n] = doc
 		}
@@ -216,6 +235,9 @@ func parseCreateRoleArgs(args *structpb.Struct, now time.Time) (*createRoleReque
 		}
 		sort.Strings(keys)
 		for _, k := range keys {
+			if k == "" || len(k) > 128 || len(m[k]) > 256 {
+				return nil, bad("tag keys must be 1-128 characters and values at most 256")
+			}
 			if strings.HasPrefix(strings.ToLower(k), "baton:") || strings.HasPrefix(strings.ToLower(k), "aws:") {
 				return nil, bad("tag key %q uses a reserved prefix", k)
 			}
@@ -289,22 +311,24 @@ func (c *AWS) createIAMRole(ctx context.Context, args *structpb.Struct) (*struct
 			return nil, nil, err
 		}
 	default:
-		return nil, nil, mapIAMRoleError(err)
+		return nil, nil, mapIAMRoleCreateError(err)
 	}
 
 	if err := applyRolePolicies(ctx, client, req); err != nil {
 		if created {
 			// Do not leave a half-provisioned role (e.g. broad trust, no policies) behind.
 			// Best-effort; the caller still receives the original error and can retry.
-			_ = deleteRoleAndDependencies(ctx, client, req.roleName)
+			rbCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			if rbErr := deleteRoleAndDependencies(rbCtx, client, req.roleName); rbErr != nil {
+				ctxzap.Extract(ctx).Warn("baton-aws: rollback of partially created IAM role failed; role may need manual cleanup",
+					zap.String("role_name", req.roleName), zap.Error(rbErr))
+			}
 		}
 		return nil, nil, err
 	}
 
-	acct := req.accountID
-	if acct == "" {
-		acct, _ = AccountIdFromARN(roleARN)
-	}
+	acct, _ := AccountIdFromARN(roleARN)
 	resp, err := structpb.NewStruct(map[string]any{
 		"role_arn": roleARN, "role_name": req.roleName, "account_id": acct, "created": created,
 	})
@@ -315,37 +339,113 @@ func (c *AWS) createIAMRole(ctx context.Context, args *structpb.Struct) (*struct
 }
 
 func (c *AWS) reconcileExistingRole(ctx context.Context, client *iam.Client, req *createRoleRequest) (string, error) {
-	got, err := client.GetRole(ctx, &iam.GetRoleInput{RoleName: awsSdk.String(req.roleName)})
+	name := awsSdk.String(req.roleName)
+	got, err := client.GetRole(ctx, &iam.GetRoleInput{RoleName: name})
 	if err != nil {
 		return "", mapIAMRoleError(err)
 	}
-	if !hasManagedTag(got.Role.Tags) {
+	tags, err := client.ListRoleTags(ctx, &iam.ListRoleTagsInput{RoleName: name})
+	if err != nil {
+		return "", mapIAMRoleError(err)
+	}
+	if !hasManagedTag(tags.Tags) {
 		return "", status.Errorf(codes.AlreadyExists, "baton-aws: role %q already exists and was not created by C1", req.roleName)
 	}
 	if _, err := client.UpdateAssumeRolePolicy(ctx, &iam.UpdateAssumeRolePolicyInput{
-		RoleName: awsSdk.String(req.roleName), PolicyDocument: awsSdk.String(req.trustPolicy),
+		RoleName: name, PolicyDocument: awsSdk.String(req.trustPolicy),
 	}); err != nil {
 		return "", mapIAMRoleError(err)
 	}
-	upd := &iam.UpdateRoleInput{RoleName: awsSdk.String(req.roleName), MaxSessionDuration: awsSdk.Int32(req.maxSession)}
-	if req.description != "" {
-		upd.Description = awsSdk.String(req.description)
-	}
-	if _, err := client.UpdateRole(ctx, upd); err != nil {
+	// Description is always sent so a retry without one clears a stale value.
+	if _, err := client.UpdateRole(ctx, &iam.UpdateRoleInput{
+		RoleName: name, MaxSessionDuration: awsSdk.Int32(req.maxSession), Description: awsSdk.String(req.description),
+	}); err != nil {
 		return "", mapIAMRoleError(err)
 	}
-	if _, err := client.TagRole(ctx, &iam.TagRoleInput{RoleName: awsSdk.String(req.roleName), Tags: req.tags}); err != nil {
+	if _, err := client.TagRole(ctx, &iam.TagRoleInput{RoleName: name, Tags: req.tags}); err != nil {
 		return "", mapIAMRoleError(err)
+	}
+	// Drop a stale expiry marker when this request carries none.
+	wantExpiry := false
+	for _, t := range req.tags {
+		if awsSdk.ToString(t.Key) == roleExpiresAtTagKey {
+			wantExpiry = true
+		}
+	}
+	if !wantExpiry {
+		for _, t := range tags.Tags {
+			if awsSdk.ToString(t.Key) == roleExpiresAtTagKey {
+				if _, err := client.UntagRole(ctx, &iam.UntagRoleInput{RoleName: name, TagKeys: []string{roleExpiresAtTagKey}}); err != nil {
+					return "", mapIAMRoleError(err)
+				}
+			}
+		}
+	}
+	// Permissions boundary: set or clear to match the request.
+	if req.boundary != "" {
+		if _, err := client.PutRolePermissionsBoundary(ctx, &iam.PutRolePermissionsBoundaryInput{
+			RoleName: name, PermissionsBoundary: awsSdk.String(req.boundary),
+		}); err != nil {
+			return "", mapIAMRoleError(err)
+		}
+	} else if got.Role.PermissionsBoundary != nil {
+		if _, err := client.DeleteRolePermissionsBoundary(ctx, &iam.DeleteRolePermissionsBoundaryInput{RoleName: name}); err != nil {
+			return "", mapIAMRoleError(err)
+		}
+	}
+	// Remove permissions that are no longer requested, so a retry can only narrow access.
+	if err := pruneRolePolicies(ctx, client, req); err != nil {
+		return "", err
 	}
 	return awsSdk.ToString(got.Role.Arn), nil
 }
 
+func pruneRolePolicies(ctx context.Context, client *iam.Client, req *createRoleRequest) error {
+	name := awsSdk.String(req.roleName)
+	wantManaged := map[string]bool{}
+	for _, a := range req.managedPolicyARNs {
+		wantManaged[a] = true
+	}
+	attached := iam.NewListAttachedRolePoliciesPaginator(client, &iam.ListAttachedRolePoliciesInput{RoleName: name})
+	for attached.HasMorePages() {
+		page, err := attached.NextPage(ctx)
+		if err != nil {
+			return mapIAMRoleError(err)
+		}
+		for _, p := range page.AttachedPolicies {
+			if !wantManaged[awsSdk.ToString(p.PolicyArn)] {
+				if _, err := client.DetachRolePolicy(ctx, &iam.DetachRolePolicyInput{RoleName: name, PolicyArn: p.PolicyArn}); err != nil && !isNoSuchEntity(err) {
+					return mapIAMRoleError(err)
+				}
+			}
+		}
+	}
+	inline := iam.NewListRolePoliciesPaginator(client, &iam.ListRolePoliciesInput{RoleName: name})
+	for inline.HasMorePages() {
+		page, err := inline.NextPage(ctx)
+		if err != nil {
+			return mapIAMRoleError(err)
+		}
+		for _, n := range page.PolicyNames {
+			if _, keep := req.inlinePolicies[n]; !keep {
+				if _, err := client.DeleteRolePolicy(ctx, &iam.DeleteRolePolicyInput{RoleName: name, PolicyName: awsSdk.String(n)}); err != nil && !isNoSuchEntity(err) {
+					return mapIAMRoleError(err)
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func applyRolePolicies(ctx context.Context, client *iam.Client, req *createRoleRequest) error {
 	for _, p := range req.managedPolicyARNs {
-		if _, err := client.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
-			RoleName: awsSdk.String(req.roleName), PolicyArn: awsSdk.String(p),
+		if err := retryIAMConsistency(ctx, func() error {
+			_, err := client.AttachRolePolicy(ctx, &iam.AttachRolePolicyInput{
+				RoleName: awsSdk.String(req.roleName), PolicyArn: awsSdk.String(p),
+			})
+			return err
 		}); err != nil {
-			return mapIAMRoleError(err)
+			return mapIAMRoleCreateError(err)
 		}
 	}
 	names := make([]string, 0, len(req.inlinePolicies))
@@ -354,11 +454,14 @@ func applyRolePolicies(ctx context.Context, client *iam.Client, req *createRoleR
 	}
 	sort.Strings(names)
 	for _, n := range names {
-		if _, err := client.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
-			RoleName: awsSdk.String(req.roleName), PolicyName: awsSdk.String(n),
-			PolicyDocument: awsSdk.String(req.inlinePolicies[n]),
+		if err := retryIAMConsistency(ctx, func() error {
+			_, err := client.PutRolePolicy(ctx, &iam.PutRolePolicyInput{
+				RoleName: awsSdk.String(req.roleName), PolicyName: awsSdk.String(n),
+				PolicyDocument: awsSdk.String(req.inlinePolicies[n]),
+			})
+			return err
 		}); err != nil {
-			return mapIAMRoleError(err)
+			return mapIAMRoleCreateError(err)
 		}
 	}
 	return nil
@@ -382,8 +485,8 @@ func (c *AWS) deleteIAMRole(ctx context.Context, args *structpb.Struct) (*struct
 		}
 		return nil, nil, mapIAMRoleError(err)
 	}
-	// GetRole does not return tags; ListRoleTags is authoritative. Our marker tag is written
-	// at creation, so it is always within the first page.
+	// ListRoleTags is the single tag source for both create-reconcile and delete. The marker is
+	// written at creation, so it is always within the first page (50-tag cap, 100 per page).
 	tags, err := client.ListRoleTags(ctx, &iam.ListRoleTagsInput{RoleName: awsSdk.String(name)})
 	if err != nil {
 		return nil, nil, mapIAMRoleError(err)
@@ -452,26 +555,210 @@ func deleteRoleAndDependencies(ctx context.Context, client *iam.Client, name str
 	return err
 }
 
+// mapIAMRoleError classifies IAM errors into gRPC codes. wrapAWSError handles throttling,
+// credential and generic failures; the cases below are specific to role lifecycle calls.
 func mapIAMRoleError(err error) error {
 	var (
-		exists    *iamTypes.EntityAlreadyExistsException
-		malformed *iamTypes.MalformedPolicyDocumentException
-		limit     *iamTypes.LimitExceededException
-		noEntity  *iamTypes.NoSuchEntityException
+		exists     *iamTypes.EntityAlreadyExistsException
+		malformed  *iamTypes.MalformedPolicyDocumentException
+		limit      *iamTypes.LimitExceededException
+		noEntity   *iamTypes.NoSuchEntityException
+		conflict   *iamTypes.DeleteConflictException
+		invalid    *iamTypes.InvalidInputException
+		notAttach  *iamTypes.PolicyNotAttachableException
+		concurrent *iamTypes.ConcurrentModificationException
+		unmod      *iamTypes.UnmodifiableEntityException
 	)
 	switch {
-	case errors.As(err, &exists):
-		return status.Error(codes.AlreadyExists, "baton-aws: "+err.Error())
-	case errors.As(err, &malformed):
-		return status.Error(codes.InvalidArgument, "baton-aws: "+err.Error())
-	case errors.As(err, &limit):
-		return status.Error(codes.ResourceExhausted, "baton-aws: "+err.Error())
-	case errors.As(err, &noEntity):
-		return status.Error(codes.NotFound, "baton-aws: "+err.Error())
 	case isAccessDeniedError(err):
-		return status.Error(codes.PermissionDenied, "baton-aws: "+err.Error())
+		return status.Error(codes.PermissionDenied, "baton-aws: access denied: "+apiErrorMessage(err))
+	case errors.As(err, &exists):
+		return status.Error(codes.AlreadyExists, "baton-aws: "+apiErrorMessage(err))
+	case errors.As(err, &malformed), errors.As(err, &invalid), errors.As(err, &notAttach):
+		return status.Error(codes.InvalidArgument, "baton-aws: "+apiErrorMessage(err))
+	case errors.As(err, &limit):
+		return status.Error(codes.ResourceExhausted, "baton-aws: "+apiErrorMessage(err))
+	case errors.As(err, &noEntity):
+		return status.Error(codes.NotFound, "baton-aws: "+apiErrorMessage(err))
+	case errors.As(err, &conflict), errors.As(err, &concurrent):
+		return status.Error(codes.Aborted, "baton-aws: "+apiErrorMessage(err))
+	case errors.As(err, &unmod):
+		return status.Error(codes.FailedPrecondition, "baton-aws: "+apiErrorMessage(err))
 	}
 	return wrapAWSError(fmt.Errorf("baton-aws: iam role action failed: %w", err))
+}
+
+// mapIAMRoleCreateError is mapIAMRoleError for calls made while creating a role, where
+// NoSuchEntity means a referenced policy or boundary is missing (a bad request), not that the
+// action's target is gone.
+func mapIAMRoleCreateError(err error) error {
+	if isNoSuchEntity(err) {
+		return status.Error(codes.InvalidArgument, "baton-aws: referenced policy or role does not exist: "+apiErrorMessage(err))
+	}
+	return mapIAMRoleError(err)
+}
+
+// apiErrorMessage reads the AWS message via the APIError interface. err.Error() can panic on a
+// response-less smithy ResponseError (see isAccessDeniedError).
+func apiErrorMessage(err error) string {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode() + ": " + apiErr.ErrorMessage()
+	}
+	return "request failed"
+}
+
+// retryIAMConsistency retries NoSuchEntity briefly: IAM is eventually consistent, so a call
+// right after CreateRole can fail until the role propagates. A persistent NoSuchEntity (a bad
+// policy ARN) still surfaces after the bounded retries.
+func retryIAMConsistency(ctx context.Context, fn func() error) error {
+	var err error
+	for i := 0; i < iamConsistencyRetries; i++ {
+		if err = fn(); err == nil || !isNoSuchEntity(err) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(iamConsistencyBackoff):
+		}
+	}
+	return err
+}
+
+// requireTypes rejects present-but-mistyped optional args instead of silently ignoring them
+// (a dropped managed_policy_arns would otherwise create a role with no permissions).
+func requireTypes(args *structpb.Struct) error {
+	f := args.GetFields()
+	check := func(key string, ok func(*structpb.Value) bool, want string) error {
+		if v, present := f[key]; present && v.GetKind() != nil {
+			if _, isNull := v.GetKind().(*structpb.Value_NullValue); isNull {
+				return nil
+			}
+			if !ok(v) {
+				return status.Errorf(codes.InvalidArgument, "baton-aws: %s must be %s", key, want)
+			}
+		}
+		return nil
+	}
+	isStr := func(v *structpb.Value) bool { _, ok := v.GetKind().(*structpb.Value_StringValue); return ok }
+	isNum := func(v *structpb.Value) bool { _, ok := v.GetKind().(*structpb.Value_NumberValue); return ok }
+	isStrList := func(v *structpb.Value) bool {
+		if v.GetListValue() == nil {
+			return false
+		}
+		for _, i := range v.GetListValue().GetValues() {
+			if !isStr(i) {
+				return false
+			}
+		}
+		return true
+	}
+	isStrMap := func(v *structpb.Value) bool {
+		if v.GetStructValue() == nil {
+			return false
+		}
+		for _, i := range v.GetStructValue().GetFields() {
+			if !isStr(i) {
+				return false
+			}
+		}
+		return true
+	}
+	for _, k := range []string{"account_id", "role_name", "trust_policy_json", "path", "description", "permissions_boundary_arn", "expires_at"} {
+		if err := check(k, isStr, "a string"); err != nil {
+			return err
+		}
+	}
+	if err := check("max_session_duration_seconds", isNum, "a number"); err != nil {
+		return err
+	}
+	if err := check("managed_policy_arns", isStrList, "a list of strings"); err != nil {
+		return err
+	}
+	for _, k := range []string{"inline_policies", "tags"} {
+		if err := check(k, isStrMap, "a map of string values"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateTrustPolicy checks the document is a policy with statements and refuses a
+// wildcard principal that has no Condition, which would let any AWS principal assume the role.
+func validateTrustPolicy(doc string) error {
+	var p struct {
+		Statement json.RawMessage `json:"Statement"`
+	}
+	if err := json.Unmarshal([]byte(doc), &p); err != nil || len(p.Statement) == 0 {
+		return status.Error(codes.InvalidArgument, "baton-aws: trust_policy_json must be a JSON policy document with a Statement")
+	}
+	var stmts []struct {
+		Effect    string          `json:"Effect"`
+		Principal json.RawMessage `json:"Principal"`
+		Condition json.RawMessage `json:"Condition"`
+	}
+	if err := json.Unmarshal(p.Statement, &stmts); err != nil {
+		var one struct {
+			Effect    string          `json:"Effect"`
+			Principal json.RawMessage `json:"Principal"`
+			Condition json.RawMessage `json:"Condition"`
+		}
+		if err := json.Unmarshal(p.Statement, &one); err != nil {
+			return status.Error(codes.InvalidArgument, "baton-aws: trust_policy_json Statement is malformed")
+		}
+		stmts = append(stmts, one)
+	}
+	if len(stmts) == 0 {
+		return status.Error(codes.InvalidArgument, "baton-aws: trust_policy_json must contain at least one statement")
+	}
+	for _, s := range stmts {
+		if s.Effect == "Allow" && len(s.Condition) == 0 && principalIsWildcard(s.Principal) {
+			return status.Error(codes.InvalidArgument, "baton-aws: trust policy may not allow a wildcard principal without a Condition")
+		}
+	}
+	return nil
+}
+
+func principalIsWildcard(raw json.RawMessage) bool {
+	if len(raw) == 0 {
+		return false
+	}
+	var str string
+	if json.Unmarshal(raw, &str) == nil {
+		return str == "*"
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(raw, &m) != nil {
+		return false
+	}
+	for _, v := range m {
+		var one string
+		if json.Unmarshal(v, &one) == nil && one == "*" {
+			return true
+		}
+		var many []string
+		if json.Unmarshal(v, &many) == nil {
+			for _, x := range many {
+				if x == "*" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// validatePolicyARN requires an IAM policy ARN (managed policy or permissions boundary).
+func validatePolicyARN(s string) error {
+	a, err := arn.Parse(s)
+	if err != nil {
+		return fmt.Errorf("%q is not a valid ARN", s)
+	}
+	if a.Service != "iam" || !strings.HasPrefix(a.Resource, "policy/") {
+		return fmt.Errorf("%q is not an IAM policy ARN", s)
+	}
+	return nil
 }
 
 func getStringMapArg(args *structpb.Struct, key string) (map[string]string, bool) {
