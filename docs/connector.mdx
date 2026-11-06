@@ -233,6 +233,29 @@ IAM user **Last Login** does not depend on either optional setting.
 
 Identity Center user Last Login uses a separate CloudTrail event feed. Enable Organizations support, Identity Center support, and **Sync SSO User Last Login** (`BATON_SYNC_SSO_USER_LAST_LOGIN`), and grant `cloudtrail:LookupEvents` to report Identity Center sign-ins. This setting is also off by default and does not affect IAM user Last Login or access key activity.
 
+## Permission set usage
+
+<Note>
+C1 stores this usage for each permission set assignment, but request and review tasks currently show only app-level usage ("last logged into AWS"). Until tasks show usage per access, this data is not visible on tasks.
+</Note>
+
+Enable **Sync Permission Set Usage** (`BATON_SYNC_PERMISSION_SET_USAGE`) to record when each Identity Center user starts a session with a permission set in an account. The connector reads two CloudTrail events from event history in the Identity Center account and region:
+
+- `Federate`: a session started from the AWS access portal (console).
+- `GetRoleCredentials`: credentials fetched for the CLI or an SDK.
+
+Identity Center logs these events centrally for every account in the organization, so the connector needs no access to member accounts. Each event becomes a usage event on the matching permission set assignment (the permission set and the account named in the event).
+
+- **Session starts, not activity.** A session start shows the user chose that permission set in that account. It does not show what they did during the session.
+- **90-day history.** CloudTrail event history covers 90 days, so the first sync reports at most 90 days of sessions. CloudTrail allows 2 `LookupEvents` requests per second per account and region, so in a large organization this first backfill can take a while and may be throttled; it resumes where it stopped.
+- **About 15 minutes behind.** Events reach CloudTrail event history a few minutes after they happen, so the connector reads up to 15 minutes before the current time.
+- **Matched by permission set name.** CloudTrail records the permission set's name, and names cannot change. Events for a deleted permission set are skipped. If a permission set is deleted and a new one is created with the same name, earlier events are attributed to the new one.
+- **Never reports non-use.** The connector emits only sessions that happened. Any "not used in N days" judgment is made by C1 from the access it already holds.
+
+Requirements: Organizations support, Identity Center support, and `cloudtrail:LookupEvents`, `sso:ListPermissionSets` and `sso:DescribePermissionSet` on the connector role. This setting is off by default and independent of **Sync SSO User Last Login**.
+
+Usage is recorded against the opt-in Permission Set Assignment resource (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings)), so it applies to the Permission Set Assignment entitlements. It is not attributed to the account-level permission set entitlements: those share the account resource, so a session could not be credited to one permission set.
+
 ## Gather AWS credentials
 
 Configuring the connector requires you to pass in credentials generated in AWS. Gather these credentials before you move on.
@@ -782,7 +805,7 @@ The permissions policy below is broken into several sections to align with these
 	- `organizations:ListParents`: **Recommended**, only needed to re-parent accounts onto their Organizational Unit for the Sparse ACLs by-inheritance hierarchy. If omitted, accounts sync flat without OU grouping instead of failing.
 	- `organizations:DescribeAccount`: **Recommended**, enables proactive validation of account status before creating assignments. If omitted, the connector proceeds anyway and surfaces a less clear error for suspended accounts.
 	- `sso:List..., sso:Describe..., sso:Get...`: These permissions allow C1 to list your permission sets, see how they are assigned to accounts and users, and read the inline and managed IAM policies attached to each permission set.
-	- `cloudtrail:LookupEvents`: **Optional**, only needed when Organizations support, Identity Center support, and **Sync SSO User Last Login** are all enabled. The JSON above includes it so the connector can read Identity Center sign-in events in that configuration.
+	- `cloudtrail:LookupEvents`: **Optional**, only needed when Organizations support and Identity Center support are enabled together with **Sync SSO User Last Login** or **Sync Permission Set Usage**. The JSON above includes it so the connector can read Identity Center sign-in events in that configuration.
 	- `organizations:ListRoots, organizations:ListOrganizationalUnitsForParent`: **Optional**, only needed for the Sparse ACLs Organization Root / Organizational Unit hierarchy (see [Sparse ACLs](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) above). If omitted, the connector logs a warning and skips the OU hierarchy instead of failing.
 	- `iam:GetUser, and various iam:List... permissions`: These permissions are necessary for C1 to first retrieve all associated credentials and metadata for an IAM user before a complete deletion can be performed.
 	**Section 2: Provisioning access (“C1ProvisionAccess”)**
@@ -866,6 +889,9 @@ The permissions policy below is broken into several sections to align with these
     </Step>
     <Step>
     **Optional.** If both Organizations support and Identity Center support are enabled, enable **Sync SSO User Last Login** to report Identity Center sign-ins. The connector role must include `cloudtrail:LookupEvents`.
+    </Step>
+    <Step>
+    **Optional.** If both Organizations support and Identity Center support are enabled, enable **Sync Permission Set Usage** to record Identity Center session starts per permission set assignment. The connector role must include `cloudtrail:LookupEvents`. See [Permission set usage](#permission-set-usage).
     </Step>
     <Step>
     **Optional.** Choose **Account Provisioning Target**: `iam_user` (default) creates IAM users; `sso_user` creates Identity Center users and requires **Enable support for AWS IAM Identity Center**. See [Account provisioning](#account-provisioning).
@@ -971,6 +997,10 @@ stringData:
   # Requires Organizations and Identity Center support plus cloudtrail:LookupEvents
   BATON_SYNC_SSO_USER_LAST_LOGIN: true
 
+  # Optional: Report Identity Center session starts per permission set assignment from CloudTrail
+  # Requires Organizations and Identity Center support plus cloudtrail:LookupEvents
+  BATON_SYNC_PERMISSION_SET_USAGE: true
+
   # Optional: Publish AWS resource tags as the aws_tags profile field
   # Requires organizations:ListTagsForResource, iam:ListUserTags, iam:ListRoleTags
   BATON_SYNC_RESOURCE_TAGS: true
@@ -1047,7 +1077,8 @@ Two things to confirm against your own account before rolling out:
 - **Identity Center last login.** `BATON_SYNC_SSO_USER_LAST_LOGIN` filters CloudTrail on the
   `sso.amazonaws.com` event source. Event sources are partition-independent, so this is expected
   to work unchanged — but verify events are actually returned, since a mismatch surfaces as an
-  empty last-login result rather than an error.
+  empty last-login result rather than an error. **Sync Permission Set Usage** filters on event
+  names (`Federate`, `GetRoleCredentials`) instead, with the same caveat.
 
 See the connector's README or run `--help` to see all available configuration flags and environment variables.
 
@@ -1313,7 +1344,7 @@ resource "aws_iam_role" "ConductorOneIntegration" {
 }
 ```
 
-After applying the Terraform configuration, enable **Sync secrets** and **Sync IAM User Console Access** in the connector settings if you want their optional data. **Sync secrets** includes member-account keys whenever cross-account IAM sync is active; with Identity Center enabled, also enable **Also sync cross-account IAM when Identity Center is enabled**. Enable **Sync SSO User Last Login** only when both Organizations support and Identity Center support are enabled.
+After applying the Terraform configuration, enable **Sync secrets** and **Sync IAM User Console Access** in the connector settings if you want their optional data. **Sync secrets** includes member-account keys whenever cross-account IAM sync is active; with Identity Center enabled, also enable **Also sync cross-account IAM when Identity Center is enabled**. Enable **Sync SSO User Last Login** and **Sync Permission Set Usage** only when both Organizations support and Identity Center support are enabled.
 </Tab>
 </Tabs>
 

@@ -57,6 +57,7 @@ type Config struct {
 	SyncSecrets                     bool
 	IamAssumeRoleName               string
 	SyncSSOUserLastLogin            bool
+	SyncPermissionSetUsage          bool
 	SyncIAMUserConsoleAccess        bool
 	SyncOnlyAttachedPolicies        bool
 	SyncResourceTags                bool
@@ -110,6 +111,7 @@ type AWS struct {
 
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
+	syncPermissionSetUsage   bool
 	syncIAMUserConsoleAccess bool
 	syncOnlyAttachedPolicies bool
 	syncIAMPolicyGrants      bool
@@ -371,6 +373,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		SyncSecrets:                     awsc.SyncSecrets,
 		IamAssumeRoleName:               awsc.IamAssumeRoleName,
 		SyncSSOUserLastLogin:            awsc.SyncSsoUserLastLogin,
+		SyncPermissionSetUsage:          awsc.SyncPermissionSetUsage,
 		SyncIAMUserConsoleAccess:        awsc.SyncIamUserConsoleAccess,
 		SyncOnlyAttachedPolicies:        awsc.SyncOnlyAttachedPolicies,
 		SyncResourceTags:                awsc.SyncResourceTags,
@@ -412,6 +415,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		_callingConfigError:      map[string]error{},
 		syncSecrets:              config.SyncSecrets,
 		syncSSOUserLastLogin:     config.SyncSSOUserLastLogin,
+		syncPermissionSetUsage:   config.SyncPermissionSetUsage,
 		syncIAMUserConsoleAccess: config.SyncIAMUserConsoleAccess,
 		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
 		syncIAMPolicyGrants:      syncIAMPolicyGrants,
@@ -540,9 +544,9 @@ func (c *AWS) SetupClients(ctx context.Context) error {
 		c.identityStoreClient = awsIdentityStore.NewFromConfig(ssoCallingConfig)
 		c.ssoAdminClient = awsSsoAdmin.NewFromConfig(ssoCallingConfig)
 
-		// Only create CloudTrail client if SSO user last login sync is enabled
-		if c.syncSSOUserLastLogin {
-			l.Debug("syncSSOUserLastLogin enabled. creating cloudTrailClient")
+		// Only create the CloudTrail client when an event feed reads it.
+		if c.syncSSOUserLastLogin || c.syncPermissionSetUsage {
+			l.Debug("CloudTrail event feed enabled. creating cloudTrailClient")
 			c.cloudTrailClient = cloudtrail.NewFromConfig(ssoCallingConfig)
 		}
 
@@ -666,14 +670,19 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 
 func (c *AWS) EventFeeds(ctx context.Context) []connectorbuilder.EventFeed {
 	l := ctxzap.Extract(ctx)
-	if !c.syncSSOUserLastLogin || c.cloudTrailClient == nil {
+	if c.cloudTrailClient == nil {
 		return nil
 	}
-	l.Debug("syncSSOUserLastLogin enabled. adding ssoLoginEventFeed")
-
-	return []connectorbuilder.EventFeed{
-		newSSOLoginEventFeed(c.cloudTrailClient, c.ssoRegion),
+	var feeds []connectorbuilder.EventFeed
+	if c.syncSSOUserLastLogin {
+		l.Debug("syncSSOUserLastLogin enabled. adding ssoLoginEventFeed")
+		feeds = append(feeds, newSSOLoginEventFeed(c.cloudTrailClient, c.ssoRegion))
 	}
+	if c.syncPermissionSetUsage && c.identityInstance != nil {
+		l.Debug("syncPermissionSetUsage enabled. adding permissionSetUsageEventFeed")
+		feeds = append(feeds, newPermissionSetUsageEventFeed(c.cloudTrailClient, c.ssoAdminClient, c.identityInstance, c.ssoRegion))
+	}
+	return feeds
 }
 
 func (c *AWS) getIdentityInstance(ctx context.Context, ssoClient *awsSsoAdmin.Client) (*awsSsoAdminTypes.InstanceMetadata, error) {
