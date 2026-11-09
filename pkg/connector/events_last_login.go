@@ -205,7 +205,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 		// Create the user ARN for the resource ID
 		userARN := ssoUserToARN(f.region, identityStoreID, userID)
 
-		// Get the account ID from the event (the account the user logged into)
+		// The account that holds IAM Identity Center, not the account the user signed into
 		accountID := ctEvent.UserIdentity.AccountID
 
 		// Create a v2.Event for this login event
@@ -214,6 +214,7 @@ func (f *ssoLoginEventFeed) ListEvents(
 			OccurredAt: timestamppb.New(*occurredAt),
 			Event: &v2.Event_UsageEvent{
 				UsageEvent: &v2.UsageEvent{
+					TargetKind: v2.UsageEvent_TARGET_KIND_APP_ACCESS,
 					TargetResource: &v2.Resource{
 						Id: &v2.ResourceId{
 							ResourceType: resourceTypeAccount.Id,
