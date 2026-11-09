@@ -66,7 +66,6 @@ func RunConnector[T field.Configurable](
 	}
 
 	cmd.Version = version
-	cmd.AddCommand(cli.NewCheckUpdateCommand(ctx, connectorName, version))
 
 	err = cmd.Execute()
 	if err != nil {
