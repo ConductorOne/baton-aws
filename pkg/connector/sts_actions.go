@@ -91,7 +91,13 @@ func (c *AWS) GlobalActions(ctx context.Context, registry actions.ActionRegistry
 	if err := registry.Register(ctx, assumeRoleWithWebIdentitySchema, c.issueSTSWebIdentitySession); err != nil {
 		return err
 	}
-	return actions.RegisterWithSecrets(ctx, registry, issueFederationTokenSchema, c.issueSTSFederationToken)
+	if err := actions.RegisterWithSecrets(ctx, registry, issueFederationTokenSchema, c.issueSTSFederationToken); err != nil {
+		return err
+	}
+	if err := registry.Register(ctx, createIAMRoleSchema, c.createIAMRole); err != nil {
+		return err
+	}
+	return registry.Register(ctx, deleteIAMRoleSchema, c.deleteIAMRole)
 }
 
 func (c *AWS) issueSTSWebIdentitySession(ctx context.Context, args *structpb.Struct) (*structpb.Struct, annotations.Annotations, error) {
