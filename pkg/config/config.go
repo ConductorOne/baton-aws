@@ -131,6 +131,15 @@ var (
 		field.WithDescription("Enable fetching last login time for SSO users from CloudTrail (requires cloudtrail:LookupEvents permission)"),
 		field.WithDefaultValue(false),
 	)
+	SyncPermissionSetUsage = field.BoolField(
+		"sync-permission-set-usage",
+		field.WithDisplayName("Sync Permission Set Usage"),
+		field.WithDescription(
+			"Report Identity Center session starts (console and CLI) per permission set assignment from CloudTrail "+
+				"in the Identity Center account and region. Requires cloudtrail:LookupEvents, sso:ListPermissionSets and sso:DescribePermissionSet.",
+		),
+		field.WithDefaultValue(false),
+	)
 	SyncIAMUserConsoleAccess = field.BoolField(
 		"sync-iam-user-console-access",
 		field.WithDisplayName("Sync IAM User Console Access"),
@@ -185,6 +194,7 @@ var Config = field.NewConfiguration(
 		SyncSecrets,
 		IamAssumeRoleName,
 		SyncSSOUserLastLogin,
+		SyncPermissionSetUsage,
 		SyncIAMUserConsoleAccess,
 		SyncOnlyAttachedPolicies,
 		SyncResourceTags,
@@ -202,6 +212,15 @@ var Config = field.NewConfiguration(
 		field.FieldsDependentOn(
 			[]field.SchemaField{
 				GlobalAwsCrossAccountIamEnabledField,
+			},
+			[]field.SchemaField{
+				GlobalAwsOrgsEnabledField,
+				GlobalAwsSsoEnabledField,
+			},
+		),
+		field.FieldsDependentOn(
+			[]field.SchemaField{
+				SyncPermissionSetUsage,
 			},
 			[]field.SchemaField{
 				GlobalAwsOrgsEnabledField,
