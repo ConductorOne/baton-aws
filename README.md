@@ -429,6 +429,33 @@ _These policies have comments prefixed with // that need to be removed before us
     },
     {
       "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:ListRoleTags",
+        "iam:UpdateRole",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:PutRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:ListRolePolicies",
+        "iam:ListInstanceProfilesForRole",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:PutRolePermissionsBoundary",
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:DeleteRole"
+      ],
+      "Effect": "Allow",
+      "Resource": "arn:aws:iam::*:role/c1/*",
+      // Optional: on-demand, time-bound IAM roles (create_iam_role / delete_iam_role actions).
+      // Scoped to the default /c1/ role path; widen only if you pass a different path.
+      "Sid": "IAMRoleLifecycle"
+    },
+    {
+      "Action": [
         "identitystore:CreateGroupMembership",
         "identitystore:DeleteGroupMembership"
       ],

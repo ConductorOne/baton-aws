@@ -164,6 +164,72 @@ permissions at all unless you pass `policy` or `policy_arns` — the session's
 access is the intersection of the IAM user's permissions and the policies
 supplied here.
 
+## On-demand, time-bound IAM roles
+
+The connector exposes two global actions that give C1 a standard IAM role
+lifecycle, so a role only exists in a member account while someone has an
+approved request for it. This avoids pre-deploying central-service roles to
+every account.
+
+`create_iam_role` creates a role in the target account (or reconciles one this
+action already created, so retries are safe). It accepts:
+
+- `account_id`: the 12-digit account that will own the role. Omit it to use the
+  connector's own account. Other accounts are reached through the connector's
+  cross-account role (**IAM Assume Role Name**);
+- `role_name`: required, 1 through 64 characters from `[A-Za-z0-9_+=,.@-]`;
+- `trust_policy_json`: required, the trust relationship policy;
+- `managed_policy_arns` and `inline_policies` (policy name to JSON document):
+  the permissions;
+- `path` (default `/c1/`), `description`, `max_session_duration_seconds`
+  (3,600 through 43,200, default 3,600), `permissions_boundary_arn` and `tags`;
+  and
+- `expires_at`: an optional RFC 3339 time, recorded on the role as the
+  `baton:expires-at` tag. It is an audit marker: C1 enforces the lifetime by
+  calling `delete_iam_role` when the grant is revoked or expires. Deleting a
+  role doesn't revoke STS sessions already issued from it; they last until
+  their own expiry (up to `max_session_duration_seconds`), so keep that short.
+
+Every role the action creates is tagged `baton:managed-by=c1-dynamic-role`.
+Re-running `create_iam_role` for a role it created reconciles it to the request:
+the trust policy, session duration, description, boundary and tags are updated,
+and managed or inline policies that are no longer requested are removed. It
+never adopts a role without the tag. If a policy can't be attached, a newly
+created role is removed again rather than left half-provisioned.
+
+The trust policy must be a policy document with at least one statement, and a
+statement that allows a wildcard (`*`) principal without a `Condition` is
+rejected. Managed policy and boundary ARNs must be IAM policy ARNs.
+
+To create roles in another account, the connector reaches that account through
+its cross-account role (the **IAM Assume Role Name** setting, with AWS
+Organizations support enabled), so the connector role must be allowed to
+`sts:AssumeRole` into it and that role needs the permissions below. These
+actions are not tied to the connector's provisioning toggle; they are usable
+only when the connector's AWS role has the IAM permissions listed here, so omit
+them to keep the connector read-only.
+
+`delete_iam_role` detaches managed and inline policies, removes the role from
+any instance profiles, and deletes it. It refuses any role without the
+`baton:managed-by` tag, so it can't remove roles it didn't create, and a role
+that no longer exists counts as already deleted. The tag is a guard rail, not an
+access control: anyone with `iam:TagRole` on a role can set it.
+
+<Warning>
+The trust policy is supplied by the requester's C1 configuration. Restrict who
+can author or edit the request definition, and use `permissions_boundary_arn`
+to cap what any created role can do. The connector role (and the cross-account
+role in each target account) needs `iam:CreateRole`, `iam:GetRole`,
+`iam:TagRole`, `iam:ListRoleTags`, `iam:UpdateRole`,
+`iam:UpdateAssumeRolePolicy`, `iam:AttachRolePolicy`, `iam:DetachRolePolicy`,
+`iam:PutRolePolicy`, `iam:DeleteRolePolicy`, `iam:ListAttachedRolePolicies`,
+`iam:ListRolePolicies`, `iam:ListInstanceProfilesForRole`,
+`iam:UntagRole`, `iam:PutRolePermissionsBoundary`,
+`iam:DeleteRolePermissionsBoundary`, `iam:RemoveRoleFromInstanceProfile` and
+`iam:DeleteRole`. Scope them to the `/c1/` path (`arn:aws:iam::*:role/c1/*`)
+where you can.
+</Warning>
+
 ## Sparse ACLs: Organizations and permission sets as scoped bindings
 
 When both **Enable support for AWS Organizations** and **Enable support for AWS IAM Identity Center** are turned on, the connector also models Identity Center permission set assignments as **Sparse ACL** bindings, alongside the existing flat per-account entitlement model. This introduces four resource types:
