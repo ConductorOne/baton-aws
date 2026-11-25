@@ -106,24 +106,38 @@ func (c skipCounts) total() int {
 // skipLogInterval limits how often the running Info total is written.
 const skipLogInterval = 30 * time.Second
 
-// skipTracker adds up skips over a sync. The SDK has no hook at the end of the
-// grants phase, so the Info line `baton-aws: skipped trust principals` carries
-// running totals: it is written when the total changes, at most once per
-// interval, and the last line of a sync has the final numbers. The first skip
-// of a sync is always logged.
+// skipTracker adds up skips over one sync. The SDK has no hook at the end of
+// the grants phase, so the totals cannot be written once at the end. Instead:
+// the first skip of a sync and then at most one skip per interval are logged at
+// Info as `baton-aws: skipped trust principals`. Every other change of the
+// totals is logged at Debug with the same fields, so the final totals are in
+// the Debug log. The Info line can be older than the final totals.
 type skipTracker struct {
-	mu         sync.Mutex
-	totals     skipCounts
-	loggedAt   time.Time
-	loggedSum  int
-	interval   time.Duration
-	now        func() time.Time
-	rolesSeen  int
-	rolesSkips int
+	mu             sync.Mutex
+	totals         skipCounts
+	loggedAt       time.Time
+	infoLogged     bool
+	interval       time.Duration
+	now            func() time.Time
+	rolesSeen      int
+	rolesSkips     int
+	fallbackLogged bool
 }
 
 func newSkipTracker() *skipTracker {
 	return &skipTracker{interval: skipLogInterval, now: time.Now}
+}
+
+// firstFallback returns true once per tracker, so the caller logs the missing
+// synced set one time for each sync.
+func (t *skipTracker) firstFallback() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.fallbackLogged {
+		return false
+	}
+	t.fallbackLogged = true
+	return true
 }
 
 func (t *skipTracker) record(ctx context.Context, counts skipCounts) {
@@ -136,16 +150,37 @@ func (t *skipTracker) record(ctx context.Context, counts skipCounts) {
 	t.rolesSkips++
 	t.totals.add(counts)
 	now := t.now()
-	if t.loggedSum != 0 && now.Sub(t.loggedAt) < t.interval {
-		return
-	}
-	t.loggedAt = now
-	t.loggedSum = t.totals.total()
-	ctxzap.Extract(ctx).Info("baton-aws: skipped trust principals",
+	fields := []zap.Field{
 		zap.Int(skipNotSyncedAccount, t.totals.NotSyncedAccount),
 		zap.Int(skipWildcard, t.totals.Wildcard),
 		zap.Int(skipUnsupported, t.totals.Unsupported),
 		zap.Int("roles_with_skips", t.rolesSkips),
 		zap.Int("roles_seen", t.rolesSeen),
-	)
+	}
+	l := ctxzap.Extract(ctx)
+	if !t.infoLogged || now.Sub(t.loggedAt) >= t.interval {
+		t.infoLogged = true
+		t.loggedAt = now
+		l.Info("baton-aws: skipped trust principals", fields...)
+		return
+	}
+	l.Debug("baton-aws: skipped trust principals", fields...)
+}
+
+// syncSkips keeps the skip tracker of the current sync. A connector process can
+// run more than one sync, so a new sync ID starts a new tracker.
+type syncSkips struct {
+	mu      sync.Mutex
+	syncID  string
+	tracker *skipTracker
+}
+
+func (s *syncSkips) forSync(syncID string) *skipTracker {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.tracker == nil || s.syncID != syncID {
+		s.syncID = syncID
+		s.tracker = newSkipTracker()
+	}
+	return s.tracker
 }

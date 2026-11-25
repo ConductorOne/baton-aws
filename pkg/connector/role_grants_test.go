@@ -305,23 +305,50 @@ func TestSyncedAccountsStore(t *testing.T) {
 	})
 }
 
-func TestTrustGrantContext_FallbackLogsOnce(t *testing.T) {
+func TestTrustGrantContext_FallbackLogsOncePerSync(t *testing.T) {
 	core, logs := newLogRecorder()
 	ctx := ctxWithLogger(zap.New(core))
 	o := iamRoleBuilder(nil, nil, false, false)
 	tp := trustPrincipals{aws: []string{"arn:aws:iam::" + testSyncedAcct + ":role/x"}}
+	opts := resourceSdk.SyncOpAttrs{SyncID: "sync-1"}
 
-	tc := o.trustGrantContext(ctx, resourceSdk.SyncOpAttrs{}, testRoleAcct, tp)
+	tc := o.trustGrantContext(ctx, opts, testRoleAcct, tp)
 	assert.False(t, tc.isSynced(testSyncedAcct))
 	assert.True(t, tc.isSynced(testRoleAcct))
 	require.Equal(t, 1, logs.Len())
 	assert.Contains(t, logs.All()[0].Message, "synced accounts are not known")
 
+	// A second role in the same sync does not log again.
+	o.trustGrantContext(ctx, opts, testRoleAcct, tp)
+	assert.Equal(t, 1, logs.Len(), "one fallback log for each sync")
+
+	// A new sync logs again.
+	o.trustGrantContext(ctx, resourceSdk.SyncOpAttrs{SyncID: "sync-2"}, testRoleAcct, tp)
+	assert.Equal(t, 2, logs.Len())
+
 	ss := newMemorySessionStore()
 	rememberSyncedAccounts(ctx, ss, testSyncedAcct)
-	tc = o.trustGrantContext(ctx, resourceSdk.SyncOpAttrs{Session: ss}, testRoleAcct, tp)
+	tc = o.trustGrantContext(ctx, resourceSdk.SyncOpAttrs{Session: ss, SyncID: "sync-3"}, testRoleAcct, tp)
 	assert.True(t, tc.isSynced(testSyncedAcct))
-	assert.Equal(t, 1, logs.Len(), "no log when the set is known")
+	assert.Equal(t, 2, logs.Len(), "no log when the set is known")
+}
+
+func TestSyncSkips_IndependentTotalsPerSync(t *testing.T) {
+	core, logs := newLogRecorder()
+	ctx := ctxWithLogger(zap.New(core))
+	s := &syncSkips{}
+
+	s.forSync("a").record(ctx, skipCounts{Wildcard: 2})
+	s.forSync("a").record(ctx, skipCounts{Wildcard: 1})
+	assert.Equal(t, skipCounts{Wildcard: 3}, s.forSync("a").totals)
+	s.forSync("b").record(ctx, skipCounts{Unsupported: 1})
+	assert.Equal(t, skipCounts{Unsupported: 1}, s.forSync("b").totals, "sync b starts from zero")
+	// Sync b has its own first Info line.
+	last := logs.All()[logs.Len()-1]
+	assert.Equal(t, zapcore.InfoLevel, last.Level)
+	assert.EqualValues(t, 0, last.ContextMap()[skipWildcard])
+	assert.EqualValues(t, 1, last.ContextMap()[skipUnsupported])
+	assert.EqualValues(t, 1, last.ContextMap()["roles_seen"])
 }
 
 func TestSkipTracker(t *testing.T) {
@@ -339,12 +366,15 @@ func TestSkipTracker(t *testing.T) {
 	assert.Equal(t, "baton-aws: skipped trust principals", logs.All()[0].Message)
 
 	tr.record(ctx, skipCounts{Unsupported: 1})
-	assert.Equal(t, 1, logs.Len(), "rate limited")
+	require.Equal(t, 2, logs.Len(), "rate limited at Info, logged at Debug")
+	assert.Equal(t, zapcore.DebugLevel, logs.All()[1].Level)
+	assert.EqualValues(t, 1, logs.All()[1].ContextMap()[skipUnsupported], "Debug line has the latest totals")
 
 	now = now.Add(skipLogInterval + time.Second)
 	tr.record(ctx, skipCounts{NotSyncedAccount: 1})
-	require.Equal(t, 2, logs.Len())
-	f := logs.All()[1].ContextMap()
+	require.Equal(t, 3, logs.Len())
+	assert.Equal(t, zapcore.InfoLevel, logs.All()[2].Level)
+	f := logs.All()[2].ContextMap()
 	assert.EqualValues(t, 3, f[skipNotSyncedAccount])
 	assert.EqualValues(t, 1, f[skipWildcard])
 	assert.EqualValues(t, 1, f[skipUnsupported])
@@ -380,6 +410,7 @@ type logRecorder struct {
 
 type recordedEntry struct {
 	Message string
+	Level   zapcore.Level
 	fields  []zapcore.Field
 }
 
@@ -414,7 +445,7 @@ func newLogRecorder() (zapcore.Core, *recordedLogs) {
 	return &logRecorder{mu: mu, entries: entries}, &recordedLogs{mu: mu, entries: entries}
 }
 
-func (c *logRecorder) Enabled(l zapcore.Level) bool { return l >= zapcore.InfoLevel }
+func (c *logRecorder) Enabled(l zapcore.Level) bool { return l >= zapcore.DebugLevel }
 func (c *logRecorder) With(f []zapcore.Field) zapcore.Core {
 	return &logRecorder{mu: c.mu, entries: c.entries, fields: append(append([]zapcore.Field(nil), c.fields...), f...)}
 }
@@ -427,7 +458,7 @@ func (c *logRecorder) Check(e zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.
 func (c *logRecorder) Write(e zapcore.Entry, f []zapcore.Field) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	*c.entries = append(*c.entries, recordedEntry{Message: e.Message, fields: append(append([]zapcore.Field(nil), c.fields...), f...)})
+	*c.entries = append(*c.entries, recordedEntry{Message: e.Message, Level: e.Level, fields: append(append([]zapcore.Field(nil), c.fields...), f...)})
 	return nil
 }
 func (c *logRecorder) Sync() error { return nil }

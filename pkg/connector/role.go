@@ -36,8 +36,8 @@ type roleResourceType struct {
 	// syncResourceTags gates the per-role iam:ListRoleTags call. See tags.go.
 	syncResourceTags bool
 
-	// skips adds up skipped trust principals over a sync for the Info log.
-	skips *skipTracker
+	// skips adds up skipped trust principals for each sync, for the log.
+	skips *syncSkips
 }
 
 // trustGrantContext builds the grantsForTrust input. The synced accounts come
@@ -45,8 +45,8 @@ type roleResourceType struct {
 // Grants before any List), only the role's own account counts as synced.
 func (o *roleResourceType) trustGrantContext(ctx context.Context, opts resourceSdk.SyncOpAttrs, roleAccountID string, tp trustPrincipals) trustGrantContext {
 	synced, ready := loadSyncedAccounts(ctx, opts.Session, trustPrincipalAccounts(tp))
-	if !ready {
-		ctxzap.Extract(ctx).Info("baton-aws: synced accounts are not known, trust principals outside the role account are skipped",
+	if !ready && o.skips.forSync(opts.SyncID).firstFallback() {
+		ctxzap.Extract(ctx).Info("baton-aws: synced accounts are not known, trust principals outside the role account are skipped in this sync",
 			zap.String("role_account_id", roleAccountID),
 		)
 	}
@@ -249,7 +249,7 @@ func (o *roleResourceType) Grants(
 						zap.Int(skipUnsupported, skips.Unsupported),
 					)
 				}
-				o.skips.record(ctx, skips)
+				o.skips.forSync(opts.SyncID).record(ctx, skips)
 			}
 		}
 	}
@@ -291,7 +291,7 @@ func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, s
 		awsClientFactory:    awsClientFactory,
 		syncIAMPolicyGrants: syncIAMPolicyGrants,
 		syncResourceTags:    syncResourceTags,
-		skips:               newSkipTracker(),
+		skips:               &syncSkips{},
 	}
 }
 
