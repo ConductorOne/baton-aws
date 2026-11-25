@@ -93,6 +93,18 @@ func (o *iamUserResourceType) List(ctx context.Context, parentId *v2.ResourceId,
 	accountNames := make(map[string]string)
 
 	rv := make([]*v2.Resource, 0, len(resp.Users))
+	// Users are synced, so their account counts as synced for role trust grants.
+	// This covers a caller account that has users but no roles.
+	userAccountIDs := make([]string, 0, 1)
+	if parentId != nil {
+		userAccountIDs = append(userAccountIDs, parentId.Resource)
+	}
+	for _, user := range resp.Users {
+		if acct, ok := arnAccountID(awsSdk.ToString(user.Arn)); ok {
+			userAccountIDs = append(userAccountIDs, acct)
+		}
+	}
+	rememberSyncedAccounts(ctx, opts.Session, userAccountIDs...)
 	for _, user := range resp.Users {
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(user.Arn),

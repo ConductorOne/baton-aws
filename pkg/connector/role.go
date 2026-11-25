@@ -16,7 +16,6 @@ import (
 	"github.com/conductorone/baton-sdk/pkg/annotations"
 	"github.com/conductorone/baton-sdk/pkg/pagination"
 	entitlementSdk "github.com/conductorone/baton-sdk/pkg/types/entitlement"
-	"github.com/conductorone/baton-sdk/pkg/types/grant"
 	resourceSdk "github.com/conductorone/baton-sdk/pkg/types/resource"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
@@ -36,6 +35,22 @@ type roleResourceType struct {
 
 	// syncResourceTags gates the per-role iam:ListRoleTags call. See tags.go.
 	syncResourceTags bool
+
+	// skips adds up skipped trust principals over a sync for the Info log.
+	skips *skipTracker
+}
+
+// trustGrantContext builds the grantsForTrust input. The synced accounts come
+// from the session store. When the set is missing (a targeted sync can run
+// Grants before any List), only the role's own account counts as synced.
+func (o *roleResourceType) trustGrantContext(ctx context.Context, opts resourceSdk.SyncOpAttrs, roleAccountID string, tp trustPrincipals) trustGrantContext {
+	synced, ready := loadSyncedAccounts(ctx, opts.Session, trustPrincipalAccounts(tp))
+	if !ready {
+		ctxzap.Extract(ctx).Info("baton-aws: synced accounts are not known, trust principals outside the role account are skipped",
+			zap.String("role_account_id", roleAccountID),
+		)
+	}
+	return trustGrantContext{roleAccountID: roleAccountID, syncedAccounts: synced}
 }
 
 func (o *roleResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -74,6 +89,18 @@ func (o *roleResourceType) List(ctx context.Context, parentId *v2.ResourceId, op
 	}
 
 	rv := make([]*v2.Resource, 0, len(resp.Roles))
+	// Record the accounts whose roles this sync reads. The account of a role ARN
+	// covers the caller's own account, which has no parent resource.
+	accountIDs := make([]string, 0, 1)
+	if parentId != nil {
+		accountIDs = append(accountIDs, parentId.Resource)
+	}
+	for _, role := range resp.Roles {
+		if acct, ok := arnAccountID(awsSdk.ToString(role.Arn)); ok {
+			accountIDs = append(accountIDs, acct)
+		}
+	}
+	rememberSyncedAccounts(ctx, opts.Session, accountIDs...)
 	for _, role := range resp.Roles {
 		annos := &v2.V1Identifier{
 			Id: awsSdk.ToString(role.Arn),
@@ -130,10 +157,7 @@ func (o *roleResourceType) Entitlements(_ context.Context, resource *v2.Resource
 		Id: V1MembershipEntitlementID(resource.Id),
 	})
 	member := entitlementSdk.NewAssignmentEntitlement(resource, roleAssignmentEntitlement, entitlementSdk.WithGrantableTo(
-		resourceTypeIAMUser,
-		resourceTypeRole,
-		resourceTypeIAMGroup,
-		resourceTypeSSOUser,
+		roleAssignmentGrantableTo...,
 	))
 	member.Description = fmt.Sprintf("Can assume the %s role in AWS", resource.DisplayName)
 	member.Annotations = annos
@@ -197,7 +221,7 @@ func (o *roleResourceType) Grants(
 		}
 
 		if roleResp.Role.AssumeRolePolicyDocument != nil {
-			principals, err := extractTrustPrincipals(
+			tp, err := extractTrustPrincipalsByKind(
 				awsSdk.ToString(roleResp.Role.AssumeRolePolicyDocument),
 			)
 			if err != nil {
@@ -207,41 +231,25 @@ func (o *roleResourceType) Grants(
 					zap.Error(err),
 				)
 			} else {
-				for _, principalARN := range principals {
-					principalResourceType, principalID, ok := detectPrincipalResource(principalARN)
-					if !ok {
-						continue
-					}
-
-					principal, errCreateResource := resourceSdk.NewResourceID(principalResourceType, principalID)
-					if errCreateResource != nil {
-						l.Warn("baton-aws: failed to create principal resource, skipping grant",
-							zap.Error(errCreateResource),
-							zap.String("principal_arn", principalARN),
-						)
-						continue
-					}
-
-					var grantAnnos annotations.Annotations
-					if principalResourceType == resourceTypeRole {
-						grantAnnos.Update(&v2.GrantExpandable{
-							EntitlementIds: []string{
-								fmt.Sprintf("%s:%s:%s", resourceTypeRole.Id, principalID, roleAssignmentEntitlement),
-							},
-						})
-					}
-
-					newGrant := grant.NewGrant(
-						resource,
-						roleAssignmentEntitlement,
-						principal,
+				trustCtx := o.trustGrantContext(ctx, opts, parsedARN.AccountID, tp)
+				trustGrants, skips, errGrants := grantsForTrust(resource, tp, trustCtx)
+				if errGrants != nil {
+					l.Warn("baton-aws: failed to create trust grants, skipping grants for this role",
+						zap.String("role_arn", resource.Id.Resource),
+						zap.Error(errGrants),
 					)
-
-					if len(grantAnnos) > 0 {
-						newGrant.Annotations = grantAnnos
-					}
-					grants = append(grants, newGrant)
+				} else {
+					grants = append(grants, trustGrants...)
 				}
+				if skips.total() > 0 {
+					l.Debug("baton-aws: skipped trust principals for role",
+						zap.String("role_arn", resource.Id.Resource),
+						zap.Int(skipNotSyncedAccount, skips.NotSyncedAccount),
+						zap.Int(skipWildcard, skips.Wildcard),
+						zap.Int(skipUnsupported, skips.Unsupported),
+					)
+				}
+				o.skips.record(ctx, skips)
 			}
 		}
 	}
@@ -283,6 +291,7 @@ func iamRoleBuilder(iamClient *iam.Client, awsClientFactory *AWSClientFactory, s
 		awsClientFactory:    awsClientFactory,
 		syncIAMPolicyGrants: syncIAMPolicyGrants,
 		syncResourceTags:    syncResourceTags,
+		skips:               newSkipTracker(),
 	}
 }
 
