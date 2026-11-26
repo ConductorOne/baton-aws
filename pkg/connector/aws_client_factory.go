@@ -103,11 +103,15 @@ func (f *AWSClientFactory) getConfig(ctx context.Context, accountId string) (aws
 	)
 
 	// stscreds providers are lazy — constructing one issues no API call. Retrieve once so
-	// this still reports whether the role is assumable at all, which callers rely on to
-	// skip inaccessible accounts (see accountIAMResourceType.parseAssumeRole).
+	// this still reports whether the role is assumable at all. Callers classify the error:
+	// accountIAMResourceType.parseAssumeRole skips an account only on a definitive refusal
+	// (see isSkippableAssumeRoleError) and fails the sync on anything else. The caller owns
+	// the user-facing log line, so this one stays at Debug to avoid a duplicate per account.
 	if _, err := creds.Retrieve(ctx); err != nil {
-		l.Warn("Failed to assume role", zap.Error(err), zap.String("roleArn", roleArn))
-		return awsSdk.Config{}, err
+		l.Debug("baton-aws: failed to assume role", zap.Error(err), zap.String("role_arn", roleArn))
+		// %w keeps the STS error chain intact for isSkippableAssumeRoleError and the other
+		// classifiers; the prefix names the role and account for every GetIAMClient caller.
+		return awsSdk.Config{}, fmt.Errorf("baton-aws: failed to assume role %s: %w", roleArn, err)
 	}
 
 	opts := GetAwsConfigOptionsForCredentials(creds, f.baseClient, f.config)

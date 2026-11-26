@@ -229,7 +229,7 @@ func mapSTSFederationError(err error) error {
 		return status.Error(codes.Unauthenticated, message)
 	case "InvalidParameterValue", "MalformedPolicyDocument", "PackedPolicyTooLarge", "ValidationError":
 		return status.Error(codes.InvalidArgument, message)
-	case "RegionDisabledException":
+	case errCodeRegionDisabled:
 		return status.Error(codes.FailedPrecondition, message)
 	case "Throttling", "ThrottlingException", "TooManyRequestsException":
 		return status.Error(codes.ResourceExhausted, message)
