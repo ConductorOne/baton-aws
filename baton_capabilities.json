@@ -1047,6 +1047,9 @@
                 "permission": "sso:ListInstances"
               },
               {
+                "permission": "cloudtrail:LookupEvents"
+              },
+              {
                 "permission": "identitystore:CreateUser"
               },
               {
@@ -1068,6 +1071,9 @@
           },
           {
             "permission": "sso:ListInstances"
+          },
+          {
+            "permission": "cloudtrail:LookupEvents"
           },
           {
             "permission": "identitystore:CreateUser"
