@@ -568,17 +568,73 @@ func isNotFoundError(err error) bool {
 // is the caller's own service (IAM), and would never see the STS one nested beneath it.
 // So each match that is not STS is stepped past, and the search resumes underneath it.
 func isCredentialsRetrievalError(err error) bool {
+	return stsOperationError(err) != nil
+}
+
+// stsOperationError returns the outermost STS *smithy.OperationError in err's chain, or
+// nil. A plain errors.As would stop at the outermost OperationError of any service, so each
+// non-STS match is stepped past and the search resumes underneath it.
+func stsOperationError(err error) *smithy.OperationError {
 	for e := err; e != nil; {
 		var opErr *smithy.OperationError
 		if !errors.As(e, &opErr) {
-			return false
+			return nil
 		}
 		if opErr.ServiceID == sts.ServiceID {
-			return true
+			return opErr
 		}
 		e = errors.Unwrap(opErr)
 	}
+	return nil
+}
+
+// errCodeRegionDisabled is what STS returns when its endpoint is not activated for the
+// target account in the region the connector calls from.
+const errCodeRegionDisabled = "RegionDisabledException"
+
+// isSkippableAssumeRoleError reports whether an AssumeRole failure into a member account
+// is a definitive, per-account refusal, after which skipping that account's IAM surface
+// is the correct outcome:
+//
+//   - AccessDenied: the role is absent, does not trust the caller, or the caller's own
+//     policy does not allow assuming it. STS does not distinguish these, so a mistyped
+//     role name also lands here; List flags it when no account on a page accepts the
+//     role and at least one refuses it.
+//   - RegionDisabledException: STS is not activated for that account in this region.
+//
+// Anything else — throttling (after the SDK's own retries), 5xx, network errors, context
+// cancellation, invalid calling credentials — says nothing about the account and must
+// fail the sync rather than drop the account.
+//
+// The refusal must come from the member-account AssumeRole itself. When the connector's
+// own credentials are an assumed role, signing that call can first refresh them through a
+// nested STS AssumeRole; if the refresh is denied, the chain carries a second, inner
+// OperationError whose AccessDenied is about the connector's identity, not the account.
+// That is a failure of every probe, so it is returned rather than skipped.
+func isSkippableAssumeRoleError(err error) bool {
+	opErr := stsOperationError(err)
+	if opErr == nil {
+		return false
+	}
+	var nested *smithy.OperationError
+	if errors.As(opErr.Err, &nested) {
+		return false
+	}
+	switch awsErrorCode(opErr.Err) {
+	case errCodeAccessDenied, errCodeRegionDisabled:
+		return true
+	}
 	return false
+}
+
+// awsErrorCode returns the AWS error code carried by err, or "" if it carries none.
+// It reads only the code, so it is safe on a response-less *smithyhttp.ResponseError.
+func awsErrorCode(err error) string {
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.ErrorCode()
+	}
+	return ""
 }
 
 // isAccessDeniedError reports whether err is a resource-level authorization denial that
