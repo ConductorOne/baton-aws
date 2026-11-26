@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"slices"
 	"strings"
 
 	awsSdk "github.com/aws/aws-sdk-go-v2/aws"
@@ -159,39 +158,20 @@ func extractRequestID(md *middleware.Metadata) proto.Message {
 	return nil
 }
 
-// extractTrustPrincipals parses a raw (URL-encoded) IAM trust policy document
-// and extracts all AWS principals from statements that:
-// Have Effect == "Allow"
-// Include the action "sts:AssumeRole".
+// extractTrustPrincipals returns the AWS principals of a trust policy. It is a
+// thin wrapper over extractTrustPrincipalsByKind, so the grant path and the NHI
+// classifier share one parser and one action rule. Empty strings are dropped.
 func extractTrustPrincipals(policyDocument string) ([]string, error) {
-	decodedPolicy, err := awspolicy.DecodePolicyDocument(policyDocument)
+	tp, err := extractTrustPrincipalsByKind(policyDocument)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decode trust policy: %w", err)
+		return nil, err
 	}
-
-	var policy TrustPolicy
-	if err := json.Unmarshal([]byte(decodedPolicy), &policy); err != nil {
-		return nil, fmt.Errorf("failed to parse trust policy JSON: %w", err)
-	}
-
-	awsPrincipals := make([]string, 0)
-	for _, statements := range policy.Statement {
-		if statements.Effect != "Allow" {
-			continue
-		}
-
-		if !slices.Contains(statements.Action, "sts:AssumeRole") {
-			continue
-		}
-
-		// Add AWS principals, filtering out empty strings
-		for _, principal := range statements.Principal.AWS {
-			if principal != "" {
-				awsPrincipals = append(awsPrincipals, principal)
-			}
+	awsPrincipals := make([]string, 0, len(tp.aws))
+	for _, principal := range tp.aws {
+		if principal != "" {
+			awsPrincipals = append(awsPrincipals, principal)
 		}
 	}
-
 	return awsPrincipals, nil
 }
 
@@ -206,8 +186,8 @@ type trustPrincipals struct {
 
 // extractTrustPrincipalsByKind parses a raw (URL-encoded) IAM trust policy and
 // returns the AWS, Service, and Federated principals from Allow statements that
-// grant an sts:AssumeRole* action (AssumeRole, AssumeRoleWithWebIdentity,
-// AssumeRoleWithSAML).
+// grant an sts:AssumeRole* action (see hasAssumeRoleAction). It is the single
+// trust policy parser; the grant path and the NHI classifier both use it.
 func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error) {
 	var tp trustPrincipals
 
@@ -236,19 +216,58 @@ func extractTrustPrincipalsByKind(policyDocument string) (trustPrincipals, error
 	return tp, nil
 }
 
-// hasAssumeRoleAction reports whether any action in the list is an sts:AssumeRole*
-// variant (AssumeRole, AssumeRoleWithWebIdentity, AssumeRoleWithSAML).
-// Intentionally broader than the grant-emission path in extractTrustPrincipals,
-// which requires an exact "sts:AssumeRole" match: NHI classification should
-// capture all trust relationships regardless of the assume-role mechanism, while
-// grants are only emitted for direct role assumption.
+// stsAssumeActions are the STS actions that let a principal assume a role.
+// They are stored in lower case because IAM action matching ignores case.
+var stsAssumeActions = []string{
+	"sts:assumerole",
+	"sts:assumerolewithsaml",
+	"sts:assumerolewithwebidentity",
+}
+
+// hasAssumeRoleAction reports whether any action in the list allows one of the
+// sts:AssumeRole* APIs. It is the single action rule for the grant path and the
+// NHI classifier. An action matches when, ignoring case, it is an IAM glob
+// pattern ("*" and "?") that matches one of the stsAssumeActions. So "*",
+// "sts:*", "sts:Assume*" and "STS:ASSUMEROLE" all match.
 func hasAssumeRoleAction(actions Action) bool {
 	for _, a := range actions {
-		if strings.HasPrefix(a, "sts:AssumeRole") {
-			return true
+		pattern := strings.ToLower(strings.TrimSpace(a))
+		for _, api := range stsAssumeActions {
+			if iamGlobMatch(pattern, api) {
+				return true
+			}
 		}
 	}
 	return false
+}
+
+// iamGlobMatch reports whether pattern matches s. "*" matches any run of
+// characters (also none) and "?" matches exactly one character. Both inputs
+// must already be lower case.
+func iamGlobMatch(pattern, s string) bool {
+	p, i := 0, 0
+	star, mark := -1, 0
+	for i < len(s) {
+		switch {
+		case p < len(pattern) && (pattern[p] == '?' || pattern[p] == s[i]):
+			p++
+			i++
+		case p < len(pattern) && pattern[p] == '*':
+			star = p
+			mark = i
+			p++
+		case star >= 0:
+			p = star + 1
+			mark++
+			i = mark
+		default:
+			return false
+		}
+	}
+	for p < len(pattern) && pattern[p] == '*' {
+		p++
+	}
+	return p == len(pattern)
 }
 
 // detectPrincipalResource analyzes a principal ARN and determines:
