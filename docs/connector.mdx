@@ -27,6 +27,7 @@ If you're setting up AWS with C1 for the first time, you're in the right place.
 | Permission Set / Permission Set Assignment (Sparse ACLs)\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\* |
 | IAM managed policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\*\*\* |
 | Inline policies | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> | <Icon icon="square-check" iconType="solid"  color="#c937ae"/>\*\*\* |
+| S3 buckets\*\*\*\* | <Icon icon="square-check" iconType="solid"  color="#c937ae"/> |  |
 
 The AWS connector supports [automatic account provisioning and deprovisioning](/product/admin/account-provisioning) of IAM users and Identity Center users. Each connector instance creates one type, set by **Account Provisioning Target**. See [Account provisioning](#account-provisioning).
 
@@ -35,6 +36,8 @@ The AWS connector supports [automatic account provisioning and deprovisioning](/
 \*\*Sparse ACL resources are opt-in — see [Sparse ACLs: Organizations and permission sets as scoped bindings](#sparse-acls-organizations-and-permission-sets-as-scoped-bindings) below.
 
 \*\*\*Requires the optional `IAMPolicyProvisioning` permissions shown in the Identity Center setup policy; add the same statement to the IAM setup policy if you use it. Inline policies support revoke only; permission set inline policies cannot be revoked.
+
+\*\*\*\*S3 buckets are opt-in — see [S3 buckets](#s3-buckets) below.
 
 [This connector can sync secrets](/product/admin/inventory) and display them on the **Inventory** page.
 
@@ -188,6 +191,41 @@ The connector syncs AWS IAM policies as resources in their own right, alongside 
 Each policy resource carries its policy document (the JSON that defines which actions the policy allows or denies) as a resource attribute, so reviewers can see what a policy actually grants instead of only its name.
 
 Syncing policy documents requires the policy read permissions listed in the IAM policies below (`iam:GetPolicy`, `iam:GetPolicyVersion`, and the `iam:Get*Policy` / `iam:List*Policies` actions). If these permissions are missing, the connector logs a warning and syncs the policy resources without their document contents rather than failing the sync — so a policy that appears with no document is usually a missing-permission symptom rather than an empty policy.
+
+## S3 buckets
+
+Turn on **Sync S3 Buckets** (`--sync-s3-buckets`) to sync each S3 general purpose bucket as a resource, carrying its bucket policy document as a resource attribute in the same `policy_document` field that IAM policies use. The setting is off by default.
+
+Each bucket resource carries these attributes:
+
+| Attribute | Value |
+| :--- | :--- |
+| `aws_bucket_name` | The bucket name |
+| `aws_bucket_arn` | The bucket ARN, which is also the resource ID |
+| `aws_account_id` | The AWS account that owns the bucket |
+| `aws_region` | The bucket's Region |
+| `bucket_policy_status` | `present`, `none` (the bucket has no bucket policy), or `unavailable` (S3 refused to return the policy: access denied, or the connector's role is not in the bucket owner's account) |
+| `policy_document` | The bucket policy JSON, only when `bucket_policy_status` is `present` |
+
+Buckets don't carry entitlements or grants yet: this setting syncs the buckets and their policies for visibility, not which principals can write to them.
+
+Buckets are synced from the connector's own account and, when Organizations cross-account IAM sync is active, from every member account the connector can assume a role into. Every bucket appears under its account, including the connector's own account, so an access review can be scoped to one AWS account either by that hierarchy or by the `aws_account_id` attribute. Without Organizations cross-account IAM sync there is only one account, and its buckets appear at the top level. Directory buckets (S3 Express One Zone) are not synced.
+
+The setting needs the following permissions on the connector role and, for member accounts, on the role the connector assumes in each one:
+
+```json
+{
+  "Sid": "SyncS3Buckets",
+  "Effect": "Allow",
+  "Action": [
+    "s3:ListAllMyBuckets",
+    "s3:GetBucketPolicy"
+  ],
+  "Resource": "*"
+}
+```
+
+If the role the connector assumes in a member account is denied `s3:ListAllMyBuckets`, that account's buckets are skipped and the rest of the sync continues, the same way the connector skips a member account whose role it cannot assume. Grant the permission in every member account whose buckets you want; when you remove it from an account that was already syncing buckets, those buckets disappear from C1 as if deleted. If the connector's own account is denied `s3:ListAllMyBuckets`, the sync fails with a permission error naming the account, since that role is the one you configure for the connector directly. Throttling and other AWS errors fail the sync rather than skipping an account. If S3 refuses `s3:GetBucketPolicy` for a single bucket — for example because the bucket policy itself, an SCP, or a VPC endpoint policy denies reading it — the bucket is still synced, with `bucket_policy_status` set to `unavailable`. A bucket deleted while the sync runs is left out. Throttling and other AWS errors fail the sync rather than being recorded as `none` or `unavailable`. Syncing buckets costs one `GetBucketPolicy` call per bucket, sent to the bucket's own Region.
 
 ## IAM user account identity
 

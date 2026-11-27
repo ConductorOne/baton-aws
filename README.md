@@ -60,6 +60,8 @@ Identity Center user Last Login uses a separate CloudTrail event feed. Enable Or
 
 By default, `baton-aws` uses the AWS credentials from your AWS config. You can explicitly define the region, access key, and secret key by setting the following flags: `--global-secret-access-key`, `--global-access-key-id`, `--global-region`.
 
+Set `--sync-s3-buckets` to sync S3 general purpose buckets as `s3_bucket` resources, keyed by bucket ARN, from the connector's account and from every member account reached through cross-account IAM sync. Each bucket's profile carries `aws_bucket_name`, `aws_bucket_arn`, `aws_account_id`, `aws_region`, `bucket_policy_status` (`present`, `none`, or `unavailable`), and, when present, the bucket policy JSON as `policy_document`. Requires `s3:ListAllMyBuckets` and `s3:GetBucketPolicy`. In a member account where the assumed role is denied `ListAllMyBuckets` (for example a role provisioned for IAM only, or an SCP), that account's buckets are skipped with an Info log and the rest of the sync continues; the same denial in the connector's own account fails the sync naming the account, and any other `ListAllMyBuckets` failure (throttling, AWS errors) fails the sync. A `GetBucketPolicy` that S3 refuses for one bucket (access denied, or the caller is not in the owner account) syncs it with `bucket_policy_status: unavailable`, while throttling and other AWS errors fail the sync. Policies are read from each bucket's own Region. Every bucket is a child of its `account_iam` resource when cross-account IAM sync is active (including the connector's own account, unlike its IAM users and roles), and top level otherwise. Directory buckets are not synced. Buckets carry no entitlements or grants yet.
+
 ## AWS China (aws-cn) partition
 
 `baton-aws` supports the `aws-cn` partition (`cn-north-1`, `cn-northwest-1`). Set `--global-region`
@@ -162,6 +164,7 @@ Flags:
       --sync-iam-user-console-access                     Enable fetching IAM user console login profiles via iam:GetLoginProfile (one API call per user). Disabled by default. ($BATON_SYNC_IAM_USER_CONSOLE_ACCESS)
       --sync-only-attached-policies                      Only sync IAM managed policies that are attached to at least one user, role, or group ($BATON_SYNC_ONLY_ATTACHED_POLICIES)
       --sync-resource-tags                               Sync AWS resource tags onto accounts, IAM users, and IAM roles as the aws_tags profile field. Tags are not returned by the List APIs, so this costs at least one extra API call per resource. ($BATON_SYNC_RESOURCE_TAGS)
+      --sync-s3-buckets                                  Sync S3 general purpose buckets with their bucket policy document. Requires s3:ListAllMyBuckets and s3:GetBucketPolicy, and costs one extra API call per bucket. ($BATON_SYNC_S3_BUCKETS)
       --sync-resource-types strings                      The resource type IDs to sync ($BATON_SYNC_RESOURCE_TYPES)
       --sync-resources strings                           The resource IDs to sync ($BATON_SYNC_RESOURCES)
       --sync-secrets                                     Whether to sync secrets or not ($BATON_SYNC_SECRETS)
@@ -204,6 +207,9 @@ _These policies have comments prefixed with // that need to be removed before us
         // Optional: only used with --sync-resource-tags.
         "iam:ListUserTags",
         "iam:ListRoleTags",
+        // Optional: only used with --sync-s3-buckets.
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketPolicy",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
@@ -317,6 +323,9 @@ _These policies have comments prefixed with // that need to be removed before us
         // Optional: only used with --sync-resource-tags.
         "iam:ListUserTags",
         "iam:ListRoleTags",
+        // Optional: only used with --sync-s3-buckets.
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketPolicy",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",
@@ -563,6 +572,9 @@ Each sub-account will need to have the following policy attached to the role tha
         // Optional: only used with --sync-resource-tags.
         "iam:ListUserTags",
         "iam:ListRoleTags",
+        // Optional: only used with --sync-s3-buckets.
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketPolicy",
         "iam:ListSigningCertificates",
         "iam:ListSSHPublicKeys",
         "iam:ListServiceSpecificCredentials",

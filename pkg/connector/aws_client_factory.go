@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	awsOrgs "github.com/aws/aws-sdk-go-v2/service/organizations"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/grpc-ecosystem/go-grpc-middleware/logging/zap/ctxzap"
 	"go.uber.org/zap"
 )
@@ -43,6 +44,17 @@ type AWSClientFactory struct {
 	// Map for accountId
 	iamClientMap map[string]*iam.Client
 	orgClientMap map[string]*awsOrgs.Client
+
+	// S3 is regional, so its clients are keyed by account and region. The
+	// account's config is cached separately so a new region reuses the
+	// already-assumed credentials instead of assuming the role again.
+	s3ConfigMap map[string]awsSdk.Config
+	s3ClientMap map[s3ClientKey]*s3.Client
+}
+
+type s3ClientKey struct {
+	accountID string
+	region    string
 }
 
 func NewAWSClientFactory(config Config, aws *AWS, baseClient *http.Client) *AWSClientFactory {
@@ -52,6 +64,8 @@ func NewAWSClientFactory(config Config, aws *AWS, baseClient *http.Client) *AWSC
 		baseClient:   baseClient,
 		iamClientMap: make(map[string]*iam.Client),
 		orgClientMap: make(map[string]*awsOrgs.Client),
+		s3ConfigMap:  make(map[string]awsSdk.Config),
+		s3ClientMap:  make(map[s3ClientKey]*s3.Client),
 		aws:          aws,
 		stsClientFn: func(ctx context.Context) (stscreds.AssumeRoleAPIClient, error) {
 			return aws.getSTSClient(ctx)
@@ -137,6 +151,41 @@ func (f *AWSClientFactory) GetIAMClient(ctx context.Context, accountId string) (
 	iamClient := iam.NewFromConfig(config)
 	f.iamClientMap[accountId] = iamClient
 	return iamClient, nil
+}
+
+// GetS3Client returns an S3 client for a member account, signed for region.
+func (f *AWSClientFactory) GetS3Client(ctx context.Context, accountId string, region string) (*s3.Client, error) {
+	f.mutex.Lock()
+	defer f.mutex.Unlock()
+
+	// Lazily initialized so a factory built without NewAWSClientFactory still works.
+	if f.s3ClientMap == nil {
+		f.s3ClientMap = make(map[s3ClientKey]*s3.Client)
+	}
+	if f.s3ConfigMap == nil {
+		f.s3ConfigMap = make(map[string]awsSdk.Config)
+	}
+
+	key := s3ClientKey{accountID: accountId, region: region}
+	if v, ok := f.s3ClientMap[key]; ok {
+		return v, nil
+	}
+
+	config, ok := f.s3ConfigMap[accountId]
+	if !ok {
+		var err error
+		config, err = f.getConfig(ctx, accountId)
+		if err != nil {
+			return nil, err
+		}
+		f.s3ConfigMap[accountId] = config
+	}
+
+	regional := config.Copy()
+	regional.Region = region
+	s3Client := s3.NewFromConfig(regional)
+	f.s3ClientMap[key] = s3Client
+	return s3Client, nil
 }
 
 // IAMClientForEntityARN returns defaultClient when the entity lives in the connector's
