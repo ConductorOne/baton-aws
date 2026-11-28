@@ -225,7 +225,9 @@ The setting needs the following permissions on the connector role and, for membe
 }
 ```
 
-If the role the connector assumes in a member account is denied `s3:ListAllMyBuckets`, that account's buckets are skipped and the rest of the sync continues, the same way the connector skips a member account whose role it cannot assume. Grant the permission in every member account whose buckets you want; when you remove it from an account that was already syncing buckets, those buckets disappear from C1 as if deleted. If the connector's own account is denied `s3:ListAllMyBuckets`, the sync fails with a permission error naming the account, since that role is the one you configure for the connector directly. Throttling and other AWS errors fail the sync rather than skipping an account. If S3 refuses `s3:GetBucketPolicy` for a single bucket — for example because the bucket policy itself, an SCP, or a VPC endpoint policy denies reading it — the bucket is still synced, with `bucket_policy_status` set to `unavailable`. A bucket deleted while the sync runs is left out. Throttling and other AWS errors fail the sync rather than being recorded as `none` or `unavailable`. Syncing buckets costs one `GetBucketPolicy` call per bucket, sent to the bucket's own Region.
+Grant these permissions in **every** account before you turn the setting on: the connector's own account and each member account it syncs. If any of those accounts is denied `s3:ListAllMyBuckets` — for example a member role provisioned for IAM only, or an SCP — the sync fails with a permission error naming the account, and C1 keeps the data from the last successful sync until the permission is granted or the setting is turned off. The connector never skips an account's buckets, because a skipped account's buckets would disappear from C1 as if they had been deleted. There is no per-account exclusion.
+
+If S3 refuses `s3:GetBucketPolicy` for a single bucket — for example because the bucket policy itself, an SCP, or a VPC endpoint policy denies reading it — the bucket is still synced, with `bucket_policy_status` set to `unavailable`. A bucket deleted while the sync runs is left out. Throttling and other AWS errors fail the sync rather than skipping an account or recording a bucket as `none` or `unavailable`.
 
 ## IAM user account identity
 
@@ -416,7 +418,9 @@ Next, you will create an inline policy to define the specific data this role can
             "iam:GetAccessKeyLastUsed",
             "iam:GetLoginProfile",
             "iam:ListUserTags",
-            "iam:ListRoleTags"
+            "iam:ListRoleTags",
+            "s3:ListAllMyBuckets",
+            "s3:GetBucketPolicy"
           ],
           "Resource": "*"
         },
@@ -513,6 +517,11 @@ Next, you will create an inline policy to define the specific data this role can
 
     * iam:ListUserTags and iam:ListRoleTags: Allow C1 to read the tags on each IAM user and role. The `ListUsers` and `ListRoles` responses do not include tags, so these per-resource calls are the only source.
     * organizations:ListTagsForResource: Allows C1 to read the tags on each AWS account. The `ListAccounts` response has no tags field at all.
+
+    **Optional: S3 Buckets** The JSON above includes these permissions. They are used only when **Sync S3 Buckets** (`BATON_SYNC_S3_BUCKETS`) is enabled, and then they are required in every account the connector syncs: a missing `s3:ListAllMyBuckets` in any account fails the sync. See [S3 buckets](#s3-buckets).
+
+    * s3:ListAllMyBuckets: Allows C1 to list the general purpose buckets in each account.
+    * s3:GetBucketPolicy: Allows C1 to read each bucket's policy document.
 
     **Optional: AWS Organizations Support** Include these permissions if you enable the "Enable support for AWS Organizations" checkbox in the C1 UI.
 
@@ -684,6 +693,8 @@ The permissions policy below is broken into several sections to align with these
 	        "organizations:ListTagsForResource",
 	        "iam:ListUserTags",
 	        "iam:ListRoleTags",
+	        "s3:ListAllMyBuckets",
+	        "s3:GetBucketPolicy",
 	        "iam:GetUser",
 	        "iam:ListAccessKeys",
 	        "iam:ListSigningCertificates",
@@ -848,6 +859,7 @@ The permissions policy below is broken into several sections to align with these
 	- `iam:ListAccessKeys` and `iam:GetAccessKeyLastUsed` let C1 report the most recent access key activity on each IAM user. Enable **Sync secrets** to also sync each key as its own secret resource with per-key activity. When cross-account IAM sync is active, grant both actions to the assumed role in every member account.
 	- `iam:GetLoginProfile` is only needed when **Sync IAM User Console Access** is enabled. It lets C1 report whether an IAM user has a console password.
 	- `organizations:ListTagsForResource`, `iam:ListUserTags` and `iam:ListRoleTags` are only needed when **Sync Resource Tags** is enabled. They let C1 read the tags on each account, IAM user and IAM role. None of the `List*` calls return tags, so these are the only source. If the setting is on and a permission is missing, the sync fails rather than silently omitting tags.
+	- `s3:ListAllMyBuckets` and `s3:GetBucketPolicy` are only needed when **Sync S3 Buckets** is enabled, and then in every account the connector syncs, including each member account's assumed role. A missing `s3:ListAllMyBuckets` in any account fails the sync. See [S3 buckets](#s3-buckets).
     </Step>
     <Step>
     Click **Review Policy**.
@@ -905,6 +917,9 @@ The permissions policy below is broken into several sections to align with these
     </Step>
     <Step>
     **Optional.** Enable **Sync Resource Tags** to publish AWS tags on accounts, IAM users and IAM roles as an `aws_tags` profile field, usable in policy rules. The connector role must include `organizations:ListTagsForResource`, `iam:ListUserTags` and `iam:ListRoleTags`. This adds at least one API call per account, user and role.
+    </Step>
+    <Step>
+    **Optional.** Enable **Sync S3 Buckets** to sync each S3 bucket with its bucket policy document. Grant `s3:ListAllMyBuckets` and `s3:GetBucketPolicy` in every synced account first: a missing permission in any account fails the sync. See [S3 buckets](#s3-buckets).
     </Step>
     <Step>
     **Optional.** If both Organizations support and Identity Center support are enabled, enable **Sync SSO User Last Login** to report Identity Center sign-ins. The connector role must include `cloudtrail:LookupEvents`.
@@ -1018,6 +1033,10 @@ stringData:
   # Optional: Publish AWS resource tags as the aws_tags profile field
   # Requires organizations:ListTagsForResource, iam:ListUserTags, iam:ListRoleTags
   BATON_SYNC_RESOURCE_TAGS: true
+
+  # Optional: Sync S3 buckets with their bucket policy documents
+  # Requires s3:ListAllMyBuckets and s3:GetBucketPolicy in every synced account
+  BATON_SYNC_S3_BUCKETS: true
 
   # Optional: Choose which AWS user type C1 should create when provisioning accounts.
   # "iam_user" (default) creates IAM users. "sso_user" creates AWS Identity Center
@@ -1213,6 +1232,8 @@ resource "aws_iam_role" "ConductorOneIntegration" {
             "organizations:ListTagsForResource",
             "iam:ListUserTags",
             "iam:ListRoleTags",
+            "s3:ListAllMyBuckets",
+            "s3:GetBucketPolicy",
             "sso:DescribePermissionSet",
             "sso:GetInlinePolicyForPermissionSet",
             "sso:ListAccountAssignments",

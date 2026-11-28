@@ -111,9 +111,6 @@ type AWS struct {
 	// willSyncAccountIAM reports whether account_iam resources are emitted in this
 	// run, so other types may name them as parent without dangling.
 	willSyncAccountIAM bool
-	// willSyncS3Bucket reports whether s3_bucket is in this run's resource-type
-	// filter; member accounts are only probed for S3 access when it is.
-	willSyncS3Bucket bool
 
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
@@ -344,12 +341,10 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 	willSyncOrganization := true
 	willSyncOrganizationalUnit := true
 	willSyncAccountIAM := true
-	willSyncS3Bucket := true
 	if connectorOpts != nil {
 		willSyncOrganization = connectorOpts.WillSyncResourceType(resourceTypeOrganization.Id)
 		willSyncOrganizationalUnit = connectorOpts.WillSyncResourceType(resourceTypeOrganizationalUnit.Id)
 		willSyncAccountIAM = connectorOpts.WillSyncResourceType(resourceTypeAccountIam.Id)
-		willSyncS3Bucket = connectorOpts.WillSyncResourceType(resourceTypeS3Bucket.Id)
 	}
 
 	// syncIAMPolicyGrants gates the cross-type iam_policy grants that iamUser, role,
@@ -438,7 +433,6 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		willSyncOrganization:       willSyncOrganization,
 		willSyncOrganizationalUnit: willSyncOrganizationalUnit,
 		willSyncAccountIAM:         willSyncAccountIAM,
-		willSyncS3Bucket:           willSyncS3Bucket,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -619,7 +613,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	}
 
 	if c.shouldSyncCrossAccountIAM() {
-		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c, c.syncSecrets, c.syncS3Buckets && c.willSyncS3Bucket))
+		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c, c.syncSecrets, c.syncS3Buckets))
 	}
 
 	if c.orgsEnabled && c.ssoEnabled {

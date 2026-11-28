@@ -357,21 +357,6 @@ func (c *AWS) s3Region() string {
 	return s3DefaultRegion(c.globalRegion, c.baseConfig.Region, c.partition)
 }
 
-// probeS3ListBuckets reports whether the caller may list the account's buckets,
-// using a one-bucket page. Only an authorization denial answers false;
-// throttling, 5xx and credential failures are returned as errors.
-func probeS3ListBuckets(ctx context.Context, c s3BucketAPI, accountID string) (bool, error) {
-	_, err := c.ListBuckets(ctx, &s3.ListBucketsInput{MaxBuckets: awsSdk.Int32(1)})
-	switch {
-	case err == nil:
-		return true, nil
-	case isAccessDeniedError(err):
-		return false, nil
-	default:
-		return false, wrapAWSError(fmt.Errorf("baton-aws: s3.ListBuckets probe failed for account %s: %w", accountID, err))
-	}
-}
-
 // s3DefaultRegion is the region ListBuckets is sent to and the fallback for a
 // bucket whose region S3 did not report. global-region is optional, and
 // without it the SDK takes the region from the environment (AWS_REGION, the

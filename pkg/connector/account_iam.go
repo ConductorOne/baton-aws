@@ -26,10 +26,6 @@ type accountIAMResourceType struct {
 	aws              *AWS
 	syncSecrets      bool
 	syncS3Buckets    bool
-
-	// canListS3Buckets reports whether the connector may list a member
-	// account's buckets. It is a field so tests can stub it.
-	canListS3Buckets func(ctx context.Context, accountID string) (bool, error)
 }
 
 func (o *accountIAMResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -164,27 +160,14 @@ func (o *accountIAMResourceType) parseAssumeRole(
 				ResourceTypeId: resourceTypeSecret.Id,
 			})
 		}
+		// Every assumable member account is announced as an S3 parent, without
+		// first checking that the role may list buckets. A denied listing then
+		// fails the sync and C1 keeps its prior state; skipping the account
+		// instead would make every bucket it synced before read as deleted.
 		if o.syncS3Buckets {
-			// A member account whose role can be assumed but may not list buckets
-			// (a role provisioned for IAM only, or an SCP) is not offered as an S3
-			// parent, the same way an account whose role cannot be assumed is
-			// skipped above. Announcing it would make its bucket listing fail and
-			// take the whole sync down with it. Only an authorization denial skips;
-			// any other failure is returned, because skipping on a transient error
-			// would make every bucket in the account read as deleted.
-			canList, err := o.canListS3Buckets(ctx, awsSdk.ToString(account.Id))
-			if err != nil {
-				return nil, err
-			}
-			if canList {
-				childResourceTypes = append(childResourceTypes, &v2.ChildResourceType{
-					ResourceTypeId: resourceTypeS3Bucket.Id,
-				})
-			} else {
-				l.Info("baton-aws: skipping S3 buckets for account: s3:ListAllMyBuckets is denied",
-					zap.String("accountId", awsSdk.ToString(account.Id)),
-				)
-			}
+			childResourceTypes = append(childResourceTypes, &v2.ChildResourceType{
+				ResourceTypeId: resourceTypeS3Bucket.Id,
+			})
 		}
 		return childResourceTypes, nil
 	}
@@ -199,7 +182,7 @@ func accountIAMBuilder(
 	syncSecrets bool,
 	syncS3Buckets bool,
 ) *accountIAMResourceType {
-	b := &accountIAMResourceType{
+	return &accountIAMResourceType{
 		resourceType:     resourceTypeAccountIam,
 		orgClient:        orgClient,
 		awsClientFactory: awsClientFactory,
@@ -207,12 +190,4 @@ func accountIAMBuilder(
 		syncSecrets:      syncSecrets,
 		syncS3Buckets:    syncS3Buckets,
 	}
-	b.canListS3Buckets = func(ctx context.Context, accountID string) (bool, error) {
-		c, err := b.awsClientFactory.GetS3Client(ctx, accountID, b.aws.s3Region())
-		if err != nil {
-			return false, wrapAWSError(fmt.Errorf("baton-aws: failed to build S3 client for account %s: %w", accountID, err))
-		}
-		return probeS3ListBuckets(ctx, c, accountID)
-	}
-	return b
 }

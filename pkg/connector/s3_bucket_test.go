@@ -376,7 +376,6 @@ func TestS3BucketChildFollowsRegistration(t *testing.T) {
 		connector := &AWS{
 			orgsEnabled:      true,
 			syncS3Buckets:    enabled,
-			willSyncS3Bucket: true,
 			partition:        "aws",
 			globalRegion:     "us-east-1",
 			iamClient:        &iam.Client{},
@@ -395,13 +394,6 @@ func TestS3BucketChildFollowsRegistration(t *testing.T) {
 		}
 		require.Equal(t, enabled, registered)
 		require.NotNil(t, accountBuilder)
-		probed := 0
-		accountBuilder.canListS3Buckets = func(_ context.Context, accountID string) (bool, error) {
-			probed++
-			require.Equal(t, testMemberAccountID, accountID)
-			return true, nil
-		}
-
 		member, err := accountBuilder.parseAssumeRole(context.Background(), identity, types.Account{Id: awsSdk.String(testMemberAccountID)})
 		require.NoError(t, err)
 		declared := false
@@ -411,12 +403,6 @@ func TestS3BucketChildFollowsRegistration(t *testing.T) {
 			}
 		}
 		require.Equal(t, enabled, declared)
-		if enabled {
-			require.Equal(t, 1, probed, "the member account's S3 access is probed once")
-		} else {
-			require.Zero(t, probed, "no S3 call is made when bucket sync is off")
-		}
-
 		// The calling account gets no child annotations: its buckets come from the
 		// top-level List(nil), so annotating it too would list them twice.
 		calling, err := accountBuilder.parseAssumeRole(context.Background(), identity, types.Account{Id: awsSdk.String(testCallingAccountID)})
@@ -544,69 +530,6 @@ func TestS3SyncerRegionWithoutGlobalRegion(t *testing.T) {
 	t.Fatal("s3 bucket syncer not registered")
 }
 
-// A member account the connector can assume but may not list buckets in is not
-// offered as an S3 parent; only an authorization denial skips it. Anything else
-// fails account listing, because skipping on a transient error would make all
-// of that account's buckets read as deleted.
-func TestS3MemberAccountProbe(t *testing.T) {
-	identity := &sts.GetCallerIdentityOutput{Account: awsSdk.String(testCallingAccountID)}
-	member := types.Account{Id: awsSdk.String(testMemberAccountID)}
-	stsDenied := &smithy.OperationError{
-		ServiceID:     "S3",
-		OperationName: "ListBuckets",
-		Err:           &smithy.OperationError{ServiceID: sts.ServiceID, OperationName: "AssumeRole", Err: s3APIError(errCodeAccessDenied)},
-	}
-
-	for _, tc := range []struct {
-		name         string
-		listErr      error
-		wantS3Child  bool
-		wantErrCode  codes.Code
-		wantErrorOut bool
-	}{
-		{name: "allowed", wantS3Child: true},
-		{name: "access denied skips only S3", listErr: s3ResponseError(errCodeAccessDenied, http.StatusForbidden, nil)},
-		{name: "throttling fails", listErr: s3ResponseError("SlowDown", http.StatusServiceUnavailable, nil), wantErrorOut: true, wantErrCode: codes.Unavailable},
-		{name: "credential refresh failure fails", listErr: stsDenied, wantErrorOut: true},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			fake := &fakeS3{
-				listPages: map[string]*s3.ListBucketsOutput{"": {}},
-				listErr:   tc.listErr,
-			}
-			b := &accountIAMResourceType{
-				awsClientFactory: &AWSClientFactory{iamClientMap: map[string]*iam.Client{testMemberAccountID: {}}},
-				syncS3Buckets:    true,
-			}
-			b.canListS3Buckets = func(ctx context.Context, accountID string) (bool, error) {
-				return probeS3ListBuckets(ctx, &fakeS3Client{parent: fake, accountID: accountID, region: "us-east-1"}, accountID)
-			}
-
-			children, err := b.parseAssumeRole(context.Background(), identity, member)
-			if tc.wantErrorOut {
-				require.Error(t, err)
-				require.Contains(t, err.Error(), testMemberAccountID)
-				require.NotEqual(t, codes.PermissionDenied, status.Code(err), "a non-denial must not be classified as a denial")
-				if tc.wantErrCode != codes.OK {
-					require.Equal(t, tc.wantErrCode, status.Code(err))
-				}
-				return
-			}
-			require.NoError(t, err)
-
-			ids := map[string]bool{}
-			for _, child := range children {
-				ids[child.(*v2.ChildResourceType).GetResourceTypeId()] = true
-			}
-			require.True(t, ids[resourceTypeIAMUser.Id], "IAM sync of the account is unaffected")
-			require.True(t, ids[resourceTypeRole.Id])
-			require.Equal(t, tc.wantS3Child, ids[resourceTypeS3Bucket.Id])
-			require.Len(t, fake.listInputs, 1)
-			require.Equal(t, int32(1), awsSdk.ToInt32(fake.listInputs[0].MaxBuckets), "the probe reads a single bucket")
-		})
-	}
-}
-
 // With account_iam emitted, the calling account's buckets get its account_iam as
 // parent, so every bucket can be scoped to its account by hierarchy; member
 // buckets keep the parent the SDK passed in.
@@ -675,25 +598,35 @@ func TestS3BucketCallingAccountParentFollowsAccountIAM(t *testing.T) {
 	}
 }
 
-// A run whose resource-type filter excludes s3_bucket must not probe member
-// accounts for S3 access: a probe failure would fail account listing for a type
-// the run never syncs.
-func TestS3ProbeSkippedWhenS3BucketFilteredOut(t *testing.T) {
-	for _, willSync := range []bool{true, false} {
-		connector := &AWS{
-			orgsEnabled:        true,
-			syncS3Buckets:      true,
-			willSyncAccountIAM: true,
-			willSyncS3Bucket:   willSync,
-			partition:          "aws",
-			globalRegion:       "us-east-1",
-			iamClient:          &iam.Client{},
-			awsClientFactory:   &AWSClientFactory{},
-		}
-		for _, syncer := range connector.ResourceSyncers(context.Background()) {
-			if b, ok := syncer.(*accountIAMResourceType); ok {
-				require.Equal(t, willSync, b.syncS3Buckets)
-			}
-		}
+// A member account whose role may not list buckets fails the sync, naming the
+// account, instead of being skipped: a skipped account would make every bucket
+// it synced before read as deleted, while a failed sync leaves C1's prior state.
+func TestS3MemberAccountListDeniedFailsSync(t *testing.T) {
+	fake := &fakeS3{listErr: s3ResponseError(errCodeAccessDenied, http.StatusForbidden, nil)}
+	b := s3BucketBuilder(&fakeS3Provider{s3: fake, callingID: testCallingAccountID}, "aws", "us-east-1")
+
+	member := &v2.ResourceId{ResourceType: resourceTypeAccountIam.Id, Resource: testMemberAccountID}
+	resources, _, err := listS3Buckets(t, b, member, "")
+	require.Error(t, err)
+	require.Nil(t, resources)
+	require.Equal(t, codes.PermissionDenied, status.Code(err))
+	require.Contains(t, err.Error(), testMemberAccountID)
+}
+
+// Every assumable member account is announced as an S3 parent when bucket sync
+// is on; there is no pre-check that could silently drop one.
+func TestS3MemberAccountAlwaysAnnounced(t *testing.T) {
+	b := &accountIAMResourceType{
+		awsClientFactory: &AWSClientFactory{iamClientMap: map[string]*iam.Client{testMemberAccountID: {}}},
+		syncS3Buckets:    true,
 	}
+	identity := &sts.GetCallerIdentityOutput{Account: awsSdk.String(testCallingAccountID)}
+	children, err := b.parseAssumeRole(context.Background(), identity, types.Account{Id: awsSdk.String(testMemberAccountID)})
+	require.NoError(t, err)
+	ids := map[string]bool{}
+	for _, child := range children {
+		ids[child.(*v2.ChildResourceType).GetResourceTypeId()] = true
+	}
+	require.True(t, ids[resourceTypeS3Bucket.Id])
+	require.True(t, ids[resourceTypeIAMUser.Id])
 }
