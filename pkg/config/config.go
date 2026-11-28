@@ -152,6 +152,15 @@ var (
 		),
 		field.WithDefaultValue(false),
 	)
+	SyncS3Buckets = field.BoolField(
+		"sync-s3-buckets",
+		field.WithDisplayName("Sync S3 Buckets"),
+		field.WithDescription(
+			"Sync S3 general purpose buckets with their bucket policy document. "+
+				"Requires s3:ListAllMyBuckets and s3:GetBucketPolicy, and costs one extra API call per bucket.",
+		),
+		field.WithDefaultValue(false),
+	)
 	GlobalAwsAccountProvisioningTargetField = field.SelectField(
 		"create-account-resource-type",
 		[]string{"iam_user", "sso_user"},
@@ -188,6 +197,7 @@ var Config = field.NewConfiguration(
 		SyncIAMUserConsoleAccess,
 		SyncOnlyAttachedPolicies,
 		SyncResourceTags,
+		SyncS3Buckets,
 		GlobalAwsAccountProvisioningTargetField,
 	},
 	field.WithConstraints(

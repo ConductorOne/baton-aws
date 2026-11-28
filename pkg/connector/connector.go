@@ -60,6 +60,7 @@ type Config struct {
 	SyncIAMUserConsoleAccess        bool
 	SyncOnlyAttachedPolicies        bool
 	SyncResourceTags                bool
+	SyncS3Buckets                   bool
 
 	AccountProvisioningTarget string
 }
@@ -107,6 +108,9 @@ type AWS struct {
 	// See accountResourceType.List.
 	willSyncOrganization       bool
 	willSyncOrganizationalUnit bool
+	// willSyncAccountIAM reports whether account_iam resources are emitted in this
+	// run, so other types may name them as parent without dangling.
+	willSyncAccountIAM bool
 
 	syncSecrets              bool
 	syncSSOUserLastLogin     bool
@@ -114,6 +118,8 @@ type AWS struct {
 	syncOnlyAttachedPolicies bool
 	syncIAMPolicyGrants      bool
 	syncResourceTags         bool
+	syncS3Buckets            bool
+	partition                string
 
 	accountProvisioningTarget string
 }
@@ -334,9 +340,11 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 	// ConnectorOpts at all), matching ConnectorOpts.WillSyncResourceType's own default.
 	willSyncOrganization := true
 	willSyncOrganizationalUnit := true
+	willSyncAccountIAM := true
 	if connectorOpts != nil {
 		willSyncOrganization = connectorOpts.WillSyncResourceType(resourceTypeOrganization.Id)
 		willSyncOrganizationalUnit = connectorOpts.WillSyncResourceType(resourceTypeOrganizationalUnit.Id)
+		willSyncAccountIAM = connectorOpts.WillSyncResourceType(resourceTypeAccountIam.Id)
 	}
 
 	// syncIAMPolicyGrants gates the cross-type iam_policy grants that iamUser, role,
@@ -374,6 +382,7 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		SyncIAMUserConsoleAccess:        awsc.SyncIamUserConsoleAccess,
 		SyncOnlyAttachedPolicies:        awsc.SyncOnlyAttachedPolicies,
 		SyncResourceTags:                awsc.SyncResourceTags,
+		SyncS3Buckets:                   awsc.SyncS3Buckets,
 		AccountProvisioningTarget:       awsc.CreateAccountResourceType,
 	}
 	if config.AccountProvisioningTarget == "" {
@@ -416,11 +425,14 @@ func New(ctx context.Context, awsc *cfg.Aws, connectorOpts *cli.ConnectorOpts) (
 		syncOnlyAttachedPolicies: config.SyncOnlyAttachedPolicies,
 		syncIAMPolicyGrants:      syncIAMPolicyGrants,
 		syncResourceTags:         config.SyncResourceTags,
+		syncS3Buckets:            config.SyncS3Buckets,
+		partition:                config.partition(),
 
 		accountProvisioningTarget: config.AccountProvisioningTarget,
 
 		willSyncOrganization:       willSyncOrganization,
 		willSyncOrganizationalUnit: willSyncOrganizationalUnit,
+		willSyncAccountIAM:         willSyncAccountIAM,
 	}
 
 	rv.awsClientFactory = NewAWSClientFactory(config, rv, httpClient)
@@ -601,7 +613,7 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	}
 
 	if c.shouldSyncCrossAccountIAM() {
-		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c, c.syncSecrets))
+		rs = append(rs, accountIAMBuilder(c.orgClient, c.awsClientFactory, c, c.syncSecrets, c.syncS3Buckets))
 	}
 
 	if c.orgsEnabled && c.ssoEnabled {
@@ -624,6 +636,18 @@ func (c *AWS) ResourceSyncers(ctx context.Context) []connectorbuilder.ResourceSy
 	if c.syncSecrets {
 		l.Debug("syncSecrets. creating secretBuilder")
 		rs = append(rs, secretBuilder(c.iamClient, c.awsClientFactory))
+	}
+
+	if c.syncS3Buckets {
+		l.Debug("syncS3Buckets. creating s3BucketBuilder")
+		buckets := s3BucketBuilder(newAWSS3ClientProvider(c, c.awsClientFactory), c.partition, c.s3Region())
+		// The calling account's buckets hang off its account_iam resource whenever
+		// that resource is emitted, so a review can be scoped to one account by
+		// hierarchy for every account, not only for member accounts. Without it
+		// (single-account mode, or account_iam filtered out of this run) they stay
+		// top level rather than pointing at a parent that does not exist.
+		buckets.parentCallingAccount = c.shouldSyncCrossAccountIAM() && c.willSyncAccountIAM
+		rs = append(rs, buckets)
 	}
 	return rs
 }
@@ -659,8 +683,9 @@ func (d *defaultCapabilitiesBuilder) ResourceSyncers(_ context.Context) []connec
 		permissionSetAssignmentBuilder(accountBuilder(nil, "", nil, nil, "", nil, HierarchySyncFlags{Organization: true, OrganizationalUnit: true}, true)),
 		organizationBuilder(nil),
 		organizationalUnitBuilder(nil),
-		accountIAMBuilder(nil, nil, nil, true),
+		accountIAMBuilder(nil, nil, nil, true, true),
 		secretBuilder(nil, nil),
+		s3BucketBuilder(nil, "", ""),
 	}
 }
 

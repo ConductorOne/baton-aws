@@ -25,6 +25,7 @@ type accountIAMResourceType struct {
 	awsClientFactory *AWSClientFactory
 	aws              *AWS
 	syncSecrets      bool
+	syncS3Buckets    bool
 }
 
 func (o *accountIAMResourceType) ResourceType(_ context.Context) *v2.ResourceType {
@@ -159,6 +160,15 @@ func (o *accountIAMResourceType) parseAssumeRole(
 				ResourceTypeId: resourceTypeSecret.Id,
 			})
 		}
+		// Every assumable member account is announced as an S3 parent, without
+		// first checking that the role may list buckets. A denied listing then
+		// fails the sync and C1 keeps its prior state; skipping the account
+		// instead would make every bucket it synced before read as deleted.
+		if o.syncS3Buckets {
+			childResourceTypes = append(childResourceTypes, &v2.ChildResourceType{
+				ResourceTypeId: resourceTypeS3Bucket.Id,
+			})
+		}
 		return childResourceTypes, nil
 	}
 
@@ -170,6 +180,7 @@ func accountIAMBuilder(
 	awsClientFactory *AWSClientFactory,
 	aws *AWS,
 	syncSecrets bool,
+	syncS3Buckets bool,
 ) *accountIAMResourceType {
 	return &accountIAMResourceType{
 		resourceType:     resourceTypeAccountIam,
@@ -177,5 +188,6 @@ func accountIAMBuilder(
 		awsClientFactory: awsClientFactory,
 		aws:              aws,
 		syncSecrets:      syncSecrets,
+		syncS3Buckets:    syncS3Buckets,
 	}
 }

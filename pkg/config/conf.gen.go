@@ -22,6 +22,7 @@ type Aws struct {
 	SyncIamUserConsoleAccess bool `mapstructure:"sync-iam-user-console-access"`
 	SyncOnlyAttachedPolicies bool `mapstructure:"sync-only-attached-policies"`
 	SyncResourceTags bool `mapstructure:"sync-resource-tags"`
+	SyncS3Buckets bool `mapstructure:"sync-s3-buckets"`
 	CreateAccountResourceType string `mapstructure:"create-account-resource-type"`
 }
 

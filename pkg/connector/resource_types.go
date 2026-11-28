@@ -318,6 +318,20 @@ var (
 		)),
 	}
 
+	// resourceTypeS3Bucket is an S3 general purpose bucket, synced only when
+	// sync-s3-buckets is enabled. Its id is the bucket ARN. It carries no
+	// entitlements yet; the bucket policy document is on the profile.
+	resourceTypeS3Bucket = &v2.ResourceType{
+		Id:          "s3_bucket",
+		DisplayName: "S3 Bucket",
+		Annotations: annotations.New(
+			capabilityPermissions(
+				"s3:ListAllMyBuckets",
+				"s3:GetBucketPolicy",
+			),
+		),
+	}
+
 	resourceTypeInlinePolicy = &v2.ResourceType{
 		Id:          "inline_policy",
 		DisplayName: "Inline Policy",
