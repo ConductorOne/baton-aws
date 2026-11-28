@@ -225,7 +225,7 @@ The setting needs the following permissions on the connector role and, for membe
 }
 ```
 
-Grant these permissions in **every** account before you turn the setting on: the connector's own account and each member account it syncs. If any of those accounts is denied `s3:ListAllMyBuckets` — for example a member role provisioned for IAM only, or an SCP — the sync fails with a permission error naming the account, and C1 keeps the data from the last successful sync until the permission is granted or the setting is turned off. The connector never skips an account's buckets, because a skipped account's buckets would disappear from C1 as if they had been deleted. There is no per-account exclusion.
+Grant these permissions in **every** account before you turn the setting on: the connector's own account and each member account it syncs. If any of those accounts is denied `s3:ListAllMyBuckets` — for example a member role provisioned for IAM only, or an SCP — the sync fails with a permission error naming the account, and C1 keeps the data from the last successful sync until the permission is granted or the setting is turned off. A member account the connector can assume a role into is never skipped for lacking S3 permissions, because a skipped account's buckets would disappear from C1 as if they had been deleted; there is no per-account exclusion. A member account whose role the connector cannot assume at all is skipped entirely, IAM resources included, as it is without this setting.
 
 If S3 refuses `s3:GetBucketPolicy` for a single bucket — for example because the bucket policy itself, an SCP, or a VPC endpoint policy denies reading it — the bucket is still synced, with `bucket_policy_status` set to `unavailable`. A bucket deleted while the sync runs is left out. Throttling and other AWS errors fail the sync rather than skipping an account or recording a bucket as `none` or `unavailable`.
 
@@ -1036,7 +1036,7 @@ stringData:
 
   # Optional: Sync S3 buckets with their bucket policy documents
   # Requires s3:ListAllMyBuckets and s3:GetBucketPolicy in every synced account
-  BATON_SYNC_S3_BUCKETS: true
+  BATON_SYNC_S3_BUCKETS: "true"
 
   # Optional: Choose which AWS user type C1 should create when provisioning accounts.
   # "iam_user" (default) creates IAM users. "sso_user" creates AWS Identity Center
